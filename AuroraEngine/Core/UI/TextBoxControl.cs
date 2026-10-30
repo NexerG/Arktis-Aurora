@@ -111,7 +111,7 @@ namespace ArctisAurora.Core.UI
         [A_XSDElementProperty("FontSize", "UI", "Font size in pixels.")]
         public int fontSize
         {
-            get => line.fontSize;
+            get => (int)line.fontSize;
             set => line.fontSize = value;
         }
 

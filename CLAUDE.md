@@ -479,6 +479,10 @@ Obsidian/Notion-style note-taking and document app.
 #### Status
 Working note app: vaults, a rich-text document editor with undo, notes on disk as XML, Markdown or plain text.
 
+**Still in development, with no users.** Nothing has shipped, so a change to Thorium's formats or baked assets
+needs no upgrade or migration code: re-import or re-bake in the dev build instead (e.g. bump
+`AssetImporter.importerVersion`).
+
 #### Goals
 - Rich text editing
 

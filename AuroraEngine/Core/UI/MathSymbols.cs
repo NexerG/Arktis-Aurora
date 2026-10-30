@@ -41,7 +41,7 @@ namespace ArctisAurora.Core.UI
             // escaped characters
             ["{"] = ('{', MathClass.Open), ["}"] = ('}', MathClass.Close), ["%"] = ('%', MathClass.Ord),
             ["$"] = ('$', MathClass.Ord), ["#"] = ('#', MathClass.Ord), ["&"] = ('&', MathClass.Ord),
-            ["_"] = ('_', MathClass.Ord),
+            ["_"] = ('_', MathClass.Ord), ["square"] = ('□', MathClass.Ord), ["Box"] = ('□', MathClass.Ord),
 
             // binary operators
             ["pm"] = ('±', MathClass.Bin), ["mp"] = ('∓', MathClass.Bin), ["times"] = ('×', MathClass.Bin),

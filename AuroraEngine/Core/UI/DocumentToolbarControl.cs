@@ -47,6 +47,10 @@ namespace ArctisAurora.Core.UI
         private const int iconSize = 14;
         private const int captionSize = 13;
         private const int fontButtonWidth = 140;
+        private const int variantButtonWidth = 90;
+
+        // what the variant button shows for a font's plain face
+        private const string PlainVariant = "Regular";
 
         // the font list
         private const float fontListWidth = 220f;
@@ -130,6 +134,7 @@ namespace ArctisAurora.Core.UI
         private readonly IconControl tasksInk;
         private readonly LabelControl stylingCaption;
         private readonly LabelControl fontCaption;
+        private readonly LabelControl variantCaption;
         private readonly LabelControl colorInk;
         private readonly PxBox pxField;
 
@@ -165,6 +170,7 @@ namespace ArctisAurora.Core.UI
         private PaletteRole? shownInk;
         private int? shownPx;
         private string? shownFont;
+        private string? shownVariant;
 
         public override bool takesActiveControl => false;
 
@@ -182,6 +188,8 @@ namespace ArctisAurora.Core.UI
 
             fontCaption = Caption(string.Empty);
             AddChild(CaptionButton(fontCaption, fontButtonWidth, OpenFonts));
+            variantCaption = Caption(PlainVariant);
+            AddChild(CaptionButton(variantCaption, variantButtonWidth, OpenVariants));
             AddChild(Separator());
 
             boldInk = Ink("bold");
@@ -312,8 +320,15 @@ namespace ArctisAurora.Core.UI
                 fontCaption.text = FontLibrary.FamilyOf(font);
             }
 
+            string variant = source?.variant ?? PlainVariant;
+            if (shownVariant != variant)
+            {
+                shownVariant = variant;
+                variantCaption.text = variant;
+            }
+
             // never while it is being typed into, or the reflection would fight the keystrokes
-            int px = source?.fontSize ?? 0;
+            int px = (int)MathF.Round(source?.fontSize ?? 0f);
             if (!pxField.isEditing && shownPx != px)
             {
                 shownPx = px;
@@ -520,6 +535,29 @@ namespace ArctisAurora.Core.UI
         {
             editor.ApplyStyle(new StyleDelta(fontName: asset));
             editor.FocusCaret();
+        }
+
+        // The caret font's variants; Regular clears the run's own.
+        private void OpenVariants(ToolButton owner)
+        {
+            DocumentEditorControl? editor = Target();
+            if (editor != null) Drop(owner, VariantEntries(editor));
+        }
+
+        internal static List<ContextMenuEntry> VariantEntries(DocumentEditorControl editor)
+        {
+            string[] variants = FontLibrary.VariantsOf(editor.StyleSource?.fontName ?? "default");
+            List<ContextMenuEntry> entries = new List<ContextMenuEntry>(variants.Length);
+            for (int v = 0; v < variants.Length; v++)
+            {
+                string picked = v == 0 ? string.Empty : variants[v];
+                entries.Add(new ContextMenuButton(v == 0 ? PlainVariant : picked, () =>
+                {
+                    editor.ApplyStyle(new StyleDelta(variant: picked));
+                    editor.FocusCaret();
+                }));
+            }
+            return entries;
         }
 
         private static FontRowButton FontRow(string text, string font, Action pick)

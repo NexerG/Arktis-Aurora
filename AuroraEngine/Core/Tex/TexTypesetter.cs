@@ -25,7 +25,7 @@ namespace ArctisAurora.Core.Tex
             public bool started;
             public ListSettings settings = new ListSettings();
             // \topsep, with \partopsep when it began in vertical mode, sp: the skip above and below it
-            public int topSkip;
+            public TexGlue topSkip;
 
             public ListFrame(TexListKind kind, ListFrame? parent)
             {
@@ -120,7 +120,7 @@ namespace ArctisAurora.Core.Tex
             "amsmath", "amssymb", "amsfonts", "geometry", "xcolor", "color", "hyperref", "url",
             "inputenc", "fontenc", "lmodern", "textcomp", "babel", "microtype", "graphicx", "graphics", "booktabs", "fancyhdr",
             "ulem", "enumitem", "titlesec", "mathptmx", "times", "tgtermes", "newtxtext", "setspace", "fontspec",
-            "polyglossia", "caption", "indentfirst", "tocloft", "tocbibind", "biblatex", "silence"
+            "polyglossia", "caption", "indentfirst", "tocloft", "tocbibind", "biblatex", "silence", "amsthm", "algorithm"
         };
 
         // what TeX reads before a row's first cell: \noalign rules, \omit (\multicolumn) and the tabular's end
@@ -131,6 +131,13 @@ namespace ArctisAurora.Core.Tex
 
         // the url package's break characters: a URL may end a line after any of them
         private const string UrlBreaks = "./-_?&=:#!;,)]|@+";
+
+        // biblatex's \biburlsetup: its big and ordinary break characters, their penalties, and \Urlmuskip = 3mu
+        private const string BibUrlBigBreaks = ":-";
+        private const string BibUrlBreaks = ".@/\\!_|;>])},?'+=#$&*^\"";
+        private const int BibUrlBigBreakPenalty = 100;
+        private const int BibUrlBreakPenalty = 200;
+        private const int BibUrlMu = 3;
 
         // packages that set the roman family in Times
         private static readonly HashSet<string> timesPackages = new HashSet<string> { "mathptmx", "times", "tgtermes", "newtxtext" };
@@ -149,6 +156,13 @@ namespace ArctisAurora.Core.Tex
         public const float TextFloatSep = 20f;
         public static readonly float[] displaySkips = { 10f, 11f, 12f };
         public static readonly float[] belowDisplayShortSkips = { 6f, 6.5f, 6.5f };
+        // the same skips' shrink, pt
+        private static readonly float[] topSepShrinks = { 4f, 5f, 6f };
+        public static readonly float[] inTextSepShrinks = { 2f, 2f, 4f };
+        private static readonly float[] partopSepShrinks = { 1f, 1f, 2f };
+        private static readonly float[] itemSepShrinks = { 1f, 1f, 1f };
+        public static readonly float[] displaySkipShrinks = { 5f, 6f, 7f };
+        public static readonly float[] belowDisplayShortSkipShrinks = { 3f, 3f, 3f };
         public static readonly float[] footnoteSkips = { 9f, 10f, 10.8f };
 
         private static readonly string[] rasterExtensions = { ".png", ".jpg", ".jpeg" };
@@ -197,8 +211,10 @@ namespace ArctisAurora.Core.Tex
         public float? customWidth, customHeight, fitHeight;
         // the roman family is Times (mathptmx and kin), not Latin Modern
         public bool times;
-        // fontspec's main, sans and mono fonts as the source names them
+        // fontspec's main, sans and mono fonts as the source names them, and the files Path= gave a name
         public string? mainFont, sansFont, monoFont;
+        public readonly Dictionary<string, (string regular, string? bold, string? italic, string? boldItalic)> fontFiles =
+            new Dictionary<string, (string, string?, string?, string?)>(StringComparer.OrdinalIgnoreCase);
         // polyglossia and babel: the language in force, the main one a package set, and whether a heading's first paragraph indents
         private string language = "english";
         private string? mainLanguage;
@@ -242,6 +258,11 @@ namespace ArctisAurora.Core.Tex
         private bool suppressSpace;
         private bool warnedSmallCaps;
 
+        // TeX's space factor, held while the node that set it is still last in the list
+        private int spaceFactor = 1000;
+        private TexNode? factorNode;
+        private bool frenchSpacing;
+
         // last source line a dispatched token came from
         private int sourceLine;
 
@@ -253,6 +274,8 @@ namespace ArctisAurora.Core.Tex
         // floats, pictures and tabulars, innermost tabular last
         private string? floatKind;
         private TexFloat? openFloat;
+        private int captionStart = -1, captionEnd = -1;
+        private string algorithmStyle = "ruled";
         private List<string> graphicsPath = new List<string> { "" };
         private readonly List<TableBuild> tables = new List<TableBuild>();
         private readonly List<(List<TexNode> target, TexTable table)> unaligned = new List<(List<TexNode>, TexTable)>();
@@ -264,6 +287,8 @@ namespace ArctisAurora.Core.Tex
         private bool allCited;
         private int bibCount;
         private int bibItems;
+        // inside a biblatex bibliography, where \url takes \biburlsetup's breaks, penalties and stretch
+        private bool bibUrls;
 
         // biblatex: its settings once loaded, \printbibliography's title, the language it stood in, each entry's place in it
         private TexBiblatexSettings? biblatex;
@@ -319,9 +344,8 @@ namespace ArctisAurora.Core.Tex
         private TexToken[]? otherOption;
         private string[] givenOptions = Array.Empty<string>();
 
-        // classes and packages read from beside the source, and how many are being read
+        // classes and packages read from beside the source
         private readonly HashSet<string> loadedFiles = new HashSet<string>();
-        private int readingPackages;
 
         // \fontsize waiting for \selectfont, sp; how many \MakeUppercase arguments are being set
         private int? pendingSize;
@@ -333,12 +357,14 @@ namespace ArctisAurora.Core.Tex
         private float? bodyStretch;
         // setspace loaded: floats and footnotes are single-spaced
         private bool setspace;
+        // unicode-math or mathspec loaded: math is placed by the font's OpenType constants, else by classic TeX's
+        public bool unicodeMath { get; private set; }
         // \centerline's line: a box on the page, so the \baselineskip outside it, not its own; sp, 0 = none
         private int centerSkip, keepSkip;
         // a trivlist environment's first paragraph: its \parskip is taken back, as \@item's \addvspace{-\parskip} does
         private bool environmentStart;
         // the open center, flushleft or flushright's \topsep and \partopsep, sp
-        private int alignedSkip;
+        private TexGlue alignedSkip;
 
         private List<TexNode> HList => box?.list ?? par!.list;
 
@@ -349,8 +375,16 @@ namespace ArctisAurora.Core.Tex
         public float parIndent => (expander.RegisterValue("parindent") ?? 0) / (float)Unity;
         public bool hyphenate => (expander.RegisterValue("hyphenpenalty") ?? 0) < 10000;
 
+        // \tolerance, \pretolerance and \emergencystretch (pt) at the end of the document
+        public int tolerance => expander.RegisterValue("tolerance") ?? 200;
+        public int pretolerance => expander.RegisterValue("pretolerance") ?? 100;
+        public float emergencyStretch => (expander.RegisterValue("emergencystretch") ?? 0) / (float)Unity;
+
         // the \baselinestretch the whole document is set at
         public float lineSpread => bodyStretch ?? lineStretch;
+
+        // setspace's \displayskipstretch, which also makes the display skips rigid; null without setspace
+        public float? displaySkipStretch => setspace ? lineSpread : null;
 
         // the body's line height as a multiple of \normalsize: its \baselineskip, stretched
         public float lineHeight => baselineSkipPoints[sizeOption][NormalSize] / sizePoints[sizeOption][NormalSize] * lineSpread;
@@ -634,7 +668,7 @@ namespace ArctisAurora.Core.Tex
             On("@endheadafter", _ =>
             {
                 EndParagraph();
-                VSkip(headingAfter);
+                VSkip(new TexGlue { width = (int)headingAfter });
                 afterHeading = true;
             });
             On("rule", RuleBox);
@@ -668,7 +702,7 @@ namespace ArctisAurora.Core.Tex
                     expander.Insert(headingAfterCode.Append(TexToken.Cs("@endheadafter")).ToArray());
                     headingAfterCode = null;
                 }
-                else VSkip(headingAfter);
+                else VSkip(new TexGlue { width = (int)headingAfter });
                 InsertHeadingContents();
             });
             On("@runin", _ =>
@@ -881,6 +915,9 @@ namespace ArctisAurora.Core.Tex
             });
             On("settowidth", SetToWidth);
             On("ignorespaces", _ => suppressSpace = true);
+            On("@", _ => spaceFactor = 1000);
+            On("frenchspacing", _ => frenchSpacing = true);
+            On("nonfrenchspacing", _ => frenchSpacing = false);
             On("vskip", _ =>
             {
                 TexGlue glue = expander.ScanGlue();
@@ -942,12 +979,20 @@ namespace ArctisAurora.Core.Tex
                 if (arg == null) return;
                 TexStyle outer = style;
                 style = style with { font = style.font with { family = TexFamily.Mono, face = null } };
+                if (bibUrls)
+                    style = style with { urlStretch = style.font.size * BibUrlMu / 18, urlBreakPenalty = BibUrlBreakPenalty, urlBigBreakPenalty = BibUrlBigBreakPenalty };
                 string url = Text(arg).Replace("\\%", "%").Replace("\\#", "#").Replace("\\_", "_").Replace("\\&", "&");
                 StringBuilder broken = new StringBuilder(url.Length + 16);
                 for (int i = 0; i < url.Length; i++)
                 {
                     broken.Append(url[i]);
-                    if (i < url.Length - 1 && UrlBreaks.IndexOf(url[i]) >= 0) broken.Append('​');
+                    if (i == url.Length - 1) continue;
+                    if (!bibUrls)
+                    {
+                        if (UrlBreaks.IndexOf(url[i]) >= 0) broken.Append('​');
+                    }
+                    else if (BibUrlBigBreaks.IndexOf(url[i]) >= 0) broken.Append('');
+                    else if (BibUrlBreaks.IndexOf(url[i]) >= 0) broken.Append('');
                 }
                 AddText(broken.ToString());
                 style = outer;
@@ -999,12 +1044,7 @@ namespace ArctisAurora.Core.Tex
 
             (Dictionary<string, TexToken[]> declared, TexToken[]? other, string[] given) = (declaredOptions, otherOption, givenOptions);
             (declaredOptions, otherOption, givenOptions) = (new Dictionary<string, TexToken[]>(), null, options.ToArray());
-            expander.InputSource(VaultFiles.ReadText(path), () =>
-            {
-                (declaredOptions, otherOption, givenOptions) = (declared, other, given);
-                if (--readingPackages == 0) expander.Insert(new[] { TexToken.Cs("makeatother") });
-            });
-            if (readingPackages++ == 0) expander.Insert(new[] { TexToken.Cs("makeatletter") });
+            ReadCode(VaultFiles.ReadText(path), () => (declaredOptions, otherOption, givenOptions) = (declared, other, given));
             return true;
         }
 
@@ -1067,7 +1107,10 @@ namespace ArctisAurora.Core.Tex
                 if (name == "babel") BabelLanguages(options);
                 if (name == "indentfirst") indentFirstPackage = indentFirst = true;
                 if (name == "setspace") setspace = true;
+                if (name == "unicode-math" || name == "mathspec") unicodeMath = true;
                 if (name == "tocloft" && loadedFiles.Add(name)) ReadCode(TexFormat.Tocloft);
+                if (name == "amsthm" && loadedFiles.Add(name)) ReadCode(TexFormat.Amsthm);
+                if (name == "algorithm" && loadedFiles.Add(name)) Algorithm(options);
                 if (name == "tocbibind" && loadedFiles.Add(name)) TocBibind(options);
                 if (name == "biblatex") BiblatexOptions(options);
                 if (timesPackages.Contains(name)) times = true;
@@ -1265,7 +1308,8 @@ namespace ArctisAurora.Core.Tex
             int ex = metrics.XHeight(new TexFont(TexFamily.Roman, false, false, Size(NormalSize)));
             TitleFormat? titled = titleFormats.GetValueOrDefault(depth) ?? startSection;
             startSection = null;
-            VSkip(titled?.beforeSkip ?? depth switch { 0 => 50f * Unity, 1 => 3.5f * ex, _ => 3.25f * ex }, true);
+            VSkip(titled?.beforeSkip is int before ? new TexGlue { width = before }
+                : new TexGlue { width = (int)(depth switch { 0 => 50f * Unity, 1 => 3.5f * ex, _ => 3.25f * ex }), shrink = depth == 0 ? 0 : (int)(0.2f * ex) }, true);
             headingAfter = titled?.afterSkip ?? depth switch { 0 => 40f * Unity, 1 => 2.3f * ex, _ => 1.5f * ex };
 
             int top = Chapters ? 0 : 1;
@@ -1288,7 +1332,7 @@ namespace ArctisAurora.Core.Tex
                 expander.Insert(indent.Concat(Grouped(font.Concat(shown))).Append(TexToken.Cs("@runin")).ToArray());
                 return;
             }
-            if (expander.RegisterValue("parskip") is int parskip and not 0) VSkip(parskip);
+            if (expander.RegisterGlue("parskip") is TexGlue { width: not 0 } parskip) VSkip(parskip);
 
             TexFont normal = new TexFont(TexFamily.Roman, true, false, Size(NormalSize));
             int heading = depth - top + 1;
@@ -1372,14 +1416,45 @@ namespace ArctisAurora.Core.Tex
             lineStretch = factor;
         }
 
-        // fontspec's [options]{name}[options]; the name, options read and dropped.
+        // fontspec's [options]{name}[options]; the name, its Path= files recorded.
         private string? FontName(TexToken t)
         {
-            expander.Optional(t);
+            TexToken[]? before = expander.Optional(t);
             TexToken[]? name = expander.Argument(t, false);
             if (name == null) return null;
-            expander.Optional(t);
-            return Text(name).Trim();
+            TexToken[]? after = expander.Optional(t);
+            string font = Text(name).Trim();
+            FontFiles(font, before, after);
+            return font;
+        }
+
+        // fontspec's Path, Extension and UprightFont/BoldFont/ItalicFont/BoldItalicFont as files under the source's folder, * for the name.
+        private void FontFiles(string name, TexToken[]? before, TexToken[]? after)
+        {
+            string? path = null, extension = null, upright = null, bold = null, italic = null, boldItalic = null;
+            foreach (TexToken[]? options in new[] { before, after })
+            {
+                if (options == null) continue;
+                foreach (TexToken[] option in Split(options))
+                {
+                    int equals = Array.FindIndex(option, x => x.IsChar('=', TexCatcode.Other));
+                    if (equals < 0) continue;
+                    string value = Text(Unbraced(option[(equals + 1)..])).Trim();
+                    switch (Text(option[..equals]).Trim())
+                    {
+                        case "Path": path = value; break;
+                        case "Extension": extension = value; break;
+                        case "UprightFont": upright = value; break;
+                        case "BoldFont": bold = value; break;
+                        case "ItalicFont": italic = value; break;
+                        case "BoldItalicFont": boldItalic = value; break;
+                    }
+                }
+            }
+            if (folder == null || (path == null && extension == null)) return;
+
+            string? FileOf(string? face) => face == null ? null : Path.GetFullPath(Path.Combine(folder, path ?? "", face.Replace("*", name) + extension));
+            fontFiles[name] = (FileOf(upright ?? name)!, FileOf(bold), FileOf(italic), FileOf(boldItalic));
         }
 
         // \newfontface\cs[options]{name}[options]: \cs selects the face and a pending \fontsize.
@@ -1503,17 +1578,26 @@ namespace ArctisAurora.Core.Tex
             return switches.ToArray();
         }
 
-        // \vskip of sp; merge takes the larger of it and what is pending, as \addvspace does
-        private void VSkip(float sp, bool merge = false) => vtarget.Add(new TexVGlue(new TexGlue { width = (int)sp }, merge));
+        // \vskip; merge takes the larger of it and what is pending, as \addvspace does
+        private void VSkip(TexGlue glue, bool merge = false) => vtarget.Add(new TexVGlue(glue, merge));
 
         // a list-level skip in sp: full at the outer level, half at the second, a quarter deeper
-        private float ListSkip(float[] points, int depth) => points[sizeOption] * Unity / (depth <= 1 ? 1f : depth == 2 ? 2f : 4f);
+        private TexGlue ListSkip(float[] points, float[] shrinks, int depth)
+        {
+            float level = depth <= 1 ? 1f : depth == 2 ? 2f : 4f;
+            return new TexGlue { width = (int)(points[sizeOption] * Unity / level), shrink = (int)(shrinks[sizeOption] * Unity / level) };
+        }
+
+        private static TexGlue Plus(TexGlue a, TexGlue b) => new TexGlue { width = a.width + b.width, shrink = a.shrink + b.shrink };
+
+        // a list key's skip in sp, rigid, as enumitem keys are read
+        private static TexGlue? Rigid(int? sp) => sp is int width ? new TexGlue { width = width } : null;
 
         // A list or a trivlist environment ends: \topsep below it, and no indent until a blank line.
-        private void EndEnvironment(int depth, int? topSep = null)
+        private void EndEnvironment(int depth, TexGlue? topSep = null)
         {
             EndParagraph();
-            VSkip(topSep ?? ListSkip(topSeps, depth), true);
+            VSkip(topSep ?? ListSkip(topSeps, topSepShrinks, depth), true);
             afterEnvironment = true;
         }
 
@@ -1530,16 +1614,17 @@ namespace ArctisAurora.Core.Tex
                 Log.Info($"list label {Text(settings.label)} is set as the default marker");
 
             int depth = (list?.depth ?? 0) + 1;
-            int top = (int)(settings.topSep ?? ListSkip(topSeps, depth));
-            int sep = (int)ListSkip(itemSeps, depth);
-            int skip = TopSkip(top, vertical);
-            VSkip(skip, true);
+            TexGlue top = Rigid(settings.topSep) ?? ListSkip(topSeps, topSepShrinks, depth);
+            TexGlue sep = ListSkip(itemSeps, itemSepShrinks, depth);
+            TexGlue item = Rigid(settings.itemSep) ?? sep, par = Rigid(settings.parSep) ?? sep;
+            TexGlue skip = TopSkip(top, vertical);
+            VSkip(Plus(skip, OuterParskip()), true);
             ListFrame frame = new ListFrame(kind, list) { settings = settings, topSkip = skip };
             if (frame.depth > 4) expander.Error("LaTeX Error: Too deeply nested");
             ListFrame? outer = list;
             expander.Save(() => list = outer);
             list = frame;
-            expander.InsertSource($"\\topsep={top}sp\\itemsep={settings.itemSep ?? sep}sp\\parsep={settings.parSep ?? sep}sp\\relax ");
+            expander.InsertSource($"\\topsep={top.width}sp minus{top.shrink}sp\\itemsep={item.width}sp minus{item.shrink}sp\\parsep={par.width}sp minus{par.shrink}sp\\relax ");
         }
 
         private void Item(TexToken t)
@@ -1555,14 +1640,14 @@ namespace ArctisAurora.Core.Tex
 
             if (list != null)
             {
-                if (list.started) VSkip((expander.RegisterValue("itemsep") ?? 0) + (expander.RegisterValue("parsep") ?? 0));
+                if (list.started) VSkip(Plus(expander.RegisterGlue("itemsep") ?? default, expander.RegisterGlue("parsep") ?? default));
                 list.started = true;
             }
             itemPending = true;
             StartParagraph();
             suppressSpace = true;
             if (label != null)
-                expander.Insert(Grouped(list?.kind == TexListKind.Description ? new[] { TexToken.Cs("bfseries") }.Concat(label) : label)
+                expander.Insert(Grouped(list?.kind == TexListKind.Description ? new[] { TexToken.Cs("descriptionlabel") }.Concat(Grouped(label)) : label)
                     .Append(TexToken.Cs("@label")).ToArray());
         }
 
@@ -1580,7 +1665,7 @@ namespace ArctisAurora.Core.Tex
             expander.DefinePrimitive(name!);
             commands[name!] = begin => BeginList(kind, name!, begin);
             expander.DefinePrimitive("end" + name);
-            commands["end" + name] = _ => EndEnvironment(list?.depth ?? 1, list?.settings.topSep);
+            commands["end" + name] = _ => EndEnvironment(list?.depth ?? 1, Rigid(list?.settings.topSep));
         }
 
         // \setlist[names]{keys}; levels in the names are read as every level
@@ -1716,7 +1801,7 @@ namespace ArctisAurora.Core.Tex
         private void BeginQuote()
         {
             EndParagraph();
-            VSkip(ListSkip(topSeps, (list?.depth ?? 0) + 1), true);
+            VSkip(ListSkip(topSeps, topSepShrinks, (list?.depth ?? 0) + 1), true);
             bool outer = quote;
             expander.Save(() => quote = outer);
             quote = true;
@@ -1726,9 +1811,9 @@ namespace ArctisAurora.Core.Tex
         {
             bool vertical = mode != Mode.Horizontal;
             EndParagraph();
-            int outer = alignedSkip;
+            TexGlue outer = alignedSkip;
             expander.Save(() => alignedSkip = outer);
-            alignedSkip = TopSkip((int)ListSkip(topSeps, (list?.depth ?? 0) + 1), vertical);
+            alignedSkip = TopSkip(ListSkip(topSeps, topSepShrinks, (list?.depth ?? 0) + 1), vertical);
             VSkip(alignedSkip, true);
             SetAlign(to);
             environmentStart = true;
@@ -1738,13 +1823,18 @@ namespace ArctisAurora.Core.Tex
         private void CenterCr(TexToken[]? skip)
         {
             EndParagraph();
-            int parskip = list != null ? (int)(list.settings.parSep ?? ListSkip(itemSeps, list.depth)) : expander.RegisterValue("parskip") ?? 0;
-            VSkip(-parskip, true);
-            if (skip != null) VSkip(Dimen(skip));
+            TexGlue parskip = OuterParskip();
+            VSkip(new TexGlue { width = -parskip.width, shrink = -parskip.shrink }, true);
+            if (skip != null) VSkip(new TexGlue { width = Dimen(skip) });
         }
 
+        // The \parskip a paragraph here gets: the list's \parsep inside a list, else the register.
+        private TexGlue OuterParskip() =>
+            list != null ? Rigid(list.settings.parSep) ?? ListSkip(itemSeps, itemSepShrinks, list.depth) : expander.RegisterGlue("parskip") ?? default;
+
         // A trivlist's \topsep, and \partopsep with it when it began in vertical mode, after a blank line.
-        private int TopSkip(int top, bool vertical) => vertical ? top + (int)(partopSeps[sizeOption] * Unity) : top;
+        private TexGlue TopSkip(TexGlue top, bool vertical) =>
+            vertical ? Plus(top, new TexGlue { width = (int)(partopSeps[sizeOption] * Unity), shrink = (int)(partopSepShrinks[sizeOption] * Unity) }) : top;
 
         private void SetAlign(TexAlign to)
         {
@@ -1770,7 +1860,7 @@ namespace ArctisAurora.Core.Tex
 
             TexStyle code = style with { font = style.font with { family = TexFamily.Mono, bold = false, italic = false, face = null } };
             int depth = (list?.depth ?? 0) + 1;
-            VSkip(ListSkip(topSeps, depth), true);
+            VSkip(ListSkip(topSeps, topSepShrinks, depth), true);
             foreach (string line in lines)
             {
                 TexParagraph paragraph = new TexParagraph(new TexParStyle { kind = TexParKind.Code, align = TexAlign.Left }) { line = sourceAt > 0 ? sourceAt++ : 0 };
@@ -1778,7 +1868,7 @@ namespace ArctisAurora.Core.Tex
                     paragraph.list.Add(new TexChar(c, code));
                 Add(paragraph);
             }
-            VSkip(ListSkip(topSeps, depth), true);
+            VSkip(ListSkip(topSeps, topSepShrinks, depth), true);
             afterEnvironment = true;
 
             expander.Insert(new[] { TexToken.Cs("end"), TexToken.Char('{', TexCatcode.BeginGroup) }
@@ -2300,11 +2390,12 @@ namespace ArctisAurora.Core.Tex
                 expander.Error("LaTeX Error: Not in outer par mode");
                 openFloat = null;
                 EndParagraph();
-                VSkip(floatSeps[sizeOption] * Unity, true);
+                VSkip(new TexGlue { width = (int)(floatSeps[sizeOption] * Unity) }, true);
                 return;
             }
 
             EnsureDocument();
+            captionStart = captionEnd = -1;
             openFloat = new TexFloat(kind, Placement(option == null ? "" : Text(option)));
             if (mode == Mode.Horizontal) HList.Add(openFloat);
             else vtarget.Add(openFloat);
@@ -2324,13 +2415,37 @@ namespace ArctisAurora.Core.Tex
             if (openFloat == null)
             {
                 EndParagraph();
-                VSkip(floatSeps[sizeOption] * Unity, true);
+                VSkip(new TexGlue { width = (int)(floatSeps[sizeOption] * Unity) }, true);
                 afterEnvironment = true;
                 return;
+            }
+            if (openFloat.kind == "algorithm")
+            {
+                EndParagraph();
+                FloatStyle(openFloat.vlist);
             }
             Resume();
             if (mode == Mode.Vertical) afterEnvironment = true;
             else if (HList.Count > 1 && HList[^2] is TexGlueNode { interword: true }) suppressSpace = true;
+        }
+
+        // The float package's styles: ruled sets the caption on top between rules and closes with one, plain and boxed put it last.
+        private void FloatStyle(List<TexNode> vlist)
+        {
+            TexNode[] caption = captionStart >= 0 && captionEnd >= captionStart && captionEnd <= vlist.Count ? new TexNode[captionEnd - captionStart] : Array.Empty<TexNode>();
+            vlist.CopyTo(Math.Max(captionStart, 0), caption, 0, caption.Length);
+            vlist.RemoveRange(Math.Max(captionStart, 0), caption.Length);
+            if (algorithmStyle != "ruled")
+            {
+                vlist.AddRange(caption);
+                return;
+            }
+            TexGlue kern = new TexGlue { width = 2 * Unity };
+            vlist.InsertRange(0, new TexNode[] { new TexRuleNode(), new TexVGlue(kern) });
+            vlist.InsertRange(2, caption);
+            vlist.InsertRange(2 + caption.Length, new TexNode[] { new TexVGlue(kern), new TexRuleNode(), new TexVGlue(kern) });
+            vlist.Add(new TexVGlue(kern));
+            vlist.Add(new TexRuleNode());
         }
 
         // The letters of [htbp!H] that mean something, tbp when none; a lone h becomes ht, as LaTeX does.
@@ -2354,13 +2469,18 @@ namespace ArctisAurora.Core.Tex
             }
 
             expander.StepCounter(floatKind);
-            string number = (Chapters ? expander.Counter("chapter").ToString(CultureInfo.InvariantCulture) + "." : "")
+            string kind = floatKind;
+            bool algorithm = kind == "algorithm";
+            string number = algorithm ? Text(expander.Expanded(new[] { TexToken.Cs("thealgorithm") }, t) ?? Array.Empty<TexToken>())
+                : (Chapters ? expander.Counter("chapter").ToString(CultureInfo.InvariantCulture) + "." : "")
                 + expander.Counter(floatKind).ToString(CultureInfo.InvariantCulture);
             SetLabel(number);
             EndParagraph();
-            Suspend(new TexParStyle { kind = TexParKind.Text, align = TexAlign.Center }, style.font);
+            if (!algorithm && HoldsContent(vtarget.Count)) VSkip(expander.RegisterGlue("abovecaptionskip") ?? default);
+            captionStart = openFloat != null && vtarget == openFloat.vlist ? vtarget.Count : -1;
+            Suspend(new TexParStyle { kind = TexParKind.Text, align = algorithm && algorithmStyle == "ruled" ? TexAlign.Justify : TexAlign.Center }, style.font);
+            par!.strut = !algorithm;
 
-            string kind = floatKind;
             TexToken open = TexToken.Char('{', TexCatcode.BeginGroup), close = TexToken.Char('}', TexCatcode.EndGroup);
             List<TexToken> tokens = new List<TexToken>(text.Length + number.Length + 16) { open, TexToken.Cs(CaptionMacro("font", kind)!), open };
             tokens.Add(TexToken.Cs(CaptionMacro("lfont", kind)!));
@@ -2371,7 +2491,7 @@ namespace ArctisAurora.Core.Tex
                 tokens.Add(TexToken.Cs(name));
             }
             tokens.Add(TexToken.Cs("fnum@" + kind));
-            tokens.AddRange(Grouped(Chars(number)));
+            if (!algorithm) tokens.AddRange(Grouped(Chars(number)));
             tokens.Add(close);
             tokens.Add(TexToken.Cs(CaptionMacro("sep", kind)!));
             tokens.Add(open);
@@ -2380,15 +2500,26 @@ namespace ArctisAurora.Core.Tex
             tokens.Add(close);
             tokens.Add(close);
             tokens.Add(TexToken.Cs("@endcaption"));
-            tokens.AddRange(ContentsLine(kind == "figure" ? "lof" : "lot", kind, number, shortText ?? text));
+            tokens.AddRange(ContentsLine(kind == "figure" ? "lof" : algorithm ? "loa" : "lot", kind, number, shortText ?? text));
             expander.Insert(tokens.ToArray());
         }
 
         // caption's singlelinecheck: a caption that fits on one line stays centred, a longer one is justified.
         private void EndCaption()
         {
+            bool strut = par is { strut: true };
             if (par != null && Width(par.list) > (expander.RegisterValue("linewidth") ?? textWidth)) align = TexAlign.Justify;
             Resume();
+            if (captionStart >= 0) captionEnd = vtarget.Count;
+            if (strut && !HoldsContent(vtarget.Count - 1)) VSkip(expander.RegisterGlue("abovecaptionskip") ?? default);
+        }
+
+        // Whether the vertical list holds anything but glue before end: a caption after it takes \abovecaptionskip above, one first takes it below.
+        private bool HoldsContent(int end)
+        {
+            for (int i = 0; i < end; i++)
+                if (vtarget[i] is not TexVGlue) return true;
+            return false;
         }
 
         // caption's setting for a float kind: its own \caption@key@kind, else \caption@key, else null.
@@ -2480,10 +2611,16 @@ namespace ArctisAurora.Core.Tex
             TexToken[]? spec = expander.Argument(t, false);
             if (spec == null) return;
             if (tables.Count > 0 && tables[^1].cell == null) StartCell();
+            bool opens = mode == Mode.Vertical && tables.Count == 0 && box == null;
             EndParagraph();
             EnsureDocument();
 
             TexTable table = new TexTable { line = sourceLine };
+            if (opens)
+            {
+                if (IndentsNext) table.indent = expander.RegisterValue("parindent") ?? 0;
+                noIndent = afterHeading = afterEnvironment = false;
+            }
             ColumnSpec(spec, table, 0);
             if (table.columns.Count == 0) table.columns.Add(new TexColumn { align = TexAlign.Left });
             vtarget.Add(table);
@@ -2784,14 +2921,38 @@ namespace ArctisAurora.Core.Tex
             ReadCode(code.ToString());
         }
 
-        // Package code of our own, read as a local package is: @ a letter until it ends.
-        private void ReadCode(string code)
+        // algorithm's float: ruled, plain or boxed, numbered within section or chapter when asked.
+        private void Algorithm(TexToken[]? options)
         {
+            string within = "";
+            foreach (string option in Options(options))
+            {
+                if (option is "plain" or "ruled" or "boxed") algorithmStyle = option;
+                if (option is "section" or "chapter") within = option;
+            }
+            foreach (string name in new[] { "algorithm", "algorithm*" })
+            {
+                expander.DefinePrimitive(name);
+                commands[name] = t => BeginFloat(t, "algorithm");
+                expander.DefinePrimitive("end" + name);
+                commands["end" + name] = _ => EndFloat();
+            }
+            ReadCode((within.Length == 0
+                ? @"\newcounter{algorithm}"
+                : $@"\newcounter{{algorithm}}[{within}]\def\thealgorithm{{\the{within}.\arabic{{algorithm}}}}")
+                + (algorithmStyle == "ruled" ? @"\def\caption@lfont@algorithm{\bfseries}\def\caption@sep@algorithm{\space}" : "") + TexFormat.Algorithm);
+        }
+
+        // Package code read as \RequirePackage reads a file: @ a letter inside, its catcode before put back after.
+        private void ReadCode(string code, Action? atEnd = null)
+        {
+            TexCatcode outer = expander.atCatcode;
             expander.InputSource(code, () =>
             {
-                if (--readingPackages == 0) expander.Insert(new[] { TexToken.Cs("makeatother") });
+                atEnd?.Invoke();
+                expander.atCatcode = outer;
             });
-            if (readingPackages++ == 0) expander.Insert(new[] { TexToken.Cs("makeatletter") });
+            expander.atCatcode = TexCatcode.Letter;
         }
         #endregion
 
@@ -2862,11 +3023,18 @@ namespace ArctisAurora.Core.Tex
             EndParagraph();
             bibCount = 0;
             bibItems = 0;
+            if (biblatex != null)
+            {
+                bool outer = bibUrls;
+                expander.Save(() => bibUrls = outer);
+                bibUrls = true;
+            }
             TexToken[] setup = new TexToken[widest.Length + 1];
             setup[0] = TexToken.Cs("@bibsetup");
             widest.CopyTo(setup, 1);
             expander.Insert(setup);
-            expander.InsertSource($"\\parskip={(int)ListSkip(itemSeps, 1)}sp\\relax ");
+            TexGlue parsep = ListSkip(itemSeps, itemSepShrinks, 1);
+            expander.InsertSource($"\\parskip={parsep.width}sp minus{parsep.shrink}sp\\relax ");
             TexToken[] heading =
             {
                 TexToken.Cs(Chapters ? "chapter" : "section"), TexToken.Char('*', TexCatcode.Other), TexToken.Char('{', TexCatcode.BeginGroup),
@@ -2888,7 +3056,7 @@ namespace ArctisAurora.Core.Tex
             TexToken[] shown = label ?? Chars((++bibCount).ToString(CultureInfo.InvariantCulture));
             bibLabels[key] = Text(shown.Where(x => x.IsCs || x.cat is not (TexCatcode.BeginGroup or TexCatcode.EndGroup))).Replace("\\labelalphaothers", "+");
             bibOrder[key] = bibItems;
-            VSkip(ListSkip(bibItems == 0 ? topSeps : itemSeps, 1), bibItems == 0);
+            VSkip(bibItems == 0 ? ListSkip(topSeps, topSepShrinks, 1) : ListSkip(itemSeps, itemSepShrinks, 1), bibItems == 0);
             bibItems++;
             noIndent = true;
             StartParagraph();
@@ -2960,7 +3128,7 @@ namespace ArctisAurora.Core.Tex
                     return;
                 case TexCatcode.Space:
                     if (suppressSpace) suppressSpace = false;
-                    else if (mode == Mode.Horizontal) Interword();
+                    else if (mode == Mode.Horizontal) Interword(HList.Count > 0 && HList[^1] == factorNode ? spaceFactor : 1000);
                     return;
                 case TexCatcode.AlignTab:
                     if (tables.Count > 0) NextCell();
@@ -2968,6 +3136,8 @@ namespace ArctisAurora.Core.Tex
                     return;
                 case TexCatcode.Superscript or TexCatcode.Subscript:
                     expander.Error("Missing $ inserted");
+                    expander.Insert(new[] { t });
+                    MathShift();
                     return;
                 default:
                     AddChar(t.ch);
@@ -2982,17 +3152,28 @@ namespace ArctisAurora.Core.Tex
             List<TexNode> hlist = HList;
             bool joins = !boundary;
             boundary = false;
+            if (hlist.Count == 0 || hlist[^1] != factorNode) spaceFactor = 1000;
+            int code = SfCode(c);
+            if (code != 0) spaceFactor = code > 1000 && spaceFactor < 1000 ? 1000 : code;
             if (style.font.family != TexFamily.Mono)
             {
                 if (c == '`') c = '‘';
                 else if (c == '\'') c = '’';
-                if (joins && hlist.Count > 0 && hlist[^1] is TexChar last && last.style == style && Ligature(last.ch, c) is char merged and not '\0')
+                if (joins && hlist.Count > 0 && hlist[^1] is TexChar last && last.style == style && Ligature(last.ch, c) is char merged and not '\0'
+                    && (merged is not ('ﬀ' or 'ﬁ' or 'ﬂ' or 'ﬃ' or 'ﬄ') || JoinsF(style.font)))
                 {
-                    hlist[^1] = new TexChar(merged, style);
+                    hlist[^1] = factorNode = new TexChar(merged, style);
                     return;
                 }
             }
-            hlist.Add(new TexChar(c, style));
+            hlist.Add(factorNode = new TexChar(c, style));
+        }
+
+        // f-ligatures: the TFM fonts and Latin Modern; other fontspec fonts take only TeX's text ligatures.
+        private bool JoinsF(TexFont font)
+        {
+            string? name = font.face ?? font.family switch { TexFamily.Roman => mainFont, TexFamily.Sans => sansFont, _ => monoFont };
+            return name == null || name.StartsWith("Latin Modern", StringComparison.OrdinalIgnoreCase);
         }
 
         private static char Ligature(char a, char b) => (a, b) switch
@@ -3020,15 +3201,26 @@ namespace ArctisAurora.Core.Tex
                 HList.Add(new TexChar(c, style));
         }
 
-        private void Interword()
+        private void Interword(int factor = 1000)
         {
             StartParagraph();
             int quad = metrics.Quad(style.font);
             TexGlue glue = style.font.family == TexFamily.Mono
                 ? new TexGlue { width = (int)(quad * 0.525) }
                 : new TexGlue { width = quad / 3, stretch = quad / 6, shrink = quad / 9 };
-            HList.Add(new TexGlueNode(glue, true, style));
+            HList.Add(new TexGlueNode(glue, true, style) { spaceFactor = factor });
         }
+
+        // TeX's \sfcode under \nonfrenchspacing, Unicode capitals at 999; 0 leaves the factor as it was.
+        private int SfCode(char c) => c switch
+        {
+            '.' or '?' or '!' => frenchSpacing ? 1000 : 3000,
+            ':' => frenchSpacing ? 1000 : 2000,
+            ';' => frenchSpacing ? 1000 : 1500,
+            ',' => frenchSpacing ? 1000 : 1250,
+            ')' or ']' or '\'' or '’' or '”' => 0,
+            _ => char.IsUpper(c) ? 999 : 1000
+        };
 
         private void Space(float em)
         {
@@ -3042,6 +3234,9 @@ namespace ArctisAurora.Core.Tex
             HList.Add(new TexKern((int)(metrics.Quad(style.font) * em), style));
         }
 
+        // whether the next paragraph opens with \parindent
+        private bool IndentsNext => !noIndent && !(afterHeading && !indentFirst) && !afterEnvironment && list == null && !quote;
+
         private void StartParagraph()
         {
             if (mode == Mode.Horizontal) return;
@@ -3053,10 +3248,10 @@ namespace ArctisAurora.Core.Tex
             EnsureDocument();
 
             TexParStyle parStyle = new TexParStyle { kind = quote ? TexParKind.Quote : TexParKind.Text, indentWidth = expander.RegisterValue("parindent") ?? 0 };
-            parStyle.indent = !noIndent && !(afterHeading && !indentFirst) && !afterEnvironment && list == null && !quote;
+            parStyle.indent = IndentsNext;
             noIndent = afterHeading = afterEnvironment = false;
-            if (list != null && !itemPending) VSkip(list.settings.parSep ?? ListSkip(itemSeps, list.depth));
-            if (list == null && keepSkip == 0 && !environmentStart && expander.RegisterValue("parskip") is int parskip and not 0) VSkip(parskip);
+            if (list != null && !itemPending) VSkip(Rigid(list.settings.parSep) ?? ListSkip(itemSeps, itemSepShrinks, list.depth));
+            if (list == null && keepSkip == 0 && !environmentStart && expander.RegisterGlue("parskip") is TexGlue { width: not 0 } parskip) VSkip(parskip);
             environmentStart = false;
             if (list != null)
             {
@@ -3093,7 +3288,7 @@ namespace ArctisAurora.Core.Tex
             if (hlist.Count > 0 || par.style.item)
             {
                 if (vtarget == vlist && inDocument) bodyStretch ??= lineStretch;
-                par.baselineSkip = (int)((keepSkip != 0 ? keepSkip : BaselineSkip(style)) * (setspace && (floatKind != null || InNote) ? 1f : lineSpread));
+                par.baselineSkip = (int)((keepSkip != 0 ? keepSkip : BaselineSkip(style)) * (SingleSpaced ? 1f : lineSpread));
                 if (vtarget == vlist) TakePending(par);
                 vtarget.Add(par);
             }
@@ -3177,6 +3372,9 @@ namespace ArctisAurora.Core.Tex
                 return false;
             }
         }
+
+        // setspace single-spaces footnotes and floats, except an [H] float's body
+        private bool SingleSpaced => setspace && (floatKind != null && (openFloat == null || !openFloat.placement.Contains('H') || par is { strut: true }) || InNote);
         #endregion
 
         #region ---- math ----
@@ -3185,10 +3383,18 @@ namespace ArctisAurora.Core.Tex
         {
             StringBuilder source = new StringBuilder();
             bool display = false, first = true;
+            int depth = 0;
             expander.passUndefined = true;
             TexToken? after = null;
             while (expander.Next(out TexToken t))
             {
+                if (!t.IsCs && t.cat == TexCatcode.BeginGroup) depth++;
+                else if (!t.IsCs && t.cat == TexCatcode.EndGroup && depth-- == 0)
+                {
+                    expander.Error("Extra }, or forgotten $");
+                    after = t;
+                    break;
+                }
                 if (!t.IsCs && t.cat == TexCatcode.MathShift)
                 {
                     if (first && !display)
@@ -3345,10 +3551,21 @@ namespace ArctisAurora.Core.Tex
         {
             StartParagraph();
             TexMathNode node = new TexMathNode(mathLabel.Replace(source, "").Trim(), display, style);
+            if (node.source.Contains(@"\begin{")) node.strut = ArrayStrut();
             HList.Add(node);
             if (mathRef.IsMatch(node.source) || mathEqref.IsMatch(node.source)) mathRefs.Add((node, sourceLine));
             suppressSpace = display;
             boundary = true;
+        }
+
+        // An array row's \strutbox here, em: \arraystretch × \baselineskip over the font size.
+        private float ArrayStrut()
+        {
+            TexToken name = TexToken.Cs("arraystretch");
+            string text = Text(expander.Expanded(new[] { name }, name) ?? Array.Empty<TexToken>()).Trim();
+            float stretch = float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out float parsed) ? parsed : 1f;
+            float skip = BaselineSkip(style) * (SingleSpaced ? 1f : lineSpread);
+            return stretch * skip / style.font.size;
         }
         #endregion
 

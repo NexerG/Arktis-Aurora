@@ -5,7 +5,7 @@
   <xs:import schemaLocation="InputTypeSchema.xsd" namespace="http://arctisaurora/AuroraInputTypes" />
   <xs:import schemaLocation="UITypeSchema.xsd" namespace="http://arctisaurora/AuroraUITypes" />
   <xs:simpleType name="Settings">
-    <xs:union memberTypes="types:WeekDay types:ClockFormat types:DateOrder types:SettingScope types:LogLevel types:CaptureMode types:WindowMode types:CloseAction" />
+    <xs:union memberTypes="types:WeekDay types:ClockFormat types:DateOrder types:SettingScope types:LogLevel types:CaptureMode types:WindowMode types:CloseAction types:CheckedEnd" />
   </xs:simpleType>
   <xs:attributeGroup name="Bind.Attributes">
     <xs:attribute name="Action" type="xs:string" />
@@ -61,11 +61,13 @@
       <xs:element name="WeekStart" type="types:WeekStart" />
       <xs:element name="TimeFormat" type="types:TimeFormat" />
       <xs:element name="DateFormat" type="types:DateFormat" />
+      <xs:element name="LanguagePacks" type="types:LanguagePacks" />
       <xs:element name="SheetGrow" type="types:SheetGrow" />
       <xs:element name="DragGhost" type="types:DragGhost" />
       <xs:element name="Palette" type="types:Palette" />
       <xs:element name="Zoom" type="types:Zoom" />
       <xs:element name="DocumentZoom" type="types:DocumentZoom" />
+      <xs:element name="SortedTasks" type="types:SortedTasks" />
       <xs:element name="Threads" type="types:Threads" />
       <xs:element name="FrameCap" type="types:FrameCap" />
       <xs:element name="Idle" type="types:Idle" />
@@ -208,6 +210,21 @@
       <xs:group minOccurs="0" maxOccurs="unbounded" ref="types:Setting.Children" />
     </xs:sequence>
   </xs:complexType>
+  <xs:attributeGroup name="LanguagePacks.Attributes">
+    <xs:attributeGroup ref="types:Setting.Attributes" />
+    <xs:attribute name="Packs" type="xs:string" />
+  </xs:attributeGroup>
+  <xs:element name="LanguagePacks" type="types:LanguagePacks" />
+  <xs:complexType name="LanguagePacks">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:LanguagePacks.Attributes" />
+  </xs:complexType>
+  <xs:element name="Fonts" type="types:Fonts" />
+  <xs:complexType name="Fonts">
+    <xs:sequence>
+      <xs:group minOccurs="0" maxOccurs="unbounded" ref="types:Setting.Children" />
+    </xs:sequence>
+  </xs:complexType>
   <xs:attributeGroup name="DocumentSettings.Attributes">
     <xs:attribute name="StampModified" type="xs:boolean" />
   </xs:attributeGroup>
@@ -277,6 +294,14 @@
     </xs:sequence>
     <xs:attributeGroup ref="types:SessionWorkspace.Attributes" />
   </xs:complexType>
+  <xs:attributeGroup name="SessionRoot.Attributes">
+    <xs:attribute name="Path" type="xs:string" />
+  </xs:attributeGroup>
+  <xs:element name="SessionRoot" type="types:SessionRoot" />
+  <xs:complexType name="SessionRoot">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:SessionRoot.Attributes" />
+  </xs:complexType>
   <xs:attributeGroup name="SessionWindow.Attributes">
     <xs:attribute name="Document" type="xs:string" />
     <xs:attribute name="Primary" type="xs:boolean" />
@@ -292,6 +317,7 @@
     <xs:choice>
       <xs:element name="SessionPane" type="types:SessionPane" />
       <xs:element name="SessionWorkspace" type="types:SessionWorkspace" />
+      <xs:element name="SessionRoot" type="types:SessionRoot" />
     </xs:choice>
   </xs:group>
   <xs:complexType name="SessionWindow">
@@ -377,6 +403,15 @@
     <xs:sequence />
     <xs:attributeGroup ref="types:DocumentZoom.Attributes" />
   </xs:complexType>
+  <xs:attributeGroup name="SortedTasks.Attributes">
+    <xs:attributeGroup ref="types:Setting.Attributes" />
+    <xs:attribute name="Checked" type="types:CheckedEnd" />
+  </xs:attributeGroup>
+  <xs:element name="SortedTasks" type="types:SortedTasks" />
+  <xs:complexType name="SortedTasks">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:SortedTasks.Attributes" />
+  </xs:complexType>
   <xs:element name="UI" type="types:UI" />
   <xs:complexType name="UI">
     <xs:sequence>
@@ -433,6 +468,7 @@
       <xs:element name="Input" type="types:Input" />
       <xs:element name="Graphics" type="types:Graphics" />
       <xs:element name="DateTime" type="types:DateTime" />
+      <xs:element name="Fonts" type="types:Fonts" />
       <xs:element name="DocumentSettings" type="types:DocumentSettings" />
       <xs:element name="Session" type="types:Session" />
       <xs:element name="Sheets" type="types:Sheets" />
@@ -549,6 +585,12 @@
       <xs:enumeration value="Ask" />
       <xs:enumeration value="Tray" />
       <xs:enumeration value="Quit" />
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:simpleType name="CheckedEnd">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="Bottom" />
+      <xs:enumeration value="Top" />
     </xs:restriction>
   </xs:simpleType>
 </xs:schema>

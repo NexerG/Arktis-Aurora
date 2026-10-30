@@ -14,6 +14,10 @@ namespace ArctisAurora.Core.Filing
         public string? bold;
         public string? italic;
         public string? boldItalic;
+
+        // a family's other variants (Calibri Light under Calibri), and on a variant the family it belongs to
+        public InstalledFamily[] variants = Array.Empty<InstalledFamily>();
+        public InstalledFamily? head;
     }
 
     // The fonts installed on this machine, grouped into families by their own name tables.
@@ -23,8 +27,8 @@ namespace ArctisAurora.Core.Filing
 
         private static readonly string[] extensions = { ".ttf", ".otf", ".ttc" };
 
-        // one face of one file as the cache keeps it; an empty family is a face that cannot be baked
-        private readonly record struct Face(string path, int index, long modified, string family, bool bold, bool italic);
+        // one face of one file as the cache keeps it; an empty family is a face that cannot be baked; typographic is name ID 16, else ID 1
+        private readonly record struct Face(string path, int index, long modified, string family, string typographic, bool bold, bool italic);
 
         private static IReadOnlyList<InstalledFamily>? families;
 
@@ -33,8 +37,21 @@ namespace ArctisAurora.Core.Filing
 
         private static string CachePath => Path.Combine(Paths.USER_DATA, "Fonts", "FontCatalog.catalog.axml");
 
-        public static InstalledFamily? Find(string name) =>
-            Families?.FirstOrDefault(f => string.Equals(f.name, name, StringComparison.OrdinalIgnoreCase));
+        // A family or a variant by its own name (name ID 1).
+        public static InstalledFamily? Find(string name)
+        {
+            IReadOnlyList<InstalledFamily>? all = Families;
+            if (all == null) return null;
+            for (int i = 0; i < all.Count; i++)
+            {
+                InstalledFamily family = all[i];
+                if (string.Equals(family.name, name, StringComparison.OrdinalIgnoreCase)) return family;
+                InstalledFamily[] variants = family.variants;
+                for (int v = 0; v < variants.Length; v++)
+                    if (string.Equals(variants[v].name, name, StringComparison.OrdinalIgnoreCase)) return variants[v];
+            }
+            return null;
+        }
 
         // Reads every installed face's names, re-reading only the files changed since the cache.
         public static IReadOnlyList<InstalledFamily> Scan()
@@ -65,7 +82,7 @@ namespace ArctisAurora.Core.Filing
             try
             {
                 using BinaryReader reader = new BinaryReader(File.OpenRead(path));
-                return ReadNames(reader, ReadTables(reader, face));
+                return ReadNames(reader, ReadTables(reader, face)) is { } n ? (n.family, n.bold, n.italic) : null;
             }
             catch (Exception)
             {
@@ -110,10 +127,10 @@ namespace ArctisAurora.Core.Filing
 
                 for (int i = 0; i < count; i++)
                 {
-                    (string family, bool bold, bool italic)? names = ReadNames(reader, ReadTables(reader, i));
+                    (string family, string typographic, bool bold, bool italic)? names = ReadNames(reader, ReadTables(reader, i));
                     faces.Add(names is { } n
-                        ? new Face(file, i, modified, n.family, n.bold, n.italic)
-                        : new Face(file, i, modified, string.Empty, false, false));
+                        ? new Face(file, i, modified, n.family, n.typographic, n.bold, n.italic)
+                        : new Face(file, i, modified, string.Empty, string.Empty, false, false));
                 }
             }
             catch (Exception e)
@@ -121,19 +138,22 @@ namespace ArctisAurora.Core.Filing
                 Log.Debug($"font catalog: '{file}' unreadable ({e.Message}).");
             }
 
-            if (faces.Count == 0) faces.Add(new Face(file, 0, modified, string.Empty, false, false));
+            if (faces.Count == 0) faces.Add(new Face(file, 0, modified, string.Empty, string.Empty, false, false));
             return faces;
         }
 
-        private static (string family, bool bold, bool italic)? ReadNames(BinaryReader reader, TableEntry[] tables)
+        private static (string family, string typographic, bool bold, bool italic)? ReadNames(BinaryReader reader, TableEntry[] tables)
         {
             bool Has(string tag) => tables.Any(t => t.name == tag);
             bool outlines = (Has("glyf") && Has("loca")) || Has("CFF ");
             if (!outlines || !Has("head") || !Has("hhea") || !Has("hmtx") || !Has("maxp") || !Has("cmap") || !Has("name"))
                 return null;
 
-            string? family = FamilyName(reader, tables.First(t => t.name == "name"));
+            TableEntry names = tables.First(t => t.name == "name");
+            string? family = FamilyName(reader, names, 1);
             if (string.IsNullOrWhiteSpace(family)) return null;
+            string? typographic = FamilyName(reader, names, 16);
+            if (string.IsNullOrWhiteSpace(typographic)) typographic = family;
 
             bool bold;
             bool italic;
@@ -152,11 +172,11 @@ namespace ArctisAurora.Core.Filing
                 bold = (macStyle & 0x01) != 0;
                 italic = (macStyle & 0x02) != 0;
             }
-            return (family.Trim(), bold, italic);
+            return (family.Trim(), typographic.Trim(), bold, italic);
         }
 
-        // Name ID 1, preferring the Windows US English record.
-        private static string? FamilyName(BinaryReader reader, TableEntry name)
+        // A name record (1 the family, 16 the typographic family), preferring the Windows US English one.
+        private static string? FamilyName(BinaryReader reader, TableEntry name, int nameId)
         {
             reader.BaseStream.Position = name.offset + 2;
             int count = AssetImporter.ReadUInt16BE(reader);
@@ -172,7 +192,7 @@ namespace ArctisAurora.Core.Filing
                 ushort id = AssetImporter.ReadUInt16BE(reader);
                 ushort length = AssetImporter.ReadUInt16BE(reader);
                 ushort offset = AssetImporter.ReadUInt16BE(reader);
-                if (id != 1) continue;
+                if (id != nameId) continue;
 
                 int score = platform == 3 && language == 0x409 ? 3
                           : platform == 3 || platform == 0 ? 2
@@ -191,16 +211,21 @@ namespace ArctisAurora.Core.Filing
         #endregion
 
         #region ---- grouping ----
-        // Faces into families by name ID 1, which holds at most a regular, bold, italic and bold italic.
+        // Faces into families by name ID 1, which holds at most a regular, bold, italic and bold italic; families sharing
+        // a typographic family (name ID 16) then become variants of the one named as it.
         private static List<InstalledFamily> Group(List<Face> faces)
         {
             Dictionary<string, InstalledFamily> byName = new Dictionary<string, InstalledFamily>(StringComparer.OrdinalIgnoreCase);
             Dictionary<string, (string path, int index)> regulars = new Dictionary<string, (string, int)>(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, string> typographics = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (Face face in faces)
             {
                 if (face.family.Length == 0) continue;
                 if (!byName.TryGetValue(face.family, out InstalledFamily? family))
+                {
                     byName[face.family] = family = new InstalledFamily { name = face.family };
+                    typographics[face.family] = face.typographic;
+                }
 
                 if (!face.bold && !face.italic)
                 {
@@ -215,7 +240,8 @@ namespace ArctisAurora.Core.Filing
                 else family.italic ??= face.path;
             }
 
-            List<InstalledFamily> result = new List<InstalledFamily>();
+            // a variant keeps its faces as found; it may lack an upright one
+            Dictionary<string, List<InstalledFamily>> variantsOf = new Dictionary<string, List<InstalledFamily>>(StringComparer.OrdinalIgnoreCase);
             foreach (InstalledFamily family in byName.Values)
             {
                 if (regulars.TryGetValue(family.name, out (string path, int index) regular))
@@ -223,10 +249,32 @@ namespace ArctisAurora.Core.Filing
                     family.regular = regular.path;
                     family.regularFace = regular.index;
                 }
-                else if (family.bold != null) { family.regular = family.bold; family.bold = null; }
-                else if (family.italic != null) { family.regular = family.italic; family.italic = null; }
-                else if (family.boldItalic != null) { family.regular = family.boldItalic; family.boldItalic = null; }
-                else continue;
+                string typographic = typographics[family.name];
+                if (string.Equals(typographic, family.name, StringComparison.OrdinalIgnoreCase)
+                    || !byName.TryGetValue(typographic, out InstalledFamily? head)
+                    || !string.Equals(typographics[head.name], head.name, StringComparison.OrdinalIgnoreCase)) continue;
+                family.head = head;
+                if (!variantsOf.TryGetValue(head.name, out List<InstalledFamily>? list)) variantsOf[head.name] = list = new List<InstalledFamily>(4);
+                list.Add(family);
+            }
+
+            List<InstalledFamily> result = new List<InstalledFamily>();
+            foreach (InstalledFamily family in byName.Values)
+            {
+                if (family.head != null) continue;
+                if (variantsOf.TryGetValue(family.name, out List<InstalledFamily>? variants))
+                {
+                    variants.Sort((a, b) => string.Compare(a.name, b.name, StringComparison.OrdinalIgnoreCase));
+                    family.variants = variants.ToArray();
+                }
+
+                if (family.regular.Length == 0)
+                {
+                    if (family.bold != null) { family.regular = family.bold; family.bold = null; }
+                    else if (family.italic != null) { family.regular = family.italic; family.italic = null; }
+                    else if (family.boldItalic != null) { family.regular = family.boldItalic; family.boldItalic = null; }
+                    else continue;
+                }
                 result.Add(family);
             }
             result.Sort((a, b) => string.Compare(a.name, b.name, StringComparison.OrdinalIgnoreCase));
@@ -279,8 +327,11 @@ namespace ArctisAurora.Core.Filing
             {
                 foreach (XElement e in XElement.Load(CachePath).Elements("Face"))
                 {
+                    // an entry from before typographic names is read again
+                    if (e.Attribute("Typographic") is not XAttribute typographic) continue;
                     Face face = new Face((string)e.Attribute("Path")!, (int)e.Attribute("Index")!, (long)e.Attribute("Modified")!,
-                        (string?)e.Attribute("Family") ?? string.Empty, (bool?)e.Attribute("Bold") ?? false, (bool?)e.Attribute("Italic") ?? false);
+                        (string?)e.Attribute("Family") ?? string.Empty, typographic.Value,
+                        (bool?)e.Attribute("Bold") ?? false, (bool?)e.Attribute("Italic") ?? false);
                     faces[(face.path, face.index)] = face;
                 }
             }
@@ -300,6 +351,7 @@ namespace ArctisAurora.Core.Filing
                 new XAttribute("Index", f.index),
                 new XAttribute("Modified", f.modified),
                 new XAttribute("Family", f.family),
+                new XAttribute("Typographic", f.typographic),
                 new XAttribute("Bold", f.bold),
                 new XAttribute("Italic", f.italic)))).Save(CachePath);
         }

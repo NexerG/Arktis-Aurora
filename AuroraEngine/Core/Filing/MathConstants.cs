@@ -127,6 +127,24 @@ namespace ArctisAurora.Core.Filing
         [A_XSDElementProperty("RadicalKernAfterDegree", "AssetRegistry")]
         public float radicalKernAfterDegree { get; set; }
 
+        // classic TeX's cmsy10 and cmex10 font dimensions, em; set in the data file, not read from the font
+        [A_XSDElementProperty("Sub1", "AssetRegistry")]
+        public float sub1 { get; set; }
+        [A_XSDElementProperty("Sub2", "AssetRegistry")]
+        public float sub2 { get; set; }
+        [A_XSDElementProperty("Sup1", "AssetRegistry")]
+        public float sup1 { get; set; }
+        [A_XSDElementProperty("Sup2", "AssetRegistry")]
+        public float sup2 { get; set; }
+        [A_XSDElementProperty("Sup3", "AssetRegistry")]
+        public float sup3 { get; set; }
+        [A_XSDElementProperty("SubDrop", "AssetRegistry")]
+        public float subDrop { get; set; }
+        [A_XSDElementProperty("SupDrop", "AssetRegistry")]
+        public float supDrop { get; set; }
+        [A_XSDElementProperty("BigOpSpacing5", "AssetRegistry")]
+        public float bigOpSpacing5 { get; set; }
+
         // each big operator's display-size variant, "∑ 1.4,∫ 2.22", height in em
         [A_XSDElementProperty("DisplayOperators", "AssetRegistry")]
         public string displayOperators { get; set; } = string.Empty;

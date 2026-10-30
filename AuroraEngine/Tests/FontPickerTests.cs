@@ -5,6 +5,7 @@ using ArctisAurora.Core.Registry.Assets;
 using ArctisAurora.Core.Testing;
 using ArctisAurora.Core.UI;
 using ArctisAurora.EngineWork.Registry;
+using System.Xml.Linq;
 
 namespace ArctisAurora.Tests
 {
@@ -34,6 +35,70 @@ namespace ArctisAurora.Tests
             if (math != null && cambria != null)
                 t.Check(Named(math.regular, "cambria.ttc") && math.regularFace == 1 && cambria.regularFace == 0,
                     "the second face of cambria.ttc is found as Cambria Math");
+        }
+
+        [A_XSDActionDependency("Fonts.CatalogVariants", "Test")]
+        private static IEnumerator<int> CatalogVariants(TestContext t)
+        {
+            FontCatalog.Scan();
+            InstalledFamily? calibri = FontCatalog.Find("Calibri");
+            InstalledFamily? light = FontCatalog.Find("Calibri Light");
+            if (calibri == null || light == null)
+            {
+                t.skipped = "Calibri or Calibri Light is not installed";
+                yield break;
+            }
+
+            t.Check(ReferenceEquals(light.head, calibri) && Array.IndexOf(calibri.variants, light) >= 0, "Calibri Light is a variant of Calibri");
+            t.Check(Named(light.regular, "calibril.ttf") && Named(light.italic, "calibrili.ttf"), "the variant keeps its own upright and italic");
+
+            bool listed = false;
+            foreach (InstalledFamily family in FontCatalog.Families!)
+                if (ReferenceEquals(family, light)) listed = true;
+            t.Check(!listed, "the picker lists Calibri once, not its variants");
+        }
+
+        [A_XSDActionDependency("Fonts.ImportVariants", "Test")]
+        private static IEnumerator<int> ImportVariants(TestContext t)
+        {
+            FontCatalog.Scan();
+            InstalledFamily? calibri = FontCatalog.Find("Calibri");
+            InstalledFamily? light = FontCatalog.Find("Calibri Light");
+            if (calibri == null || light == null)
+            {
+                t.skipped = "Calibri or Calibri Light is not installed";
+                yield break;
+            }
+
+            string root = Path.Combine(Paths.USER_DATA, "VariantTest");
+            FontImport import = new FontImport
+            {
+                source = calibri.regular,
+                bold = calibri.bold ?? string.Empty,
+                italic = calibri.italic ?? string.Empty,
+                boldItalic = calibri.boldItalic ?? string.Empty,
+                charset = "Base",
+                glyphSize = 32,
+                covered = true
+            };
+            import.variants.Add(new FontVariantImport { name = "Light", source = light.regular, italic = light.italic ?? string.Empty });
+            t.Check(AssetImporter.ImportFontIfStale(import, new Dictionary<string, string> { ["Base"] = "AB" }, root), "the import bakes");
+
+            string baseName = Path.GetFileNameWithoutExtension(calibri.regular);
+            AtlasMetaData atlas = new AtlasMetaData();
+            Serializer.DeserializeAttributed(Path.Combine(root, baseName, baseName + ".agd"), ref atlas);
+            atlas.BuildCharIndex();
+            int variant = atlas.VariantOf("Light");
+            t.Check(atlas.faceCount == 6 && variant == 1, $"one atlas holds Calibri's four faces and Light's two: {atlas.faceCount} faces, Light is {variant}");
+            t.Check(atlas.HasFace(variant, FontStyle.Italic) && atlas.Effective(variant, FontStyle.Italic) != atlas.Effective(0, FontStyle.Italic),
+                "Light Italic is a face of its own");
+            t.Check(atlas.Effective(variant, FontStyle.Bold) == atlas.Effective(0, FontStyle.Bold), "Light has no bold, so bold draws Calibri Bold");
+
+            Glyph a = atlas.GetGlyph('A');
+            t.Check(atlas.Metrics(a, atlas.Effective(variant, FontStyle.Regular)).advanceWidth != a.regular.advanceWidth, "Light's A is not Calibri's");
+            int stamped = 0;
+            foreach (XElement _ in XElement.Load(Path.Combine(root, baseName, baseName + ".import.axml")).Elements("Face")) stamped++;
+            t.Check(stamped == 6, $"the stamp lists every face: {stamped}");
         }
 
         [A_XSDActionDependency("Fonts.StyleDeltaFont", "Test")]
@@ -129,7 +194,7 @@ namespace ArctisAurora.Tests
             if (asset == null) yield break;
 
             Dictionary<string, FontAsset> fonts = AssetRegistries.GetRegistryByValueType<string, FontAsset>(typeof(FontAsset));
-            t.Check(fonts.TryGetValue(asset, out FontAsset? font) && font.family == "Georgia" && font.atlasMetaData.styleCount == 4,
+            t.Check(fonts.TryGetValue(asset, out FontAsset? font) && font.family == "Georgia" && font.atlasMetaData.faceCount == 4,
                 "Georgia is registered with its four faces");
             t.Check(FontLibrary.AssetFor("Georgia") == asset, "the picker now lists Georgia as imported");
 

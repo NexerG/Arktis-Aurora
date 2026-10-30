@@ -64,6 +64,9 @@ namespace ArctisAurora.Core.Tex
         // \leaders: the box repeated across the glue; null leaves it empty
         public TexHBox? leader;
 
+        // TeX's space factor at an interword space, 1000 plain
+        public int spaceFactor = 1000;
+
         public TexGlueNode(TexGlue glue, bool interword, TexStyle style)
         {
             this.glue = glue;
@@ -116,6 +119,9 @@ namespace ArctisAurora.Core.Tex
 
         // the footnote this mark anchors, when it is a \footnote's mark in the text
         public TexFootnote? note;
+
+        // an array row's \strutbox height plus depth, em: \arraystretch × \baselineskip; 0 is the layout's
+        public float strut;
 
         public TexMathNode(string source, bool display, TexStyle style)
         {
@@ -197,6 +203,9 @@ namespace ArctisAurora.Core.Tex
 
         // \baselineskip when it ended, stretched by \baselinestretch, sp
         public int baselineSkip;
+
+        // a caption's \strut on every line
+        public bool strut;
 
         public TexParagraph(TexParStyle style) => this.style = style;
     }
@@ -314,6 +323,9 @@ namespace ArctisAurora.Core.Tex
 
         // the alignment of the paragraph the tabular sits in, taken when it ends
         public TexAlign align = TexAlign.Left;
+
+        // \parindent before a tabular that opens its paragraph, sp
+        public int indent;
 
         // source line of \begin{tabular}
         public int line;

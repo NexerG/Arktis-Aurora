@@ -38,7 +38,7 @@
 - A formula may hold `\sheet{Budget.sheet.axml#Data!B1}`: `TextRunControl.MathBoxFor` caches and parses `SheetLinks.ExpandMath(source)`, not the source. Number → `{value}`, text → `\text{value}`, range → `\text{#VALUE!}`, missing → `\text{#REF!}`.
 - A math run's `FontName` picks its math face when that asset has MATH constants (else the `"math"` asset); `TextRunControl.mathBoxes` is keyed `(source, display, FontAsset)`. `MathLayout.Present` falls back to the Regular face when the requested face lacks a character (L3; LM Math's italic has no Greek).
 - A changed cell value is a new cache key, so the cache never goes stale; `MathParser` is unchanged and still pure. Substitution only — nothing is evaluated. Rationale and gaps: [[sheets]] § S2c.
-- `FormulaPopup.PasteLink` (Ctrl+Shift+V in the source box) inserts `\sheet{ref}` for the last copied sheet cells; a sheet rename rewrites the references in open notes and on disk (`SheetLinks.RenameMath`).
+- `FormulaPopup.PasteLink` (Ctrl+V in the source box) inserts `\sheet{ref}` for the last copied sheet cells; a sheet rename rewrites the references in open notes and on disk (`SheetLinks.RenameMath`).
 
 ## M4 — inserting and editing (2026-10-02)
 - **Ctrl+M** inserts an inline formula, **Ctrl+Shift+M** a display one (Thorium `InputMap`; the two-modifier bind declared first). Right-click: Insert formula, Insert display formula, Edit formula.
@@ -87,6 +87,7 @@
 ## What changed
 - `<FontImport Face="n">` picks a face out of a `.ttc`; `AssetImporter.FaceOffset` reads the collection header and `ReadFace` starts its table directory there. Table offsets in a TTC are absolute, so nothing past the header moved.
 - `Face` is in the stamp and in `Matches`; a stamp without it reads 0, so existing bakes stay current.
+- Notes keep the font's OpenType constants for script placement; TeX documents without unicode-math use TFM rules via `MathConstants.sub1`… and `MathRules.Tfm` (see [[latex-editor]], L11c2).
 - After a bake, a face with a `MATH` table gets `{name}.math.axml` — `MathConstants`, every MathConstants-subtable field, lengths divided by `unitsPerEm`, the three percentages as read (73, 60, 65 for Cambria Math).
 - `<Charset Name="Math">`: ASCII, Greek (incl. ϑ ϕ ϖ ϱ ϵ), letterlike ℂℕℙℚℝℤℏℓ℘ℑℜℵ, operators, relations, arrows, ⟨⟩⌈⌉⌊⌋‖, delimiter pieces U+239B–U+23AE, ⌠⌡⎷, spacing accents and U+20D7 — 293 chars.
 - `cambria.ttc` face 1 baked with `cambriai.ttf` / `cambriab.ttf` as Italic / Bold → asset folder `Fonts/cambria`.

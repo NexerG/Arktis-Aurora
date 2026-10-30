@@ -247,6 +247,7 @@ namespace ArctisAurora.Core.UI
             && a.gradient == b.gradient
             && a.effect == b.effect
             && a.fontName == b.fontName
+            && a.variant == b.variant
             && a.fontSize == b.fontSize
             && a.strikethrough == b.strikethrough
             && a.underline == b.underline
@@ -256,7 +257,8 @@ namespace ArctisAurora.Core.UI
             && a.spaceWidth == b.spaceWidth
             && a.fill == b.fill
             && a.leader == b.leader && a.leaderWidth == b.leaderWidth && a.leaderInset == b.leaderInset
-            && a.note == b.note;
+            && a.note == b.note
+            && a.urlStretch == b.urlStretch && a.urlBreakPenalty == b.urlBreakPenalty && a.urlBigBreakPenalty == b.urlBigBreakPenalty;
 
         // Save: the spans cut back into runs. The last span absorbs whatever is left of the string,
         // so its count is read off the text rather than trusted.
@@ -280,6 +282,7 @@ namespace ArctisAurora.Core.UI
                     image = span.imageSource,
                     math = span.mathSource,
                     display = span.mathDisplay,
+                    strut = span.mathStrut,
                     sheet = span.sheetRef,
                     space = span.spaceWidth,
                     fill = span.fill,
@@ -287,6 +290,9 @@ namespace ArctisAurora.Core.UI
                     leaderWidth = span.leaderWidth,
                     leaderInset = span.leaderInset,
                     note = span.note,
+                    urlStretch = span.urlStretch,
+                    urlBreakPenalty = span.urlBreakPenalty,
+                    urlBigBreakPenalty = span.urlBigBreakPenalty,
                     width = span.imageWidth,
                     height = span.imageHeight,
                     wrap = span.wrap,
@@ -303,6 +309,7 @@ namespace ArctisAurora.Core.UI
                     gradient = span.gradient,
                     effect = span.effect,
                     fontName = span.fontName,
+                    variant = span.variant,
                     fontSize = span.fontSizeAuthored ? span.fontSize : 0,
                     fontSizeAuthored = span.fontSizeAuthored,
                     stylingType = span.stylingType

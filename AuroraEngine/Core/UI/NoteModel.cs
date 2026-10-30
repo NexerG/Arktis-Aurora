@@ -8,8 +8,9 @@ namespace ArctisAurora.Core.UI
     // One entry of a note: a block or a table.
     public abstract class NoteNode
     {
-        // the gap above, px; null takes the layout's block spacing
+        // the gap above, px; null takes the layout's block spacing; how far the gap may shrink on a full page, px
         public float? spaceBefore;
+        public float shrinkBefore;
 
         // a break before the entry, and the footnote or float it is part of; null in the flow
         public PageBreak pageBreak;
@@ -80,6 +81,12 @@ namespace ArctisAurora.Core.UI
         // the block's own line height as a multiple of its font size; null takes the layout's
         public float? lineHeight;
 
+        // a page break may not fall between this block and the next
+        public bool keepWithNext;
+
+        // TeX's \strut on every line: at least 0.7 of the line box above the baseline and 0.3 below
+        public bool strut;
+
         // the number this item restarts its list at; null counts on from the item above
         public int? listStart;
 
@@ -97,6 +104,7 @@ namespace ArctisAurora.Core.UI
                 style = appended.Style,
                 colorHex = string.Equals(appended.colorHex, legacyInkHex, StringComparison.OrdinalIgnoreCase) ? null : appended.colorHex,
                 fontName = appended.fontName,
+                variant = appended.variant,
                 fontSize = appended.fontSizeAuthored ? appended.fontSize : 0,
                 gradient = appended.gradient,
                 effect = appended.effect,
@@ -115,13 +123,17 @@ namespace ArctisAurora.Core.UI
                 collision = appended.image != null ? appended.collision : PictureCollision.Box,
                 mathSource = appended.image == null ? appended.math : null,
                 mathDisplay = appended.image == null && appended.math != null && appended.display,
+                mathStrut = appended.image == null && appended.math != null ? appended.strut : 0f,
                 sheetRef = appended.image == null && appended.math == null ? appended.sheet : null,
                 spaceWidth = appended.image == null && appended.math == null && appended.sheet == null ? appended.space : 0f,
                 fill = appended.image == null && appended.math == null && appended.sheet == null && appended.fill,
                 leader = appended.fill ? appended.leader : null,
                 leaderWidth = appended.fill ? appended.leaderWidth : 0f,
                 leaderInset = appended.fill ? appended.leaderInset : 0f,
-                note = appended.note
+                note = appended.note,
+                urlStretch = appended.urlStretch,
+                urlBreakPenalty = appended.urlBreakPenalty,
+                urlBigBreakPenalty = appended.urlBigBreakPenalty
             });
 
             run.text += slice;
@@ -141,6 +153,7 @@ namespace ArctisAurora.Core.UI
                 rightIndentLast = rightIndentLast,
                 ruleWeight = ruleWeight,
                 spaceBefore = spaceBefore,
+                shrinkBefore = shrinkBefore,
                 insert = insert,
                 seal = seal,
                 language = language,
@@ -149,7 +162,9 @@ namespace ArctisAurora.Core.UI
                 listLevel = listLevel,
                 listMarker = listMarker,
                 listIndent = listIndent,
-                lineHeight = lineHeight
+                lineHeight = lineHeight,
+                keepWithNext = keepWithNext,
+                strut = strut
             };
 
             StyleSpan carried = run.StyleAt(offset);
@@ -185,6 +200,7 @@ namespace ArctisAurora.Core.UI
                 rightIndentLast = rightIndentLast,
                 ruleWeight = ruleWeight,
                 spaceBefore = spaceBefore,
+                shrinkBefore = shrinkBefore,
                 pageBreak = pageBreak,
                 pageStyle = pageStyle,
                 markLeft = markLeft,
@@ -198,6 +214,8 @@ namespace ArctisAurora.Core.UI
                 listMarker = listMarker,
                 listIndent = listIndent,
                 lineHeight = lineHeight,
+                keepWithNext = keepWithNext,
+                strut = strut,
                 listStart = listStart,
                 isChecked = isChecked,
                 text = (run.text ?? string.Empty)[from..to]
@@ -243,6 +261,7 @@ namespace ArctisAurora.Core.UI
             rightIndentLast = kind.rightIndentLast;
             ruleWeight = kind.ruleWeight;
             spaceBefore = kind.spaceBefore;
+            shrinkBefore = kind.shrinkBefore;
             pageBreak = kind.pageBreak;
             pageStyle = kind.pageStyle;
             markLeft = kind.markLeft;
@@ -256,6 +275,8 @@ namespace ArctisAurora.Core.UI
             listMarker = kind.listMarker;
             listIndent = kind.listIndent;
             lineHeight = kind.lineHeight;
+            keepWithNext = kind.keepWithNext;
+            strut = kind.strut;
             listStart = kind.listStart;
             isChecked = kind.isChecked;
         }
@@ -290,6 +311,9 @@ namespace ArctisAurora.Core.UI
 
         // where a table narrower than the note sits; Justify is Left
         public TextAlignment alignment;
+
+        // a left-aligned table's indent, px: TeX's \parindent before a tabular that opens a paragraph
+        public float indent;
 
         // the cell inset across and down, px; null = the view's own
         public Vector2? cellPadding;

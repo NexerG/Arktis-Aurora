@@ -29,10 +29,13 @@
       <xs:enumeration value="TimeFormat" />
       <xs:enumeration value="DateFormat" />
       <xs:enumeration value="DateTime" />
+      <xs:enumeration value="LanguagePacks" />
+      <xs:enumeration value="Fonts" />
       <xs:enumeration value="DocumentSettings" />
       <xs:enumeration value="SessionTab" />
       <xs:enumeration value="SessionPane" />
       <xs:enumeration value="SessionWorkspace" />
+      <xs:enumeration value="SessionRoot" />
       <xs:enumeration value="SessionWindow" />
       <xs:enumeration value="SessionScope" />
       <xs:enumeration value="Session" />
@@ -42,6 +45,7 @@
       <xs:enumeration value="Palette" />
       <xs:enumeration value="Zoom" />
       <xs:enumeration value="DocumentZoom" />
+      <xs:enumeration value="SortedTasks" />
       <xs:enumeration value="UI" />
       <xs:enumeration value="Threads" />
       <xs:enumeration value="FrameCap" />
@@ -62,6 +66,7 @@
       <xs:enumeration value="Profiling" />
       <xs:enumeration value="WindowMode" />
       <xs:enumeration value="CloseAction" />
+      <xs:enumeration value="CheckedEnd" />
     </xs:restriction>
   </xs:simpleType>
   <xs:simpleType name="Input">
@@ -166,6 +171,7 @@
       <xs:enumeration value="ListLevel" />
       <xs:enumeration value="DocumentLayout" />
       <xs:enumeration value="PageMode" />
+      <xs:enumeration value="MathRules" />
       <xs:enumeration value="PageSize" />
       <xs:enumeration value="Page" />
       <xs:enumeration value="SlotPlace" />
@@ -177,6 +183,7 @@
       <xs:enumeration value="Splitter" />
       <xs:enumeration value="SplitView" />
       <xs:enumeration value="StackPanel" />
+      <xs:enumeration value="Switch" />
       <xs:enumeration value="TabItem" />
       <xs:enumeration value="TabView" />
       <xs:enumeration value="TextBox" />
@@ -184,6 +191,7 @@
       <xs:enumeration value="PictureCollision" />
       <xs:enumeration value="TextRun" />
       <xs:enumeration value="TitleBar" />
+      <xs:enumeration value="ToggleSwitch" />
       <xs:enumeration value="WindowFrame" />
       <xs:enumeration value="WindowRoot" />
       <xs:enumeration value="WorkspaceBar" />

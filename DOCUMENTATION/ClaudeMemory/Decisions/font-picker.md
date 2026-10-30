@@ -20,7 +20,7 @@
 ## Why these choices
 
 **Families are grouped by OpenType name ID 1, style from OS/2 fsSelection.**
-Name ID 1 holds at most Regular/Bold/Italic/Bold Italic, which is exactly the engine's four faces, so arial/arialbd/ariali/arialbi become "Arial" while Arial Black and Arial Narrow stay their own families. Style bits: bold 0x20, italic 0x01; `head.macStyle` fallback. Rejected: filename-suffix grouping (the importer's old probe) — it guesses and is wrong for many families; the user also rejected listing file names.
+(Extended 2026-10-30 by [[font-variants]]: name-ID-1 families sharing a typographic family name, ID 16, now sit as variants under the family named as it, e.g. Calibri Light under Calibri; ID 1 stays the inner layer. The sentence "exactly the engine's four faces" below no longer holds: a family is a list of faces.) Name ID 1 holds at most Regular/Bold/Italic/Bold Italic, so arial/arialbd/ariali/arialbi become "Arial" while Arial Black and Arial Narrow stay their own families. Style bits: bold 0x20, italic 0x01; `head.macStyle` fallback. Rejected: filename-suffix grouping (the importer's old probe) — it guesses and is wrong for many families; the user also rejected listing file names.
 
 **A styled face is taken only from face 0 of its file.**
 `ImportFont` reads bold/italic faces at index 0. A family with no regular promotes its bold, then italic, then bold italic.

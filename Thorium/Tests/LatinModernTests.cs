@@ -41,7 +41,8 @@ namespace Thorium.Tests
             t.Check(MathF.Abs(a - 0.5f) < 0.01f && MathF.Abs(m - 0.833f) < 0.01f, $"advances follow cmr10: a {a}, m {m}");
 
             Glyph x = roman.GetGlyphAndIndex('x').Item1;
-            t.Check(roman.hasItalic && roman.hasBold && roman.hasBoldItalic && Key(x.regular) != Key(x.italic),
+            t.Check(roman.HasFace(0, FontStyle.Italic) && roman.HasFace(0, FontStyle.Bold) && roman.HasFace(0, FontStyle.BoldItalic)
+                && Key(x.regular) != Key(roman.Metrics(x, roman.Effective(0, FontStyle.Italic))),
                 "the Roman family has its italic, bold and bold-italic faces");
 
             AtlasMetaData mono = Load("lmmono10-regular");

@@ -47,6 +47,7 @@ It never throws. Problems are collected in `errors` and the run recovers the way
 | `parIndent` | field | The paragraph indent in points, 15, 17 or 18 for a 10, 11 or 12pt class. |
 | `displaySkips` | field | The display skips in points, 10, 11 and 12 for a 10, 11 and 12pt class. |
 | `lineSpread` | field | The `\baselinestretch` in force when the first body paragraph ended; lowering sets the document's line height to 1.2 times it. |
+| `unicodeMath` | property | True when unicode-math or mathspec is loaded; lowering then leaves `DocumentLayout.MathRules` at OpenType, otherwise writes `MathRules="Tfm"` so math scripts and limits follow TeX's classic rules. |
 | `documentClass`, `sizeOption`, `paper` | fields | What `\documentclass[…]{…}` and `geometry` asked for. |
 | `marginTop`, `marginBottom`, `marginLeft`, `marginRight` | fields | Margins in mm; null means the class default. |
 | `normalSize`, `expander` | fields | The base size and the expander underneath. |
@@ -85,7 +86,7 @@ It never throws. Problems are collected in `errors` and the run recovers the way
 		set it in the current font, colour and underline
 		a ligature in Roman or Sans merges with the characters that follow, braces break it, mono has none
 	a space
-		append interword glue
+		append interword glue   // a source space carries the tracked space factor; control space, `~`, labels and footnote marks stay 1000
 	a control sequence from a table
 		append the text symbol, or compose the accent with its base
 	`$` or `\(` or `\[`
@@ -129,11 +130,38 @@ It never throws. Problems are collected in `errors` and the run recovers the way
 ### Ligatures and accents
 	`` `` `` becomes “, `''` becomes ”, ` becomes ‘, ' becomes ’
 	`--` becomes –, `---` becomes —, `!`` and `?`` become ¡ and ¿
-	ff, fi, fl, ffi and ffl become the single characters U+FB00 to U+FB04
+	ff, fi, fl, ffi and ffl become the single characters U+FB00 to U+FB04   // only when the family has no fontspec name or its name starts with "Latin Modern" (`JoinsF`); a fontspec font gets only the text ligatures: the dashes, the quotes, ¡ and ¿
 	an accent composes with its base through Unicode NFC (base plus combining mark)
 	`\i` and `\j` as accent bases become i and j
 	an accent over nothing gives the spacing accent
 	a form with no precomposed character keeps the base letter and logs a warning
+
+### Space factor and the breaking registers
+	`SfCode (c)`
+		`.`, `?` and `!` give 3000
+		`:` gives 2000
+		`;` gives 1500
+		`,` gives 1250 under `\nonfrenchspacing`, else 1000
+		`)`, `]`, `'`, `’` and `”` give 0
+		a Unicode capital gives 999
+		anything else gives 1000
+	`AddChar (c)`
+		`code` = `SfCode (c)`
+		if `code` is 0
+			leave `spaceFactor` as it is
+		else if `code` > 1000 and `spaceFactor` < 1000
+			`spaceFactor` = 1000
+		else
+			`spaceFactor` = `code`
+		the factor is reset to 1000 when the last node is not the character that set it
+	`\@` sets the factor to 1000
+	`\frenchspacing` sets `frenchSpacing`, so every space takes factor 1000
+	`\nonfrenchspacing` clears it
+	`Interword (factor)`
+		append a `TexGlueNode` with `spaceFactor` = `factor`   // only a source space passes the tracked factor
+	`tolerance`, `pretolerance` and `emergencyStretch` read the registers in pt, for lowering to write
+
+Lowering also writes `AdvanceGrid` = 1000 on the document's `DocumentLayout`, so the measurer truncates every glyph width and kern to 1/1000 em as LuaLaTeX does. `TexLowering.Advance`, and so `TextWidth` (used by `\settowidth` and leaders), applies the same grid.
 
 ### Hyphenation commands
 	`\-` adds a U+00AD character, and the prelude no longer defines it as empty
@@ -153,7 +181,7 @@ It never throws. Problems are collected in `errors` and the run recovers the way
 		insert `\ifcsname <name>break\endcsname\<name>break\fi`, then the command again   // a defined `\sectionbreak` runs before every `\section`
 
 ### Vertical glue and indent
-	`VSkip` appends vertical glue in natural widths, with no stretch or shrink
+	`VSkip (glue, merge)` appends vertical glue with its natural width and its shrink   // the shrink reaches `ShrinkBefore` in the lowering; `\topsep`, `\itemsep`, `\parsep`, `\parskip`, `\partopsep`, display skips and default section skips carry `minus`; float separations, enumitem keys and titlesec spacing stay rigid
 		`\vskip`, `\vspace` and `\bigskip` add
 		structural skips (sections, lists, floats, verbatim, quote and center) set `merge`, so they take the larger of themselves and the pending glue like `\addvspace`
 	a heading is preceded and followed by a skip, `ex` being the normal font's
@@ -162,6 +190,8 @@ It never throws. Problems are collected in `errors` and the run recovers the way
 		deeper levels 3.25ex above and 1.5ex below
 		a run-in heading is not indented
 	for a list
+		the opening skip is `TopSkip` plus the outer `\parskip` (`OuterParskip`: the enclosing list's `\parsep`, else the register); the end skip has none
+		list indents are `\leftmargini`..`iv` in em of `\normalsize` (2.5, 2.2, 1.87, 1.7)
 		`ListSkip` gives `\topsep` above and below, `\itemsep + \parsep` between items, `\parsep` between paragraphs of one item
 		the skip is full at depth 1, half at depth 2 and a quarter deeper
 		`\topsep` is 8, 9, 10pt and `\itemsep` 4, 4.5, 5pt for 10, 11, 12pt
@@ -187,11 +217,25 @@ It never throws. Problems are collected in `errors` and the run recovers the way
 	a float inside a box, footnote, caption, heading, table cell or another float reports "LaTeX Error: Not in outer par mode" and stays inline
 	where the float lands on a page is `Paginate`'s decision, not the typesetter's
 	`\caption` sets a centred paragraph built from the language's `\fnum@<kind>` and the caption settings (see Languages and captions), numbered chapter.n in a report or book
+	`Caption`
+		if the caption follows float content
+			add a VSkip of the `abovecaptionskip` register   // 10pt from the prelude
+		mark the caption paragraph `strut`   // not for algorithm floats
+	`EndCaption`
+		if the caption came first
+			add the `abovecaptionskip` skip after it
+	`SingleSpaced`   // setspace single-spaces footnotes and floats
+		true in a footnote or a float, except the body of an `[H]` float
+		a caption stays single
 	`\includegraphics` looks for the file under the source's folder and each `\graphicspath` entry
 		with no extension, try .png, .jpg, .jpeg
 		a PDF, EPS or PS is reported as unsupported
 		a missing file is reported as "File `x' not found"
 	a tabular ends the paragraph it appears in
+	`BeginTabular`
+		if the tabular opens a paragraph in vertical mode, outside tables and boxes
+			`TexTable.indent` = `\parindent`   // TeX indents it and lets it overflow right
+			consume noIndent, afterHeading and afterEnvironment
 	for each cell
 		start from the tabular's starting style, a cell is not an expander group
 		`&` ends the cell and the spaces after it are skipped
@@ -279,10 +323,13 @@ A global `\setlength` of `\topsep`, `\itemsep` or `\parsep` is overwritten at th
 			`bodyStretch` = `lineStretch`
 	a stretch changed after that is logged once and ignored
 	`lineSpread` = `bodyStretch`, and lowering sets the document's `LineHeight` to 1.2 × `lineSpread`
+	`displaySkipStretch` = `lineSpread` when setspace is loaded, else null   // setspace's `\displayskipstretch`
+		lowering multiplies the four display skips by it and drops their shrink
+		`Float()` divides it back out, except for a placement containing `H`
 
 The document's line height is the body `\baselineskip` over `\normalsize`, stretched by `lineSpread`; lowering writes it as the layout's `LineHeight`. A paragraph whose pitch differs gets its own `<Block LineHeight>`: floats and footnotes are single-spaced when setspace is loaded, and `\fontsize`'s second argument is read. A paragraph's pitch is the `\baselineskip` in force at paragraph end (TeX's rule), so a `\fontsize` inside a group that closes before `\par` uses the outer skip. `\newfontface\cs{…}` defines `\cs` to set the face and then run `\selectfont`, so `\fontsize{a}{b}\cs` takes the pending size.
 #### Baseline spacing and vertical skips
-A TeX line's pitch is its `\baselineskip`, not a multiple of its font size. The typesetter keeps `TexStyle.baselineSkip` (sp, 0 = the size command's `baselineSkipPoints` entry for 10/11/12pt) and stamps each paragraph with it, stretched by `lineSpread`. Lowering turns a pitch that differs from the document's into `<Block LineHeight>`.
+Array, matrix and cases rows in a formula are spaced by a strut the typesetter computes per formula: `ArrayStrut()` is `\arraystretch` (expanded and parsed, default 1 from the prelude) times the `\baselineskip` at the formula (stretched by `\baselinestretch`, single in floats and footnotes under setspace) over the font size, set in `Place` when the source contains `\begin{` and written on the run as `Strut` (em). The math layouter scales its row struts by strut / 1.2, so a formula with no strut, and every note, is unchanged. A TeX line's pitch is its `\baselineskip`, not a multiple of its font size. The typesetter keeps `TexStyle.baselineSkip` (sp, 0 = the size command's `baselineSkipPoints` entry for 10/11/12pt) and stamps each paragraph with it, stretched by `lineSpread`. Lowering turns a pitch that differs from the document's into `<Block LineHeight>`.
 	`BaselineSkip(style)`
 		if `style.baselineSkip` is set
 			return it
@@ -310,7 +357,7 @@ A TeX line's pitch is its `\baselineskip`, not a multiple of its font size. The 
 Display skips: a display that starts a paragraph (a blank line before it) gets `\parskip` and one empty line above and `\belowdisplayshortskip` below; a display in mid-paragraph gets `\abovedisplayskip` and `\belowdisplayskip`; the skip below applies even when the display ends its paragraph. A caption measures its natural width with `Width(hlist)`: it is centred when it fits `\linewidth` (caption's `singlelinecheck`), else justified.
 
 #### Fonts with fontspec
-`fontspec` is a known package. Its commands record or select a font by the name the source gives, and lowering decides what that name draws in (see Font resolution below). The file keys (`Path=`, `Extension=`, `UprightFont=`) and the other options (`Ligatures=TeX`) are read and ignored, so the font is found by its family name.
+`fontspec` is a known package. Its commands record or select a font by the name the source gives, and lowering decides what that name draws in (see Font resolution below). The file keys (`Path=`, `Extension=`, `UprightFont=`, `BoldFont=`, `ItalicFont=`, `BoldItalicFont=`, with `*` meaning the name) are recorded in `TexTypesetter.fontFiles` as absolute paths under the source's folder, so a font that ships beside the document is used; the other options (`Ligatures=TeX`) are read and ignored.
 	`\setmainfont`, `\setsansfont` and `\setmonofont` store the name `FontName` reads in `mainFont`, `sansFont` and `monoFont`
 	`\fontspec{name}` sets the `face` of the current `TexFont` to the name
 	`\newfontface\cs{name}` and `\newfontfamily\cs{name}` both call `NewFontFace`
@@ -400,6 +447,9 @@ The lists are not formatted in C#. `TexFormat.Prelude` holds ports of latex.ltx'
 	`\DeclareNameAlias{default|author|editor}{given-family|family-given|family-given/given-family}`
 		store it as the settings' `nameFormat`
 	`\parencite` and `\autocite` are `\cite`
+	`\url` inside the bibliography, with biblatex loaded (`bibUrls`)
+		insert U+E006 after the big breaks `:` `-` and U+E005 after the ordinary break set
+		set the style's `urlStretch` (3mu), `urlBigBreakPenalty` (100) and `urlBreakPenalty` (200)   // `\biburlsetup`; outside the bibliography `\url` breaks freely with U+200B
 	`\printbibliography[opts]` (`PrintBibliography`)
 		read `heading=bibintoc` and `title=`
 		`PlaceBibliography` places the mark and records `bibLanguage`
@@ -431,6 +481,52 @@ The lists are not formatted in C#. `TexFormat.Prelude` holds ports of latex.ltx'
 	`\url`
 		un-escape `\%`, `\#`, `\_`, `\&`
 		insert U+200B after each character of `UrlBreaks` except the last one   // "./-_?&=:#!;,)]|@+"
+
+#### Theorems, algorithms and the @ catcode
+`amsthm` and `algorithm` are known packages. `amsthm` is read from `TexFormat.Amsthm` as working macros: a theorem head is bold "Name N" with an optional "(note)" and a full stop, the body font comes from the theorem style (plain is italic, definition and remark are upright), `\newtheoremstyle` keeps only its body-font argument, `\swapnumbers` does nothing, `\newtheorem*` is unnumbered and `proof` sets an italic "Proof." and ends with `\qed`, which is `\nobreak\hfill$\square$`. The `algorithm` package makes a float of kind "algorithm" through the same float path as figures and tables, ruled by default, with plain and boxed as the other styles (boxed draws no frame).
+
+Every package or class read saves the catcode of `@`, makes it a letter and puts the saved value back at the end, as `\RequirePackage` does. `\input` leaves it alone.
+
+	`Packages (amsthm)`
+		`ReadCode (TexFormat.Amsthm)`
+	`Packages (algorithm, options)`
+		`Algorithm (options)`
+			`algorithmStyle` is plain, ruled or boxed   // ruled by default
+			`section` or `chapter` numbers the counter within that level, `\thealgorithm` = `\the<within>.\arabic{algorithm}`
+			register `algorithm` and `algorithm*` as float kind "algorithm"
+			read `TexFormat.Algorithm`
+			if ruled
+				`\caption@lfont@algorithm` = `\bfseries`
+				`\caption@sep@algorithm` = `\space`
+	`FloatStyle (vlist)`
+		if ruled
+			rule, 2pt, caption, 2pt, rule, 2pt, body, 2pt, rule   // the caption moves to the top wherever it was written
+		else
+			move the caption last
+	`ReadCode (code, atEnd)`
+		save `expander.atCatcode`
+		set `expander.atCatcode` to Letter
+		read the code
+		run `atEnd`
+		restore the saved catcode
+
+#### Math in text mode
+A math-only command, `^` or `_` met in text mode recovers the way TeX does. The error "Missing $ inserted" is reported, the token is pushed back and inline math starts in front of it. That math runs to the next `$`, to a `}` closing a group opened outside the math ("Extra }, or forgotten $"), or to `\par` or the end of an environment. Text set as math loses its spaces and any letter the math font lacks. The expander knows which names are math-only through `mathOnly`, which `TexLowering.Compile` sets to the keys of `MathSymbols.commands`, `bigOps`, `operatorNames`, `accents` and `delimiters`, because `Core.Tex` does not reference `Core.UI`.
+
+	`MathShift`
+		track the brace depth at the start of the math
+		on a `}` that closes a group opened outside the math
+			report "Extra }, or forgotten $"
+			end the inline math
+			dispatch the `}`
+	`^` or `_` in text
+		report "Missing $ inserted"
+		push the token back
+		start inline math
+	`TexExpander` meets a name in `mathOnly` that is undefined outside math
+		report "Missing $ inserted"
+		push the name back
+		return a `$` (MathShift) token in front of it
 
 ### Run, the end of the document
 	typeset the body up to `\end{document}`
@@ -521,11 +617,22 @@ A font name from fontspec becomes a font asset here. Termes and Carlito are bund
 		else return `roman`
 	`Named(name)`
 		if `named` has the name, return it
-		if `aliases` has the name and the alias asset is registered in this host, use it   // Times New Roman, Times, Nimbus Roman, TeX Gyre Termes → `tex-gyre-termes`; Calibri, Carlito → `carlito`; Latin Modern Roman → `latin-modern`; Latin Modern Mono → `latin-modern-mono`
+		if `aliases` has the name and the alias asset is registered in this host, use it   // exact bundled names only: TeX Gyre Termes → `tex-gyre-termes`; Carlito → `carlito`; Latin Modern Roman → `latin-modern`; Latin Modern Mono → `latin-modern-mono`
 		else if a font asset of that name is registered, use it
-		else if `FontLibrary.AssetFor(name)` finds a family imported through the font picker or a bundled family, use it
+		else if `FontLibrary.AssetFor(name)` finds a family imported through the font picker, an earlier compile or a bundled family, use it
+		else if `Imported(name)` returns an asset, use it
+		else if `standIns` has the name and its asset is registered, use it   // Times New Roman, Times, Nimbus Roman → `tex-gyre-termes`; Calibri → `carlito`
 		else log the name once (Info, channel Tex; `missing` keeps it from repeating), keep the default face and return null
+	`Imported(name)`
+		if `TestRunner.active`, return null   // tests keep the stand-ins
+		if the Path= files of this typesetter (`files`) name the font and the regular file exists
+			build an `InstalledFamily` from those files   // family name from `FontCatalog.ReadFace`, only faces that exist
+		else
+			`FontLibrary.EnsureCatalog()`
+			`FontCatalog.Find(name)` gives the installed family, or null
+		`FontLibrary.ImportNow(family, "Latex")` bakes it on the calling thread and returns the asset name   // the compile blocks for the bake, about 6 to 8 s per family, once; the family then appears in the font picker
 	a font imported later through the picker is used on the next compile, because `named` is per compile and `missing` is not
+	the PDF export finds a bold or italic face that is not shipped or installed beside the regular face's source file, when that source is a full path
 	the running-head `Slot`, `Advance`, `TextRun`, the Code style, Code blocks and `TexAtlasMetrics.XHeight` all go through `Faces` and `FontFor`
 
 ### Pages, footnotes and `PageRefs` in `TexLowering`
@@ -595,7 +702,7 @@ Not exported: clickable `\href` links, bookmarks, floating pictures, gradients a
 List bullets are exported. While recording, an icon control records its name and artwork box, and the writer draws the six default bullet shapes (disc, circle, square, outlined square, triangle, outlined triangle) as filled paths from a copy of their SVG geometry, with the outlines even-odd. Any other icon is skipped. If a bullet SVG changes, the writer's copy has to follow.
 
 ## Not supported yet
-`\suppressfloats`, `placeins` and `\FloatBarrier`, `afterpage`, `tabularx`, `tabular*`, `longtable`, `\multirow`, natbib, the biblatex commands `\textcite`, `\footcite` and `\fullcite`, biber-only features, stretch inside a `\url` (`\Urlmuskip`), `\autoref`, `\nameref`, subfigure, clickable references, `\arrayrulecolor`, `\parindent` on left-aligned tables, `\numberwithin`, `subequations`, `\intertext`, `\shoveleft`, `\shoveright`, `\hdotsfor`, mathtools, `\setbox`, `\wd`, `\lastskip`, `\appendix`, clickable contents entries, tocloft's `\cftsetindents`, `\cftpagenumbersoff` and `\newlistof`, and tocloft's non-`[titles]` title formatting. There is no kerning. Vertical glue has no stretch or shrink (`\addvspace` merges against the last skip, `Spacing.last`; mid-page `\lineskip` is not modelled), a heading is not kept with the next paragraph, an over-wide tabular fits the text width instead of sticking into the margin, infinite glue vanishes except horizontal fil glue, which lowering turns into a fill run, `\tolerance`, `\pretolerance`, `\emergencystretch` and `\exhyphenpenalty` are registers that nothing reads, a `\rule` inside running text draws nothing, `\raisebox` ignores its raise, titlesec shapes other than hang and block are set as hang, `\titlespacing`'s right argument is ignored, `\roman`, `\alph`, `\Roman` and `\Alph` are undefined inside `\the<counter>`, `\labelsep` and `\leftmargin` are not registers, setspace's `spacing`, `onehalfspace` and `doublespace` environments are missing, `\sectionbreak` runs whether or not titlesec is loaded, bibliography entries have no `\itemsep` between them, a quotation's `\listparindent` is not modelled, a `\cline` under part of a merged cell rules the whole cell, booktabs gaps do not interrupt vertical rules, a spacer never breaks a line, and display formulas inside table cells get no display skips. Hyphenation is US English only, so accented words are never hyphenated; an explicit hyphen in a word ("well-known") is not a break opportunity; `\lefthyphenmin`, `\righthyphenmin`, `\uchyph` and `\hyphenpenalty` are not read. The preview breaks a paragraph Knuth-Plass only where a break set exists at tolerance 200; the rest stay greedy. Small caps are set upright and Sans is set in Roman unless `\setsansfont` names a font. fontspec's file keys and options are ignored, a font name that resolves to nothing keeps the default face and is only logged, and `indentfirst` is not supported. The em dash and the en dash do not draw at 13 px in a note. A `\def` inside a tabular cell leaks into later cells. `\hbox to` content wider than its box overflows (TeX would shrink `\hss`; spacers never go negative). A `\label` in vertical mode with no paragraph before it (right after a mark or a table) is dropped, so a contents entry pointing there keeps "??" as its page. A starred titlesec heading loses the `\hspace` of the class's before-code (7 pt left of the thesis). Two-sided page styles (`[LE,RO]` reads only the odd entry, `\cleardoublepage` is `\clearpage`), `\pagenumbering`, `\footnotemark`, `\footnotetext`, footnotes split across pages, `\footnotesep` and `\renewcommand` of `\sectionmark` are not supported; a mid-document `\pagestyle` sets the whole document's style, and a `\label` inside display math or a table cell has no page site.
+`\suppressfloats`, `placeins` and `\FloatBarrier`, `afterpage`, `tabularx`, `tabular*`, `longtable`, `\multirow`, natbib, the biblatex commands `\textcite`, `\footcite` and `\fullcite`, biber-only features, stretch inside a `\url` (`\Urlmuskip`), `\autoref`, `\nameref`, subfigure, clickable references, `\arrayrulecolor`, `\parindent` on left-aligned tables, `\numberwithin`, `subequations`, `\intertext`, `\shoveleft`, `\shoveright`, `\hdotsfor`, mathtools, `\setbox`, `\wd`, `\lastskip`, `\appendix`, clickable contents entries, tocloft's `\cftsetindents`, `\cftpagenumbersoff` and `\newlistof`, and tocloft's non-`[titles]` title formatting. There is no kerning. Vertical glue has no stretch or shrink (`\addvspace` merges against the last skip, `Spacing.last`; mid-page `\lineskip` is not modelled), a heading is not kept with the next paragraph, an over-wide tabular fits the text width instead of sticking into the margin, infinite glue vanishes except horizontal fil glue, which lowering turns into a fill run, `\tolerance`, `\pretolerance`, `\emergencystretch` and `\exhyphenpenalty` are registers that nothing reads, a `\rule` inside running text draws nothing, `\raisebox` ignores its raise, titlesec shapes other than hang and block are set as hang, `\titlespacing`'s right argument is ignored, `\roman`, `\alph`, `\Roman` and `\Alph` are undefined inside `\the<counter>`, `\labelsep` and `\leftmargin` are not registers, setspace's `spacing`, `onehalfspace` and `doublespace` environments are missing, `\sectionbreak` runs whether or not titlesec is loaded, bibliography entries have no `\itemsep` between them, a quotation's `\listparindent` is not modelled, a `\cline` under part of a merged cell rules the whole cell, booktabs gaps do not interrupt vertical rules, a spacer never breaks a line, and display formulas inside table cells get no display skips. Hyphenation is US English only, so accented words are never hyphenated; an explicit hyphen in a word ("well-known") is not a break opportunity; `\lefthyphenmin`, `\righthyphenmin`, `\uchyph` and `\hyphenpenalty` are not read. The preview breaks a paragraph Knuth-Plass only where a break set exists at tolerance 200; the rest stay greedy. Small caps are set upright and Sans is set in Roman unless `\setsansfont` names a font. fontspec's file keys are honoured and its other options are ignored, a font name that resolves to nothing keeps the default face and is only logged, and `indentfirst` is not supported. The em dash and the en dash do not draw at 13 px in a note. A `\def` inside a tabular cell leaks into later cells. `\hbox to` content wider than its box overflows (TeX would shrink `\hss`; spacers never go negative). A `\label` in vertical mode with no paragraph before it (right after a mark or a table) is dropped, so a contents entry pointing there keeps "??" as its page. A starred titlesec heading loses the `\hspace` of the class's before-code (7 pt left of the thesis). Two-sided page styles (`[LE,RO]` reads only the odd entry, `\cleardoublepage` is `\clearpage`), `\pagenumbering`, `\footnotemark`, `\footnotetext`, footnotes split across pages, `\footnotesep` and `\renewcommand` of `\sectionmark` are not supported; a mid-document `\pagestyle` sets the whole document's style, and a `\label` inside display math or a table cell has no page site.
 
 ## Related
 - [[Tex Expander]] — the tokens this reads

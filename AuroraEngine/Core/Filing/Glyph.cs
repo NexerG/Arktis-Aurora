@@ -29,11 +29,12 @@ namespace ArctisAurora.Core.Filing
     [@Serializable]
     public class Glyph
     {
-        // one set per face of the family
+        // the first face's metrics; an atlas keeps the other faces' in AtlasMetaData.faceMetrics
         public GlyphMetrics regular;
-        public GlyphMetrics bold;
-        public GlyphMetrics italic;
-        public GlyphMetrics boldItalic;
+
+        // position in the atlas's glyphs, set on load
+        [@NonSerializable]
+        public int index;
 
         [@NonSerializable]
         public List<List<Edge>> edgeContours = new List<List<Edge>>();
@@ -51,25 +52,6 @@ namespace ArctisAurora.Core.Filing
         {
             regular.glyphWidth = 1;
             regular.glyphHeight = 1;
-        }
-
-        public GlyphMetrics Metrics(FontStyle style) => style switch
-        {
-            FontStyle.Bold => bold,
-            FontStyle.Italic => italic,
-            FontStyle.BoldItalic => boldItalic,
-            _ => regular
-        };
-
-        public void SetMetrics(FontStyle style, GlyphMetrics metrics)
-        {
-            switch (style)
-            {
-                case FontStyle.Bold: bold = metrics; break;
-                case FontStyle.Italic: italic = metrics; break;
-                case FontStyle.BoldItalic: boldItalic = metrics; break;
-                default: regular = metrics; break;
-            }
         }
 
         public void BuildEdges()

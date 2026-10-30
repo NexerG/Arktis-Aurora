@@ -13,11 +13,12 @@ notes, sheets and a todo board under Blender-style workspace tabs, plus a simpli
 
 ## Settled by the user (2026-10-03)
 - Reach: a cell can be read from other pages of its file, from other sheet files, by notes, and by note math.
-- Ctrl+V into a sheet pastes values; Paste link (Ctrl+Shift+V) pastes references. OS clipboard gets values.
+- Ctrl+V pastes references, a plain paste when none apply; Ctrl+Shift+V pastes values (user, 2026-10-30; the
+  reverse until then). OS clipboard gets values.
 - A sheet copy pasted into a note: one cell → an inline live value; a range → a note table of live values.
 - Excel precedence (`-2^2` = 4).
 - Sliced S2a (one file) then S2b (the rest).
-- S2b answers: notes match the sheet's keys (Ctrl+V plain, Ctrl+Shift+V live); `.md` writes
+- S2b answers: notes match the sheet's keys (Ctrl+V live, Ctrl+Shift+V plain); `.md` writes
   `![[Budget.sheet.axml#Expenses!B3]]`; a rename inside Thorium rewrites references, a delete or outside rename is
   `#REF!`; freshness is Thorium's own saves (no watcher, no mtime checks).
 - S2b forks: a range in a note is one read-only live grid block (implemented in S2b3 as a display object span, not a block kind), same in `.axml` and `.md` (replaces "a note table of
@@ -70,7 +71,7 @@ notes, sheets and a todo board under Blender-style workspace tabs, plus a simpli
 | S7 | formula functions — comparisons `= <> < > <= >=` (result the number 1/0; user settled, no boolean kind), MIN, MAX, AVERAGE, ROUND, ROUNDUP, ROUNDDOWN, IF beside SUM; a plain sheet, no structured Tables (user settled) | landed 2026-10-06 |
 
 ## Owed for S2b3 — resolved 2026-10-04
-- Done: Ctrl+Shift+V stays on `Sheet.PasteLink`, which falls back to `Text.PasteLink` outside a sheet — `Text.PasteLink`
+- Done: the paste-link key (Ctrl+V since 2026-10-30) is `Sheet.PasteLink`, which falls back to `Text.PasteLink` outside a sheet — `Text.PasteLink`
   took over that fallback.
 - Rewriting `.md`/`.axml` notes on a sheet rename: re-saving a note does not reproduce its bytes, so this needs a
   token-level rewrite — done (`SheetLinks.Renamed`).

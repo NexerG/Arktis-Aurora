@@ -59,8 +59,8 @@ paragraphs. Cut follows `DeleteSelection`'s `OneContainer` refusal.
 ## Known gaps
 - Real OS clipboard untested (above). Ctrl+C/X/V name `LeftControl` but take either Ctrl since
   [[named-input-modifiers]] decision 6
-- `Text.PasteLink` (Ctrl+Shift+V, via `Sheet.PasteLink`'s fallback) pastes a live sheet link into a note, else a plain
-  paste — see [[sheets]] S2b3
+- Ctrl+V is `Sheet.PasteLink`, whose fallback `Text.PasteLink` pastes a live sheet link into a note, else a plain
+  paste; Ctrl+Shift+V is `Text.Paste` — see [[sheets]] S2b3
 - A large paste is bounded by the glyph ceiling (~50k `GlyphControl`s); nothing refuses it
 - `Text.Paste` is text-only; `note-images-plan` stage 3 adds the picture branch ahead of it
 - Only Thorium binds text keys; Carbon/AuroraEditor get the actions but no keys

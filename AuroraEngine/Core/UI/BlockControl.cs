@@ -131,8 +131,11 @@ namespace ArctisAurora.Core.UI
         [A_XSDElementProperty("FontName", "UI", "Font family; absent takes the block's.")]
         public string fontName { get; set; }
 
+        [A_XSDElementProperty("Variant", "UI", "The font's variant by name, such as Light or Black; absent, or one the font lacks, is its plain face.")]
+        public string variant { get; set; }
+
         [A_XSDElementProperty("FontSize", "UI", "Type size in pixels; only written when the run chose one.")]
-        public int fontSize { get; set; }
+        public float fontSize { get; set; }
 
         [A_XSDElementProperty("FontSizeAuthored", "UI", "The run's FontSize was chosen, not taken from the styling scheme.")]
         public bool fontSizeAuthored { get; set; }
@@ -170,6 +173,9 @@ namespace ArctisAurora.Core.UI
         [A_XSDElementProperty("Display", "UI", "Formula is display math: a line of its own, centred.")]
         public bool display { get; set; }
 
+        [A_XSDElementProperty("Strut", "UI", "An array row's strut in em, height plus depth, as TeX's \\arraystretch × \\baselineskip; absent is 1.2.")]
+        public float strut { get; set; }
+
         [A_XSDElementProperty("Sheet", "UI", "Sheet cell or range shown live, as file#Page!A1 or file#Page!A1:B2; the run carries no text.")]
         public string sheet { get; set; }
 
@@ -190,6 +196,15 @@ namespace ArctisAurora.Core.UI
 
         [A_XSDElementProperty("Note", "UI", "The id of the footnote this run anchors; its page reserves room for it.")]
         public string? note { get; set; }
+
+        [A_XSDElementProperty("UrlStretch", "UI", "A biblatex URL's \\Urlmuskip: stretch between its characters in pixels; absent is none.")]
+        public float urlStretch { get; set; }
+
+        [A_XSDElementProperty("UrlBreakPenalty", "UI", "The penalty of a line ending after one of the URL's ordinary break characters.")]
+        public float urlBreakPenalty { get; set; }
+
+        [A_XSDElementProperty("UrlBigBreakPenalty", "UI", "The penalty of a line ending after one of the URL's big break characters, ':' and '-'.")]
+        public float urlBigBreakPenalty { get; set; }
 
         public FontStyle Style =>
             bold ? (italic ? FontStyle.BoldItalic : FontStyle.Bold)
@@ -217,9 +232,11 @@ namespace ArctisAurora.Core.UI
         // first-line indent and the gap above the block, px; a null gap takes the layout's block spacing
         public float firstIndent { get => note.firstIndent; set => note.firstIndent = value; }
         public float? spaceBefore { get => note.spaceBefore; set => note.spaceBefore = value; }
+        public float shrinkBefore { get => note.shrinkBefore; set => note.shrinkBefore = value; }
 
         // a break before the block, the page style its page takes, and the running-head marks it sets; null leaves a mark as it was
         public PageBreak pageBreak { get => note.pageBreak; set => note.pageBreak = value; }
+        public bool keepWithNext => note.keepWithNext;
         public string? pageStyle { get => note.pageStyle; set => note.pageStyle = value; }
         public string? markLeft { get => note.markLeft; set => note.markLeft = value; }
         public string? markRight { get => note.markRight; set => note.markRight = value; }
@@ -290,6 +307,13 @@ namespace ArctisAurora.Core.UI
             this.layout = layout;
             lineHeight = note.lineHeight ?? layout.lineHeight;
             baselineDepth = layout.baselineDepth;
+            lineSkip = layout.lineSkip;
+            strut = note.strut;
+            tolerance = layout.tolerance;
+            pretolerance = layout.pretolerance;
+            emergencyStretch = layout.emergencyStretch;
+            advanceGrid = layout.advanceGrid;
+            mathRules = layout.mathRules;
             fontSize = layout.FontSizeFor(stylingType);
             fontName = layout.FontNameFor(stylingType) ?? "default";
 
@@ -544,7 +568,14 @@ namespace ArctisAurora.Core.UI
                 fontName = fontName,
                 fontSize = fontSize,
                 lineHeight = lineHeight,
-                baselineDepth = baselineDepth
+                baselineDepth = baselineDepth,
+                lineSkip = lineSkip,
+                strut = strut,
+                tolerance = tolerance,
+                pretolerance = pretolerance,
+                emergencyStretch = emergencyStretch,
+                advanceGrid = advanceGrid,
+                mathRules = mathRules
             };
             tail.CopyPaint(this);
             Edited(before);

@@ -42,6 +42,34 @@ namespace ArctisAurora.Core.Filing.Serialization
         // bakes only the charset's characters the face maps
         [A_XSDElementProperty("Covered", "AssetRegistry")]
         public bool covered { get; set; }
+
+        // the family's other variants, baked into the same atlas
+        [A_XSDElementProperty("Variant", "AssetRegistry")]
+        public List<FontVariantImport> variants { get; set; } = new List<FontVariantImport>();
+    }
+
+    // One other variant of a family (Light, Black…) and its faces, each taken as declared; an empty face is one it lacks.
+    [A_XSDType("FontVariantImport", "AssetRegistry")]
+    public sealed class FontVariantImport
+    {
+        [A_XSDElementProperty("Name", "AssetRegistry")]
+        public string name { get; set; } = string.Empty;
+
+        [A_XSDElementProperty("Source", "AssetRegistry")]
+        public string source { get; set; } = string.Empty;
+
+        // index into a .ttc collection for the upright face
+        [A_XSDElementProperty("Face", "AssetRegistry")]
+        public int face { get; set; }
+
+        [A_XSDElementProperty("Bold", "AssetRegistry")]
+        public string bold { get; set; } = string.Empty;
+
+        [A_XSDElementProperty("Italic", "AssetRegistry")]
+        public string italic { get; set; } = string.Empty;
+
+        [A_XSDElementProperty("BoldItalic", "AssetRegistry")]
+        public string boldItalic { get; set; } = string.Empty;
     }
 
     [A_XSDType("IconImport", "AssetRegistry")]
@@ -77,9 +105,9 @@ namespace ArctisAurora.Core.Filing.Serialization
         public string source = string.Empty;
         public int face;
         public string sourceHash = string.Empty;
-        public string boldSource = string.Empty;
-        public string italicSource = string.Empty;
-        public string boldItalicSource = string.Empty;
+
+        // every baked face as key:file:index, in block order
+        public string faces = string.Empty;
         public string charset = string.Empty;
         public int glyphSize;
         public int importerVersion;
@@ -88,9 +116,7 @@ namespace ArctisAurora.Core.Filing.Serialization
             source == other.source
             && face == other.face
             && sourceHash == other.sourceHash
-            && boldSource == other.boldSource
-            && italicSource == other.italicSource
-            && boldItalicSource == other.boldItalicSource
+            && faces == other.faces
             && charset == other.charset
             && glyphSize == other.glyphSize
             && importerVersion == other.importerVersion;

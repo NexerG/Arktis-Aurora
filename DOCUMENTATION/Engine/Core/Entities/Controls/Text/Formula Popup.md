@@ -30,7 +30,7 @@ The note itself is the preview. Every change in the field, including the field's
 
 Enter or a click anywhere else commits. Esc puts the old source back, and so does the popup being closed from outside, such as by switching to another application. A new formula left empty, whether committed or cancelled, disappears without a trace in the history. A formula cannot be placed in a read-only note, a plain text note, a code block or a horizontal rule.
 
-While the popup is open, Ctrl+Shift+V pastes into the field: if the clipboard still holds the cells last copied in a sheet, it inserts `\sheet{reference}` at the field's caret, so the note shows the cell's value at once; otherwise it pastes plainly. See [[Sheet Editor]].
+While the popup is open, Ctrl+V pastes into the field: if the clipboard still holds the cells last copied in a sheet, it inserts `\sheet{reference}` at the field's caret, so the note shows the cell's value at once; otherwise it pastes plainly. See [[Sheet Editor]].
 
 ## API summary
 

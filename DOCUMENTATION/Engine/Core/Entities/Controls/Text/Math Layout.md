@@ -43,7 +43,7 @@ Formulas are inserted and edited through [[Formula Popup]].
 
 | Member | Kind | Summary |
 | --- | --- | --- |
-| `Layout(MathNode root, bool display, AtlasMetaData atlas, MathConstants constants, float lineWidth = 0)` | static | The formula as a `MathBox` in em; a `MathError` lays out its source as plain text with `error` set. A line width in em makes a top-level `align`, `flalign` or `multline` spread over it. |
+| `Layout(MathNode root, bool display, AtlasMetaData atlas, MathConstants constants, float lineWidth = 0, float strut = 0, MathRules rules = MathRules.OpenType)` | static | The formula as a `MathBox` in em; a `MathError` lays out its source as plain text with `error` set. A line width in em makes a top-level `align`, `flalign` or `multline` spread over it. A strut in em replaces the array row strut. With `MathRules.Tfm` scripts and limits follow TeX's Appendix G rule 18 using the constants file's `Sub1`, `Sub2`, `Sup1`, `Sup2`, `Sup3`, `SubDrop`, `SupDrop` and `BigOpSpacing5`, which a TeX document without unicode-math selects. |
 
 ## Fields & Properties
 

@@ -21,7 +21,8 @@ namespace ArctisAurora.Tests
                 "sum, alpha and integral bake distinct glyphs, not .notdef");
 
             Glyph x = atlas.GetGlyphAndIndex('x').Item1;
-            t.Check(atlas.hasItalic && !Same(x.regular, x.italic), "x has its own italic face");
+            t.Check(atlas.HasFace(0, FontStyle.Italic) && !Same(x.regular, atlas.Metrics(x, atlas.Effective(0, FontStyle.Italic))),
+                "x has its own italic face");
 
             MathConstants math = MathConstants.Load(Paths.Font("cambria", "cambria.math.axml"));
             t.Check(math.axisHeight > 0f && math.fractionRuleThickness > 0f && math.fractionNumeratorGapMin > 0f

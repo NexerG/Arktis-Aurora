@@ -78,8 +78,7 @@ namespace ArctisAurora.Core.UI
         public static void PasteLink()
         {
             SheetEditorControl? sheet = Editor();
-            if (sheet != null) sheet.PasteLink();
-            else TextInputActions.PasteLink();
+            if (sheet == null || !sheet.PasteLink()) TextInputActions.PasteLink();
         }
 
         [A_XSDActionDependency("Sheet.Save", "Input", "Writes the sheet back to its file")]

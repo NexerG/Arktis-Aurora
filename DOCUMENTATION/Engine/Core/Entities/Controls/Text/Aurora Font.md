@@ -104,6 +104,24 @@ FontLibrary.Import(family, done)
 
 Language packs are charsets joined by commas in the `<Fonts><LanguagePacks Packs="Latin"/>` setting. Runtime-imported fonts bake only the characters their face maps (`Covered`). Changing the setting re-bakes the user fonts, and the new atlases load on the next start.
 
+## Faces and variants
+
+A baked atlas holds a list of faces, not a fixed four. Each face has a key, `variant * 4 + (int)FontStyle`, stored in `faceKeys` in atlas block order; face 0 is the plain family's Regular. Variant 0 is the plain family (empty name); the other variants (Light, …) are named in `variantNames`, joined by newlines, so a run resolves its face from the atlas alone. Face 0's glyph metrics sit on `Glyph.regular`; the metrics of the later faces sit in one flat `faceMetrics` array, face f glyph i at (f-1)*glyphCount+i.
+
+A font import bakes the plain family's Regular, Bold, Italic and Bold Italic plus every other variant installed under the same typographic family (OpenType name ID 16), so Calibri Light and Light Italic land in the Calibri atlas. A run carries a `Variant` name and a `FontStyle`; the face comes from the fallback rule.
+
+```
+AtlasMetaData.Effective(variant, style)
+	if the variant has a face for the style then return it
+	if the plain family has a face for that style then return it
+	if the variant has a regular face then return it
+	return the plain regular face
+```
+
+So Light + italic is Light Italic, and Light + bold is Calibri Bold because Light has no bold. `VariantOf(name)` turns the stored name into an index (linear search; unknown or empty is 0). A font without the run's variant draws its plain face.
+
+The import stamp `<name>.import.axml` lists one `<Face Key Source Index/>` child per baked face in block order, which is how the PDF export finds each face's source file. The `FontImport` data lists variants as `<Variant Name Source Face Bold Italic BoldItalic/>` children. Decision: [[font-variants]].
+
 ## Related
 - [[Glyph]] â€” the outline/metrics type produced here
 - [[Atlas Meta Data]] â€” the serialized atlas metadata

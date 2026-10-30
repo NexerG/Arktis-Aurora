@@ -769,7 +769,7 @@ namespace ArctisAurora.Core.UI
         public TextStyleType type { get; set; } = TextStyleType.Text;
 
         [A_XSDElementProperty("FontSize", "UI", "Text size in pixels.")]
-        public int fontSize { get; set; } = 18;
+        public float fontSize { get; set; } = 18;
 
         [A_XSDElementProperty("FontName", "UI", "Font asset this type is set in; absent is the default font.")]
         public string fontName { get; set; }
@@ -802,6 +802,24 @@ namespace ArctisAurora.Core.UI
 
         [A_XSDElementProperty("BaselineDepth", "UI", "Every line's depth below its baseline in pixels, so baselines stand a line box apart as in TeX; 0 centres the font in its line box.")]
         public float baselineDepth { get; set; }
+
+        [A_XSDElementProperty("LineSkip", "UI", "TeX's \\lineskip in pixels: the gap kept between fixed-depth lines whose ink would come closer than their baselines allow; 0 lets ink touch.")]
+        public float lineSkip { get; set; }
+
+        [A_XSDElementProperty("Tolerance", "UI", "TeX's \\tolerance: the worst line badness optimal breaks accept with hyphenation.")]
+        public float tolerance { get; set; } = 200f;
+
+        [A_XSDElementProperty("Pretolerance", "UI", "TeX's \\pretolerance: the worst badness of a first pass that tries no hyphenation; negative skips that pass.")]
+        public float pretolerance { get; set; } = -1f;
+
+        [A_XSDElementProperty("EmergencyStretch", "UI", "TeX's \\emergencystretch in pixels: stretch a last pass adds to every line when the others find no breaks; 0 skips that pass.")]
+        public float emergencyStretch { get; set; }
+
+        [A_XSDElementProperty("AdvanceGrid", "UI", "Glyph widths truncated to 1/AdvanceGrid em, as LuaTeX's font loader keeps them in thousandths; 0 keeps the font's exact widths.")]
+        public int advanceGrid { get; set; }
+
+        [A_XSDElementProperty("MathRules", "UI", "What places math scripts and limits: the font's OpenType constants, or classic TeX's (Tfm) as LaTeX without unicode-math does.")]
+        public MathRules mathRules { get; set; }
 
         // Used when neither the note nor the editor scheme names a size for the type asked for.
         private const int fallbackFontSize = 18;
@@ -848,7 +866,7 @@ namespace ArctisAurora.Core.UI
 
         // Resolved here rather than in the view so the measurer and the controls drawn from it cannot
         // disagree about how big a heading is.
-        public int FontSizeFor(TextStyleType type)
+        public float FontSizeFor(TextStyleType type)
         {
             if (type == TextStyleType.Inherit) type = TextStyleType.Text;
 
@@ -886,6 +904,12 @@ namespace ArctisAurora.Core.UI
             {
                 lineHeight = lineHeight,
                 baselineDepth = baselineDepth,
+                lineSkip = lineSkip,
+                tolerance = tolerance,
+                pretolerance = pretolerance,
+                emergencyStretch = emergencyStretch,
+                advanceGrid = advanceGrid,
+                mathRules = mathRules,
                 blockSpacing = blockSpacing,
                 listIndent = listIndent,
                 optimalBreaks = optimalBreaks,
@@ -905,6 +929,14 @@ namespace ArctisAurora.Core.UI
     {
         Paged,
         Pageless
+    }
+
+    // Which parameters place math scripts and limits: the font's OpenType MATH constants, or classic TeX's font dimensions.
+    [A_XSDType("MathRules", "UI")]
+    public enum MathRules
+    {
+        OpenType,
+        Tfm
     }
 
     [A_XSDType("PageSize", "UI")]
@@ -975,6 +1007,9 @@ namespace ArctisAurora.Core.UI
 
         [A_XSDElementProperty("InTextSep", "UI", "Millimetres above and below a float set in the text.")]
         public float inTextSep { get; set; } = 4.22f;
+
+        [A_XSDElementProperty("InTextSepShrink", "UI", "Millimetres each gap around a float set in the text may shrink by on a full page.")]
+        public float inTextSepShrink { get; set; }
 
         [A_XSDElementProperty("FitHeight", "UI", "Cuts the last page to the height of its text below the top margin plus this many millimetres, as \\pdfpageheight=\\pagetotal+…; 0 keeps the paper's height.")]
         public float fitHeight { get; set; }

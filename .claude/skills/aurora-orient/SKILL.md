@@ -91,13 +91,15 @@ wc -c "DOCUMENTATION/Work in Progress List.md"
 
 ## Build output
 
-A full `dotnet build` log is thousands of tokens of restore chatter. Filter it:
+A full `dotnet build` log is thousands of tokens of restore chatter; a `--no-incremental` one is 900 KB. Build
+through the filter script (default target is the solution; pass a `.csproj` or `--rebuild` to change it):
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" && dotnet build AuroraEngine/ArctisAurora.sln 2>&1 | grep -E "error|Build succeeded|Build FAILED"
+cd "$(git rev-parse --show-toplevel)" && _Build/build.sh
 ```
 
-A clean build is then **one line**. Do not add `warning CS` to that filter — the tree carries dozens of
+A clean build is then **one line**, `BUILD OK`. A failure prints deduplicated errors, a `LOCKED:` line when a
+running app holds a DLL, and the path of the full log. Do not add `warning CS` to that filter — the tree carries dozens of
 pre-existing nullable warnings and they bury the result. Ask for warnings deliberately, in their own command,
 scoped to the file you touched.
 

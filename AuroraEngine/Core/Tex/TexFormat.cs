@@ -19,19 +19,26 @@ namespace ArctisAurora.Core.Tex
             \dimendef\parindent=249 \dimendef\emergencystretch=248 \skipdef\parskip=250 %
             \skipdef\topsep=246 \skipdef\partopsep=247 \skipdef\itemsep=248 \skipdef\parsep=249 %
             \parindent=15pt \parskip=0pt plus1pt\relax
+            \countdef\hbadness=245 \countdef\widowpenalty=244 \dimendef\hfuzz=246 \dimendef\vfuzz=245 \countdef\c@page=242 %
+            \hbadness=1000 \widowpenalty=150 \hfuzz=0.1pt \vfuzz=0.1pt \c@page=1 %
+            \def\arraystretch{1}%
             \def\space{ }\newcommand\uline[1]{{\@underline#1}}\newcommand\hypersetup[1]{}%
             \def\raisebox#1{\@ifnextchar[\@rbopt\mbox}\def\@rbopt[#1]{\@ifnextchar[\@rbopt\mbox}%
             \def\captionsenglish{\def\figurename{Figure}\def\tablename{Table}\def\refname{References}\def\bibname{Bibliography}%
             \def\contentsname{Contents}\def\listfigurename{List of Figures}\def\listtablename{List of Tables}%
-            \def\fnum@figure##1{\figurename\nobreakspace##1}\def\fnum@table##1{\tablename\nobreakspace##1}}%
+            \def\fnum@figure##1{\figurename\nobreakspace##1}\def\fnum@table##1{\tablename\nobreakspace##1}\def\proofname{Proof}}%
             \let\captionsamerican\captionsenglish\let\captionsusenglish\captionsenglish%
             \let\captionsbritish\captionsenglish\let\captionsUKenglish\captionsenglish%
             \def\captionslithuanian{\def\figurename{pav.}\def\tablename{lentelė}\def\refname{Literatūra}\def\bibname{Literatūra}%
             \def\contentsname{Turinys}\def\listfigurename{Paveikslų sąrašas}\def\listtablename{Lentelių sąrašas}%
-            \def\fnum@figure##1{##1\nobreakspace\figurename}\def\fnum@table##1{##1\nobreakspace\tablename}}%
+            \def\fnum@figure##1{##1\nobreakspace\figurename}\def\fnum@table##1{##1\nobreakspace\tablename}\def\proofname{Įrodymas}}%
             \captionsenglish\def\caption@font{}\def\caption@lfont{}\def\caption@tfont{}\def\caption@sep{:\space}%
             \def\newblock{\hskip .11em plus .33em minus .07em\relax}%
+            \def\descriptionlabel#1{\bfseries #1}\def\addto#1#2{\ifdefined#1\expandafter\def\expandafter#1\expandafter{#1#2}\else\def#1{#2}\fi}%
+            \def\@Alph#1{\ifcase#1\or A\or B\or C\or D\or E\or F\or G\or H\or I\or J\or K\or L\or M\or N\or O\or P\or Q\or R\or S\or T\or U\or V\or W\or X\or Y\or Z\fi}%
+            \def\Alph#1{\expandafter\@Alph\csname c@#1\endcsname}\def\appendix{\par\setcounter{section}{0}\gdef\thesection{\@Alph\c@section}}%
             \newlength\labelwidth\newlength\labelsep\newlength\leftmargin\def\@biblabel#1{[#1]}\def\@mkbiblab#1{\hfil#1}%
+            \newlength\abovecaptionskip\setlength\abovecaptionskip{10pt}%
             \def\@biblabelsep{.5em}\def\@bibsetup#1{\labelsep\@biblabelsep\relax\settowidth\labelwidth{\@biblabel{#1}}\leftmargin\labelwidth
             \advance\leftmargin\labelsep\leftskip\leftmargin\parindent0pt\relax}%
             \def\@bibitem#1{\hskip-\leftskip\hb@xt@\labelwidth{\@mkbiblab{\@biblabel{#1}}}\hskip\labelsep\ignorespaces}%
@@ -58,7 +65,7 @@ namespace ArctisAurora.Core.Tex
             \def\newline{\\}\newcommand\linebreak[1][]{\\}\newcommand\pagebreak[1][]{\newpage}%
             \def\cleardoublepage{\clearpage}%
             \def\enspace{\kern.5em}\def\thinspace{\kern.16667em}\def\negthinspace{\kern-.16667em}%
-            \def~{\nobreakspace}\def\/{}\def\@{}%
+            \def~{\nobreakspace}\def\/{}%
             \skipdef\leftskip=243 \skipdef\rightskip=244 \skipdef\parfillskip=245 \dimendef\@tempdima=247 \countdef\interlinepenalty=246 %
             \let\protect\relax\def\leavevmode{\indent}\def\null{\hbox{}}\def\nobreak{\penalty10000 }\def\normalcolor{}\def\m@th{}%
             \def\hfil{\hskip0pt plus1fil\relax}\def\hss{\hskip0pt plus1fil minus1fil\relax}\def\hb@xt@{\hbox to}%
@@ -95,6 +102,34 @@ namespace ArctisAurora.Core.Tex
             \gdef\l@section{\@dottedtocline{1}{1.5em}{2.3em}}\gdef\l@subsection{\@dottedtocline{2}{3.8em}{3.2em}}%
             \gdef\l@subsubsection{\@dottedtocline{3}{7.0em}{4.1em}}\gdef\l@paragraph{\@dottedtocline{4}{10em}{5em}}%
             \gdef\l@subparagraph{\@dottedtocline{5}{12em}{6em}}\gdef\l@figure{\@dottedtocline{1}{1.5em}{2.3em}}\global\let\l@table\l@figure
+            \gdef\appendix{\par\setcounter{chapter}{0}\gdef\thechapter{\@Alph\c@chapter}}%
+            """;
+
+        // amsthm: theorem styles by body font, \newtheorem with a shared or a parent counter, proof
+        public const string Amsthm = """
+            \def\th@plain{\itshape}\def\th@definition{\normalfont}\def\th@remark{\normalfont}\let\@thmbody\th@plain
+            \def\theoremstyle#1{\expandafter\let\expandafter\@thmbody\csname th@#1\endcsname}%
+            \def\newtheoremstyle#1#2#3#4#5#6#7#8#9{\expandafter\def\csname th@#1\endcsname{#4}}\def\swapnumbers{}%
+            \def\@thmhead#1#2{\par\vskip\topsep\noindent{\bfseries#1\ifx\relax#2\relax\else\ {\normalfont(#2)}\fi.}\ \ignorespaces}%
+            \def\newtheorem{\@ifstar\@sthm\@nthm}%
+            \def\@sthm#1#2{\expandafter\let\csname @thms@#1\endcsname\@thmbody
+            \newenvironment{#1}[1][]{\@thmhead{#2}{##1}\csname @thms@#1\endcsname}{\par\vskip\topsep}}%
+            \def\@nthm#1{\@ifnextchar[{\@othm{#1}}{\@ithm{#1}}}%
+            \def\@othm#1[#2]#3{\@xthm{#1}{#2}{#3}}%
+            \def\@ithm#1#2{\@ifnextchar[{\@wthm{#1}{#2}}{\newcounter{#1}\@xthm{#1}{#1}{#2}}}%
+            \def\@wthm#1#2[#3]{\newcounter{#1}[#3]\expandafter\edef\csname the#1\endcsname{\expandafter\noexpand\csname the#3\endcsname.\noexpand\arabic{#1}}\@xthm{#1}{#1}{#2}}%
+            \def\@xthm#1#2#3{\expandafter\let\csname @thms@#1\endcsname\@thmbody
+            \newenvironment{#1}[1][]{\stepcounter{#2}\@thmhead{#3 \csname the#2\endcsname}{##1}\csname @thms@#1\endcsname}{\par\vskip\topsep}}%
+            \def\qedsymbol{$\square$}\def\qed{\nobreak\hfill\qedsymbol}%
+            \newenvironment{proof}[1][\proofname]{\par\vskip\topsep\noindent{\itshape#1.}\ \ignorespaces}{\qed\par\vskip\topsep}%
+            """;
+
+        // algorithm: its float's caption name, label and list; the counter and the environment come from the typesetter
+        public const string Algorithm = """
+            \def\ALG@name{Algorithm}\def\fname@algorithm{\ALG@name}\def\fnum@algorithm{\fname@algorithm\nobreakspace\thealgorithm}%
+            \def\floatname#1#2{\expandafter\def\csname fname@#1\endcsname{#2}}%
+            \def\listalgorithmname{List of \ALG@name s}\def\l@algorithm{\@dottedtocline{1}{1.5em}{2.3em}}%
+            \def\listofalgorithms{\csname\@toclevel\endcsname*{\listalgorithmname\@mkboth{}{}}\@starttoc{loa}}%
             """;
 
         // biblatex: the punctuation commands a preamble's \DeclareDelimFormat code uses, and \labelalphaothers

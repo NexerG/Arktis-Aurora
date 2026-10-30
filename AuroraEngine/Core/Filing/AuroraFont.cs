@@ -99,10 +99,10 @@ namespace ArctisAurora.Core.Filing
             }
         }
 
-        // faceStyles names each face in block order — regular first, then whichever of bold, italic
-        // and bold-italic the family actually had.
-        internal static void GenerateGlyphAtlas(AuroraFont[] faces, string[] facePaths, FontStyle[] faceStyles,
-            string baseName, int perGlyphSize, string outputRoot)
+        // faceKeys names each face in block order as variant * 4 + style, the plain regular first; variantNames
+        // are joined by '\n' with the plain family's empty name first.
+        internal static void GenerateGlyphAtlas(AuroraFont[] faces, string[] facePaths, int[] faceIndices, int[] faceKeys,
+            string variantNames, string baseName, int perGlyphSize, string outputRoot)
         {
             // One array per face. Contours live here and never reach the .agd.
             Glyph[][] faceGlyphs = new Glyph[faces.Length][];
@@ -115,17 +115,18 @@ namespace ArctisAurora.Core.Filing
             glyphs.glyphCount = faces[0].textData.characterCount;
             glyphs.chars = faces[0].textData.characters;
             glyphs.glyphs = faceGlyphs[0];
-            glyphs.hasBold = faceStyles.Contains(FontStyle.Bold);
-            glyphs.hasItalic = faceStyles.Contains(FontStyle.Italic);
-            glyphs.hasBoldItalic = faceStyles.Contains(FontStyle.BoldItalic);
+            glyphs.faceKeys = faceKeys;
+            glyphs.variantNames = variantNames.ToCharArray();
             glyphs.pxRange = MTSDFGen.PxRange;
             glyphs.cellSize = perGlyphSize;
 
-            // Every face measures its own advances and ink boxes; fold them onto the regular glyph
-            // that carries all four sets.
+            // Every face measures its own advances and ink boxes; the first face's stay on its glyphs.
+            int count = glyphs.glyphCount;
+            glyphs.faceMetrics = new GlyphMetrics[(faces.Length - 1) * count];
             for (int f = 1; f < faces.Length; f++)
-                for (int i = 0; i < glyphs.glyphCount; i++)
-                    glyphs.glyphs[i].SetMetrics(faceStyles[f], faceGlyphs[f][i].regular);
+                for (int i = 0; i < count; i++)
+                    glyphs.faceMetrics[(f - 1) * count + i] = faceGlyphs[f][i].regular;
+            glyphs.ReadKerning(facePaths, faceIndices);
 
             string atlasDataPath = Path.Combine(outputRoot, baseName, $"{baseName}.agd"); // aurora glyph data
             Diagnostics.Profiling.Zone.Start("Atlas.WriteMeta");
@@ -261,7 +262,7 @@ namespace ArctisAurora.Core.Filing
                     faceGlyphs[i].regular.leftSideOffset = (float)lsb[glyphIndex] / unitsPerEm;
                     if(faceGlyphs[i].regular.yMin < 0)
                     {
-                        faceGlyphs[i].regular.tsb = -(faceGlyphs[i].regular.yMin) / unitsPerEm;
+                        faceGlyphs[i].regular.tsb = -(faceGlyphs[i].regular.yMin) / (float)unitsPerEm;
                     }
                     if (faceGlyphs[i].contours.Count == 0)
                     {
@@ -590,13 +591,28 @@ namespace ArctisAurora.Core.Filing
         [@Serializable]
         public int cellSize;
 
-        // which faces the family bake actually found
+        // the baked faces in block order as variant * 4 + style, face 0 the plain regular; variant names joined by
+        // '\n', the plain family's empty name first; faces after the first keep glyph i's metrics at (f - 1) * glyphCount + i
         [@Serializable]
-        public bool hasBold;
+        public int[] faceKeys = { 0 };
         [@Serializable]
-        public bool hasItalic;
+        public char[] variantNames = Array.Empty<char>();
         [@Serializable]
-        public bool hasBoldItalic;
+        public GlyphMetrics[] faceMetrics = Array.Empty<GlyphMetrics>();
+
+        // pair kerning per face: keys a << 16 | b and em values at kernStarts[face]..kernStarts[face + 1]; last, so an
+        // older .agd reads them as empty
+        [@Serializable]
+        public uint[] kernKeys = Array.Empty<uint>();
+        [@Serializable]
+        public float[] kernValues = Array.Empty<float>();
+        [@Serializable]
+        public int[] kernStarts = Array.Empty<int>();
+
+        // (face << 32 | a << 16 | b) to em, built on load
+        [NonSerializable]
+        private Dictionary<ulong, float> kerns = noKerns;
+        private static readonly Dictionary<ulong, float> noKerns = new Dictionary<ulong, float>();
 
         // char to index into chars and glyphs, built on load
         [NonSerializable]
@@ -608,38 +624,52 @@ namespace ArctisAurora.Core.Filing
         [NonSerializable]
         private float[] advances = null!;
 
+        // variant * 4 + style to face, -1 where the bake found none, and the variant names, built on load
+        [NonSerializable]
+        private int[] slots = null!;
+        [NonSerializable]
+        public string[] variants = null!;
+
         private sealed class CharHash : IEqualityComparer<char>
         {
             public bool Equals(char a, char b) => a == b;
             public int GetHashCode(char c) => c;
         }
 
-        public int styleCount => 1 + (hasBold ? 1 : 0) + (hasItalic ? 1 : 0) + (hasBoldItalic ? 1 : 0);
+        public int faceCount => faceKeys.Length;
 
-        public int cellCount => glyphCount * styleCount;
+        public int cellCount => glyphCount * faceCount;
 
         // cell quad geometry around the ink box
         public float inkMargin => MTSDFGen.InkMargin(cellSize);
         public float cellScale => 1f / (1f - 2f * inkMargin);
 
-        // A style the family has no face for draws as regular rather than as nothing.
-        public FontStyle Effective(FontStyle style) => style switch
+        // The face a variant draws a style in: its own, else the plain family's, else its regular, else regular.
+        public int Effective(int variant, FontStyle style)
         {
-            FontStyle.Bold when hasBold => FontStyle.Bold,
-            FontStyle.Italic when hasItalic => FontStyle.Italic,
-            FontStyle.BoldItalic when hasBoldItalic => FontStyle.BoldItalic,
-            _ => FontStyle.Regular
-        };
+            int own = slots[variant * 4 + (int)style];
+            if (own >= 0) return own;
+            int plain = slots[(int)style];
+            if (plain >= 0) return plain;
+            int upright = slots[variant * 4];
+            return upright >= 0 ? upright : 0;
+        }
 
-        public int StyleBlock(FontStyle style) => style switch
+        public bool HasFace(int variant, FontStyle style) => slots[variant * 4 + (int)style] >= 0;
+
+        // A variant by name, 0 (the plain family) for none or a name this font lacks.
+        public int VariantOf(string? name)
         {
-            FontStyle.Bold when hasBold => 1,
-            FontStyle.Italic when hasItalic => hasBold ? 2 : 1,
-            FontStyle.BoldItalic when hasBoldItalic => 1 + (hasBold ? 1 : 0) + (hasItalic ? 1 : 0),
-            _ => 0
-        };
+            if (string.IsNullOrEmpty(name)) return 0;
+            string[] names = variants;
+            for (int v = 1; v < names.Length; v++)
+                if (string.Equals(names[v], name, StringComparison.OrdinalIgnoreCase)) return v;
+            return 0;
+        }
 
-        public int CellIndex(int charIndex, FontStyle style) => StyleBlock(style) * glyphCount + charIndex;
+        public GlyphMetrics Metrics(Glyph glyph, int face) => face == 0 ? glyph.regular : faceMetrics[(face - 1) * glyphCount + glyph.index];
+
+        public int CellIndex(int charIndex, int face) => face * glyphCount + charIndex;
 
         private static GlyphMetrics ReadMetrics(BinaryReader reader) => new GlyphMetrics()
         {
@@ -684,13 +714,13 @@ namespace ArctisAurora.Core.Filing
                 {
                     glyphs[i] = new Glyph();
                     glyphs[i].regular = ReadMetrics(reader);
-                    glyphs[i].bold = ReadMetrics(reader);
-                    glyphs[i].italic = ReadMetrics(reader);
+                    ReadMetrics(reader);
+                    ReadMetrics(reader);
                 }
 
                 pxRange = reader.ReadSingle();
-                hasBold = reader.ReadBoolean();
-                hasItalic = reader.ReadBoolean();
+                reader.ReadBoolean();
+                reader.ReadBoolean();
             }
         }
 
@@ -699,20 +729,54 @@ namespace ArctisAurora.Core.Filing
         {
             charIndex = new Dictionary<char, int>(glyphCount, charHash);
             for (int i = 0; i < glyphCount; i++)
+            {
                 charIndex.TryAdd(chars[i], i);
+                glyphs[i].index = i;
+            }
 
-            advances = new float[4 * AdvanceTableSize];
+            variants = new string(variantNames).Split('\n');
+            slots = new int[variants.Length * 4];
+            Array.Fill(slots, -1);
+            for (int f = 0; f < faceKeys.Length; f++) slots[faceKeys[f]] = f;
+
+            int faces = faceKeys.Length;
+            advances = new float[faces * AdvanceTableSize];
             for (int c = 0; c < AdvanceTableSize; c++)
             {
                 Glyph glyph = GetGlyph((char)c) ?? GetGlyph(' ');
                 if (glyph == null) continue;
-                for (int f = 0; f < 4; f++)
-                    advances[f * AdvanceTableSize + c] = glyph.Metrics((FontStyle)f).advanceWidth;
+                for (int f = 0; f < faces; f++)
+                    advances[f * AdvanceTableSize + c] = Metrics(glyph, f).advanceWidth;
             }
+
+            kerns = kernKeys.Length == 0 ? noKerns : new Dictionary<ulong, float>(kernKeys.Length);
+            for (int f = 0; f + 1 < kernStarts.Length; f++)
+                for (int k = kernStarts[f]; k < kernStarts[f + 1]; k++)
+                    kerns[(ulong)f << 32 | kernKeys[k]] = kernValues[k];
         }
 
+        // Fills the kern pairs from each baked face's file.
+        internal void ReadKerning(string[] facePaths, int[] faceIndices)
+        {
+            List<uint> keys = new List<uint>(1024);
+            List<float> values = new List<float>(1024);
+            kernStarts = new int[facePaths.Length + 1];
+            for (int f = 0; f < facePaths.Length; f++)
+            {
+                kernStarts[f] = keys.Count;
+                FontKerning.Read(facePaths[f], faceIndices[f], chars, keys, values);
+            }
+            kernStarts[facePaths.Length] = keys.Count;
+            kernKeys = keys.ToArray();
+            kernValues = values.ToArray();
+        }
+
+        // The em kern between two characters in one face, 0 when the font names no pair.
+        public float Kern(char first, char second, int face) =>
+            kerns.Count == 0 ? 0f : kerns.GetValueOrDefault((ulong)face << 32 | (uint)first << 16 | second);
+
         // A char's em advance in one face, unimported chars as space; character must be below AdvanceTableSize.
-        public float TableAdvance(char character, FontStyle face) => advances[(int)face * AdvanceTableSize + character];
+        public float TableAdvance(char character, int face) => advances[face * AdvanceTableSize + character];
 
         public Glyph GetGlyph(char character)
         {

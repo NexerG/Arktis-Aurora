@@ -45,7 +45,7 @@ Line boxes follow the CSS model that Obsidian gets from `line-height` and Word f
 
 `IGlyphMetrics.GetLineMetrics(fontName)` supplies the font's em-normalized ascent/descent. The production implementation derives them as the tallest ascent and deepest descent across the font's whole glyph set, because the `hhea` ascender/descender that should own this are read by [[Aurora Font|GenerateGlyphAtlas]] and then discarded rather than stored in the `.agd`; swapping that method's body is the entire migration once they are persisted, at the cost of re-baking atlases.
 
-TeX output uses a second model, selected by `DocumentLayout.BaselineDepth` (0 for notes, which keep the half-leading model above). Every line's descent box is `BaselineDepth` (the body `\baselineskip` minus `\topskip`, `\topskip` being `\normalsize`) and its ascent box is the line's pitch minus that depth, so the baseline distance between two lines is the lower line's pitch plus the space between them (TeX's rule) and the first body line on a page sits at `\topskip`. A block may carry its own pitch in `NoteBlock.lineHeight` (`<Block LineHeight>`, null = the layout's). At a page's text top, below the first page's header, a line whose ink rises above its ascent box is lowered to its ink height. Mid-page `\lineskip` is not modelled.
+TeX output uses a second model, selected by `DocumentLayout.BaselineDepth` (0 for notes, which keep the half-leading model above). Every line's descent box is `BaselineDepth` (the body `\baselineskip` minus `\topskip`, `\topskip` being `\normalsize`) and its ascent box is the line's pitch minus that depth, so the baseline distance between two lines is the lower line's pitch plus the space between them (TeX's rule) and the first body line on a page sits at `\topskip`. A block may carry its own pitch in `NoteBlock.lineHeight` (`<Block LineHeight>`, null = the layout's). At a page's text top, below the first page's header, a line whose ink rises above its ascent box is lowered to its ink height. Each TeX line also records its real ink depth (`TextLine.inkDepth`) and its box height (`TextLine.pitch`, the `\baselineskip`), and `TextMeasurer.Interline` turns the box stacking into TeX's interline glue: baselines stand `\baselineskip` apart, or when that would bring the ink closer than `\lineskiplimit` (0) the lower line sits `\lineskip` (`DocumentLayout.LineSkip`, 1pt in the thesis) under the upper line's ink depth. The rule is a shift on the lower line equal to TeX's distance minus the boxes' distance, so block heights stay true and a block's first line keeps its full height. It applies within a block (`AppendLine`, `Paginate` including the widow and club restack) and between blocks (`DocumentControl.Paginate`, not across a page break or after a Rule block; tables and sealed blocks take none). Notes have no pitch and get no shift.
 
 Font sizes stay fractional through layout: `TextRunControl.Zoomed` returns `size * textZoom` unrounded and `Run.fontSize` is a float, so a preview at zoom 0.9 lays text out at the same proportions as the export and `\pageref` numbers resolved from either agree. Notes at a zoom other than 100% lay out with fractional sizes too.
 
@@ -55,6 +55,15 @@ Font sizes stay fractional through layout: `TextRunControl.Zoomed` returns `size
 			carry the line before the break over too, or the whole paragraph when fewer than two lines would stay behind
 		lines carrying a footnote anchor are not moved   // `HasAnchors`
 Under `\raggedbottom` TeX does this at its default penalties for shortfalls under about 68 pt.
+#### Keep with next (`NoteBlock.keepWithNext`, paged mode)
+	headings and the empty line before a paragraph-starting display carry the flag
+	after a block is placed
+		if the run of keep-with-next blocks before it ends on an earlier page than this block's first line (after widow control)
+			rewind to the run's first block
+			restart the run at the top of the page the line landed on, with no space before
+			drop the run's floats so they register again
+	each run is moved at most once per pass
+	an insert (float group) between blocks breaks the run
 
 ## Text sizing
 Text names a role rather than a size: a block carries a `StylingType` — `Text`, `Heading1` through `Heading6`, `Comment`, `Code`, `Quote` — and `DocumentLayout.FontSizeFor(type)` is the one resolver everything calls, so the measurer and the controls drawn from it cannot disagree about how big a heading is. A heading is therefore not a class of its own; `ContentBlock` is the only concrete block, and what used to be `HeadingBlock` is a block that says `StylingType="Heading1"`.
@@ -64,6 +73,43 @@ Runs carry the same setting and default to `Inherit`, meaning "whatever my block
 The scheme itself is data, not a table in code: `DocumentLayout` carries a list of `TextStyle` — `(type, fontSize)` — and however many entries exist is the whole scheme. The editor-wide scheme is a settings group, `DocumentSettings`, so it arrives through the [[Settings Registry]] rather than being loaded by the document layer at all: `Data/XML/Settings/DocumentSettings.settings.axml` cascades from the engine's copy, through an application's, to the host's write root, merging **per attribute**, so an app restyles every note it opens by naming one value and inherits the rest. A note then overrides per-document by embedding a `<DocumentLayout>` of its own. An empty style list means inherit, and declaring even one style replaces the whole set rather than merging entry-by-entry against defaults the note's author cannot see. A heading past the last one the scheme defines takes that last one, so an H9 renders as the smallest heading instead of collapsing to body text.
 
 Because the note format omits any attribute left at its default, a run that never stated a size is not pinned to the size it had when it was written — it is whatever the scheme says now, which is what makes editing `DocumentSettings.settings.axml` restyle every existing note.
+
+Font sizes are floats through the whole document model (`TextStyle`, `StyleSpan`, `StyleDelta`, `CaretStyle`, `TextRunControl.Zoomed`), so a TeX document sets its text in exact TeX points: 12pt is 11.955 bp, not a whole pixel count. A note file with an integer size reads unchanged and a whole size still writes as "16". The small label controls (`EditableLabelControl`, `TextBoxControl`, `RunningSlot`) keep integer sizes because they draw whole pixels.
+
+## TeX space factor and breaking passes
+A TeX document's interword glue arrives from lowering as one of five characters: a plain space, or one of four Private Use Area marker spaces U+E001 to U+E004 standing for space factor 1.25, 1.5, 2 and 3. A marker advances one space wide, and from factor 2 it advances 4/3 of a space (TeX's extra space is a third of the space). It flags a break after it like a space, justifies like a space, and is drawn and exported as a plain space, the way U+00A0 is. The typesetter decides the factor, so `\@`, `\frenchspacing` and a capital before the stop are exact; the measurer only reads the marker.
+
+Justification weights each space by its factor: its share of the stretch is multiplied by the factor and its share of the shrink is divided by it, and the shrink limit uses the natural width divided by the factor.
+
+The optimal line breaker runs TeX's passes, reading `Tolerance`, `Pretolerance` and `EmergencyStretch` from the `DocumentLayout`. The defaults (200, -1, 0) keep a note on the old single pass.
+
+#### Break Optimal (tolerance, pretolerance, emergency stretch)
+build the width, stretch and shrink prefix arrays once   // a space's stretch is multiplied by its factor, its shrink divided by it, from its natural width
+if `pretolerance` is not -1
+	`found` = pass 0 within `pretolerance`   // unhyphenated: soft-hyphen breaks are skipped
+	if `found` is set
+		return `found`
+`found` = pass 1 within `tolerance`   // hyphenated
+if `found` is set
+	return `found`
+pass 2 within `tolerance`, adding `emergency stretch` to each line's stretch
+
+## Page glue shrink and URL stretch
+
+A TeX document's vertical skips carry their shrink into the model as `ShrinkBefore` on a block or table (L11e, 2026-10-30), in pixels. When a page's fitted content reaches past its text bottom, `Paginate` lays that page out a second time with every gap on it reduced by the same ratio (overflow divided by the page's total gap shrink, at most 1), the way TeX shrinks an overfull page. A document with any `ShrinkBefore` above zero takes the `PageSpace` path, the full repagination also used for footnotes. A heading kept with the next paragraph that a keep rewind moved is forced to the next page top again when the shrink re-layout passes it. In `Break Optimal` a URL run adds stretch after each of its characters (`UrlStretch`) and a penalty per break (`UrlBreakPenalty`, `UrlBigBreakPenalty`), counted in demerits as the penalty squared. `Spread` distributes a justified line's slack in pixel weights, so spaces and URL gaps share one unit and match the breaker.
+
+## One pen step, kerning and the width grid
+Every walk along a line moves the pen through one function, `TextMeasurer.AdvanceAt`: layout, drawing, justify, align, fill, hit-test, caret and sheet cells. Before it, the draw loop moved the pen by the glyph's raw advance, separately from layout.
+
+Kerning from the font is global. Every text run in every font that has pairs kerns, so notes, UI labels, sheet cells and TeX documents all do. The pairs are read from the font's GPOS `kern` feature (or the old `kern` table) at import and baked into its `.agd`, so a font imported before kerning loads with no pairs until it is re-baked. A kern only joins two characters that are adjacent in the run, so none crosses a soft hyphen or a zero-width space. Pairs against whitespace are never stored.
+
+A TeX document also truncates every glyph width to 1/1000 em toward zero, as LuaLaTeX does, through `DocumentLayout.AdvanceGrid` (written by lowering, 0 means exact). Kerns are truncated to the same grid.
+
+#### Advance At (run, index, pen in line)
+`advance` = `MeasureAdvance` of the character, on the grid when the run has one
+if the next character is in the same run
+	`advance` = `advance` + `Kern` (this character, the next character, run)   // 0 in spacer, picture, math and fill runs
+return `advance`
 
 ## Geometry policy
 All document geometry resolves on the cache — mouse clicks, caret placement, arrow keys / PageDown / Ctrl-End, selection drag (including auto-scroll past the viewport, where the anchor has no control), find-next, `ScrollIntoView`, pagination. The control tree's only hit-testing job is the app shell's: deciding the click landed on the document editor at all rather than a toolbar or file tree. Inside the editor, glyph / run / block controls are **not** hit-targets; the editor converts the click to document space and asks the cache. One code path for clicks and keyboard alike, and it works for content that has no controls materialized.
@@ -220,10 +266,10 @@ A page can ask for its last sheet to be cut to its content, `<Page FitHeight="mm
 	ArrangePages uses `lastPageHeight` for the last page
 	`PageRects` and the PDF MediaBox follow it
 
-#### Push (y, span height)
+#### Push (y, span height, overhang)
 	band top = the text-area top of the page y falls on
 	if y is above it: return band top
-	if the span fits before the band's end: return y
+	if the span minus the overhang fits before the band's end: return y   // TeX lets a line's depth hang below the text bottom; a text line passes `BaselineDepth` as the overhang, so it fits while its baseline does
 	if the span is taller than a whole text area and starts inside it: return y
 	return next page's band top
 
@@ -256,7 +302,15 @@ Landed 2026-10-06 (L7f): a float group is placed by LaTeX's `[htbp!H]` rules wit
 		the floats are stacked into place (Stack below)
 	the incremental "settled" shortcut is off while any footnote or float block exists, so the pass is always full
 
-#### Float Arrival (group, y)
+#### Float Arrival (group, y, inkEnd)
+	`inkEnd` = last line baseline + `inkDepth` + `LineSkip`   // `Here` does not know the line's descent
+	a here-float is placed at `inkEnd` + (`\intextsep` − page ratio × `InTextSepShrink`)
+	after a here-float
+		`previous` is cleared
+		the next block's first baseline sits a full pitch (or ink + `\lineskip`) below the float's gap
+		the float's 2 × `InTextSepShrink` is charged to the next block's shrinks
+	a strut block (`NoteBlock.strut`, a caption) has ascent max(ink, 0.7 × pitch) and descent max(`inkDepth`, 0.3 × pitch), and takes no `Interline` to or from its neighbours
+	a table with `NoteTable.indent` is shifted right by indent × zoom unless it is centred or right-aligned
 	a float already decided is skipped on a re-run; one set here is placed inline again
 	`H` is always here, with `\intextsep` above and below, and never floats; pageless mode sets every float here
 	if an earlier float of the same kind is waiting: the float waits

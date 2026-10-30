@@ -208,6 +208,16 @@ namespace ArctisAurora.Core.Tex
         // hands undefined control sequences to the caller instead of reporting them
         public bool passUndefined;
 
+        // names that exist only in math; one met undefined in text is set alone as math, as LuaLaTeX does
+        public Func<string, bool>? mathOnly;
+
+        // @'s catcode in the current group, which a package read saves and puts back
+        public TexCatcode atCatcode
+        {
+            get => catcodes.Get('@');
+            set => catcodes.Set('@', value, false, groups);
+        }
+
         // last position read from the source
         private int line, column;
 
@@ -243,6 +253,14 @@ namespace ArctisAurora.Core.Tex
                 {
                     case null:
                         if (passUndefined) return true;
+                        if (mathOnly != null && token.IsCs && mathOnly(token.name!))
+                        {
+                            Error("Missing $ inserted");
+                            TexToken shift = TexToken.Char('$', TexCatcode.MathShift, token.line, token.column);
+                            Push(new[] { token, shift });
+                            token = shift;
+                            return true;
+                        }
                         Error($"Undefined control sequence {token}");
                         continue;
                     case CharMeaning c:
@@ -2066,6 +2084,17 @@ namespace ArctisAurora.Core.Tex
                 case Register { kind: RegisterKind.Count } r: return counts.Get(r.index);
                 case Register { kind: RegisterKind.Dimen } r: return dimens.Get(r.index);
                 case Register { kind: RegisterKind.Skip } r: return skips.Get(r.index).width;
+                default: return null;
+            }
+        }
+
+        // A skip register's glue by name, a dimen as rigid glue; null when it names neither.
+        public TexGlue? RegisterGlue(string name)
+        {
+            switch (meanings.Get(name))
+            {
+                case Register { kind: RegisterKind.Skip } r: return skips.Get(r.index);
+                case Register { kind: RegisterKind.Dimen } r: return new TexGlue { width = dimens.Get(r.index) };
                 default: return null;
             }
         }

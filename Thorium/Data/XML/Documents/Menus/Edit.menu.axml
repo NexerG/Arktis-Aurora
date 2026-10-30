@@ -4,5 +4,5 @@
 	<ContextButton Text="Redo" Action="Text.Redo"/>
 	<ContextButton Text="Cut" Action="Text.Cut"/>
 	<ContextButton Text="Copy" Action="Text.Copy"/>
-	<ContextButton Text="Paste" Action="Text.Paste"/>
+	<ContextButton Text="Paste" Action="Sheet.PasteLink"/>
 </ContextMenu>

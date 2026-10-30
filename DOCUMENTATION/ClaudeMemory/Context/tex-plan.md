@@ -1,4 +1,4 @@
-# LaTeX editor (native) — agreed route, L1–L6, L7a–L7g, L8, L9, L10a, L10b, L10c, L10d, L10e, L10f and L10g landed
+# LaTeX editor (native) — agreed route, L1–L6, L7a–L7g, L8, L9, L10a, L10b, L10c, L10d, L10e, L10f, L10g, L11a, L11b, L11c, L11c2, L11d, L11e, L11f, L11g, L11h and L12a landed
 
 **Agreed:** 2026-10-05 (user: native route, "as many packages as possible", L3 node list on the recommendation).
 **Built:** L1, which merged the file/source editor with the TeX expander (user). L2 (CFF + Latin Modern) landed 2026-10-05. L3 (typesetter + lowering) landed 2026-10-05. L4 (split view) landed 2026-10-06. L5 (floats, `tabular`, `\label`/`\ref`, BibTeX, note-table column spans) landed 2026-10-06. L6 (amsmath natively, shared with notes math M5) landed 2026-10-06. L7 was split into slices L7a–L7g (user-approved 2026-10-06) and L7a, L7b, L7c, L7d, L7e, L7f and L7g landed 2026-10-06. L8 (in-house PDF export) landed 2026-10-07. L9 (a real-world resume `.tex`) landed 2026-10-18. L10a (read the template), L10b (layout values), L10c (fonts), L10d (Lithuanian) and L10e (table of contents) landed 2026-10-28; L10f (biblatex) landed 2026-10-29, which completes L10.
@@ -156,6 +156,8 @@ Cost accepted with the native route: support is bounded by what is reimplemented
 | L10f | biblatex: alphabetic labels like [tmp23], Lithuanian strings, C# drivers, a hanging bibliography list with a measured label column, URL breaks | DONE 2026-10-29 |
 | L10g | visual match to the reference: per-block line height, fixed-depth TeX baseline model, fractional font sizes (preview = export pagination), widow/club control, foot skip to baseline, `\partopsep`, `\@centercr`, display skips, caption singlelinecheck, MATH display-operator sizes | DONE 2026-10-29 |
 
+(L10 continues as the L11 group below.)
+
 - Forks taken in L10a (L10-F1 to L10-F3 and the reader stack): `latex-editor`
 - Forks taken in L10b (L10b-F1, L10b-F2): `latex-editor`
 - Forks taken in L10c (L10c-F1 to L10c-F5): `latex-editor`
@@ -164,6 +166,30 @@ Cost accepted with the native route: support is bounded by what is reimplemented
 - Forks taken in L10f (L10f-F1 to L10f-F6): `latex-editor`
 - Forks taken in L10g (L10g-F1 to L10g-F6, D1, D2): `latex-editor`
 - Details: [[latex-editor]]
+
+### L11 — thesis match from measured causes — L11a, L11b, L11c DONE 2026-10-29; L11d, L11e, L11f, L11g, L11h DONE 2026-10-30
+- Goal: close the remaining drift of the thesis export against its LuaLaTeX PDF; each stage is re-planned after measuring. Forks L11-F1 (a), L11-F2 (a) user-picked 2026-10-29
+
+| Stage | Content | Status |
+|---|---|---|
+| L11a | real installed fonts: Times New Roman body (now bundled TeX Gyre Termes), real Calibri headings via fontspec `Path=` (now Carlito) | DONE 2026-10-29 (fontspec Path= files, else installed family baked on first use, before the stand-ins; since 2026-10-30 installed family first, Path= only when not installed, see font-variants; line breaks still differed; the cause was not interword glue, see L11f) |
+| L11b | page and list rules: line fits while its baseline is above the text bottom (`overhang`), list top = \topsep + outer \parskip, \leftmargini..iv list indents, `KeepWithNext` for headings and the empty line before a paragraph-starting display | DONE 2026-10-29 |
+| L11c | display vertical model: interline glue max(\baselineskip − prevdepth − height, \lineskip), real line depth (revisits L10g D2); bmatrix rows 14.4 pt apart instead of 17.9 | DONE 2026-10-29 (interline glue from real ink height/depth via `TextMeasurer.Interline`, `DocumentLayout.LineSkip`; array strut = \arraystretch × \baselineskip per formula, `Run.Strut`; below-display gap open, see L11c2) |
+| L11c2 | classic TeX math rules when no unicode-math: Appendix G rule 18 with cmsy10/cmex10 TFM dimensions (`MathRules.Tfm`) | DONE 2026-10-29 (~1.2 pt below displays still open) |
+| L11f | line breaking as TeX: float font sizes in the document model (exact TeX points), space factor (`SfCode`, marker spaces U+E001–E004), TeX's breaking passes (`DocumentLayout` Tolerance/Pretolerance/EmergencyStretch), f-ligatures only for TFM/Latin Modern fonts, `\@`, `\frenchspacing` | DONE 2026-10-30 (forks L11f-F1..F3 in `latex-editor`; open: Calibri GSUB ligatures) |
+| L11g | glyph widths in thousandths: TeX documents truncate every glyph width to 1/1000 em (`DocumentLayout.AdvanceGrid`, `TextMeasurer.Grid`) | DONE 2026-10-30 (retracts the L11f "not a layout cause" claim; thesis pages 13, 14 match line for line) |
+| L11h | kerning from the font (GPOS `kern`, old `kern` table) as a global feature, baked into the `.agd`; one pen step `TextMeasurer.AdvanceAt` for every walk | DONE 2026-10-30 (forks F1..F3, D1..D3, Q1..Q3 in `latex-editor`; open: thesis p19 paragraph 7 vs 8 lines) |
+| L11d | floats and tables: caption skips ~4–5 pt short, table rows shorter, float on a different page (p29), over-wide tabular into the margin (p6) | DONE 2026-10-30 (display skips ×`\displayskipstretch`, caption strut + `\abovecaptionskip`, here-float spacing, `[H]` body spacing, tabular indent, empty column width, `tsb` fix; figures exact, display gaps 0.0 pt; open: table/caption gaps 0.6–1.8 pt, p9 break drift; see `latex-editor` L11d) |
+| L11e | page builder: vertical glue shrink on overfull pages (reference items 22.1–22.7 pt, natural 22.9), `\Urlmuskip` in bibliography URLs | DONE 2026-10-30 (forks L11e-F1..F4 in `latex-editor`; thesis 35 pages = reference, pages 11–14 break as the reference, p11 list items 22.7–22.8 pt apart vs 22.7; bibliography line counts match except [Nex25b] 4 vs 3; open: pages 17–18 shrink where the reference is natural) |
+
+- Measured causes behind L11b: page 2 contents line at baseline 788.0 vs text bottom 790.96 pushed to page 3 (+18 pt); every list 3.0 pt short at the top (\parskip 3 pt); item text 7.4 pt left of the reference; heading "2.5.5 WebGL API" alone at the bottom of page 13
+- Forks taken in L11 (L11-F1, L11-F2): `latex-editor`
+- Details: [[latex-editor]]
+
+### L12a — compiler errors: preamble, packages, @, text-mode math — DONE 2026-10-30
+- A stage after L11, not part of the L11 thesis-match drift work. Thesis compile errors 33 → 6 (the 6 are real errors in the source)
+- Content: amsthm, the algorithm float, `\appendix`, babel `\addto`, `\descriptionlabel`, registers `\hbadness \hfuzz \vfuzz \widowpenalty` and `page`, text-mode math recovery ("Missing $ inserted"; a math command alone as math since F1's reversal), `@` catcode saved/restored around every package read, □ in the Math charset
+- Forks L12a-F1..F5, D1, D2: `latex-editor`. Supersedes the L10a "`@` restored by counting nested files" gap
 
 ## Left out overall
 - TikZ/PGF, beamer, biber-only features (source maps, crossref and xdata inheritance; biblatex itself is done, L10f), catcode-level arbitrary TeX, `\output`, multi-column

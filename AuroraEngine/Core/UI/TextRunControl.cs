@@ -38,9 +38,10 @@ namespace ArctisAurora.Core.UI
         public FontStyle style;
         public string colorHex;
 
-        // per-span overrides; null or 0 takes the run's own
+        // per-span overrides; null or 0 takes the run's own; a variant the font lacks draws its plain face
         public string fontName;
-        public int fontSize;
+        public string variant;
+        public float fontSize;
         public string gradient;
         public string effect;
 
@@ -67,9 +68,10 @@ namespace ArctisAurora.Core.UI
         public float imageRotation;
         public PictureCollision collision;
 
-        // a formula: one U+FFFC drawn from this TeX source
+        // a formula: one U+FFFC drawn from this TeX source, and its array rows' strut in em (0 is 1.2)
         public string mathSource;
         public bool mathDisplay;
+        public float mathStrut;
 
         // a sheet link: one U+FFFC showing a cell's value or a range's grid
         public string sheetRef;
@@ -87,6 +89,11 @@ namespace ArctisAurora.Core.UI
 
         // a footnote anchor: the id of the footnote its page makes room for
         public string note;
+
+        // a biblatex URL: stretch between its characters, px, and the penalties at its two break markers
+        public float urlStretch;
+        public float urlBreakPenalty;
+        public float urlBigBreakPenalty;
 
         public Quaternion Rotation => Quaternion.CreateFromAxisAngle(Vector3.UnitZ, imageRotation * MathF.PI / 180f);
         public bool IsFloating => IsPicture && wrap != PictureWrap.Inline;
@@ -108,6 +115,7 @@ namespace ArctisAurora.Core.UI
             text.note = null;
             text.mathSource = null;
             text.mathDisplay = false;
+            text.mathStrut = 0f;
             text.imageSource = null;
             text.imageWidth = 0f;
             text.imageHeight = 0f;
@@ -167,11 +175,11 @@ namespace ArctisAurora.Core.UI
         }
 
         // formulas, laid out once per source; the font they draw from
-        private static readonly Dictionary<(string source, bool display, FontAsset font), MathBox> mathBoxes = new();
+        private static readonly Dictionary<(string source, bool display, FontAsset font, float strut, MathRules rules), MathBox> mathBoxes = new();
 
         // width-aware displays at this build's widths and the last build's
-        private Dictionary<(string, FontAsset, float), MathBox>? _fitted;
-        private Dictionary<(string, FontAsset, float), MathBox>? _fittedBefore;
+        private Dictionary<(string, FontAsset, float, float), MathBox>? _fitted;
+        private Dictionary<(string, FontAsset, float, float), MathBox>? _fittedBefore;
         private const string MathFont = "math";
 
         // characters under a selection, which a highlight leaves a gap for; -1 when none
@@ -196,8 +204,19 @@ namespace ArctisAurora.Core.UI
         public List<StyleSpan> spans => data.spans;
         public FontStyle style = FontStyle.Regular;
         public float lineHeight = 1.5f;
-        // every line's descent, px; 0 centres the font in its line box
+        // every line's descent, px; 0 centres the font in its line box; TeX's \lineskip between fixed-depth lines, px
         public float baselineDepth;
+        public float lineSkip;
+        // TeX's \strut on every fixed-depth line
+        public bool strut;
+        // TeX's line-breaking passes for optimal breaks; emergency stretch in px
+        public float tolerance = 200f;
+        public float pretolerance = -1f;
+        public float emergencyStretch;
+        // glyph widths truncated to 1/advanceGrid em; 0 keeps them exact
+        public int advanceGrid;
+        // what places the formulas' scripts and limits
+        public MathRules mathRules;
 
         // multiplies every font size at layout; the authored sizes are untouched
         internal float textZoom = 1f;
@@ -234,7 +253,7 @@ namespace ArctisAurora.Core.UI
         }
 
         [A_XSDElementProperty("FontSize", "UI", "Type size in design-space pixels.")]
-        public int fontSize
+        public float fontSize
         {
             get => field;
             set
@@ -319,7 +338,7 @@ namespace ArctisAurora.Core.UI
             string s = text ?? string.Empty;
             if (spans.Count == 0)
             {
-                _runs.Add(new TextMeasurer.Run(s, 0, s.Length, fontName, _fontAsset.atlasMetaData, Zoomed(fontSize), style));
+                _runs.Add(new TextMeasurer.Run(s, 0, s.Length, fontName, _fontAsset.atlasMetaData, Zoomed(fontSize), style, grid: advanceGrid));
                 styles[0] = new RunStyle { font = _fontAsset, paint = _paint, gradient = gradientId, effect = visual.effect };
                 return;
             }
@@ -333,7 +352,7 @@ namespace ArctisAurora.Core.UI
                 if (count < 0) count = 0;
 
                 string spanFont = FontFor(spans[i]);
-                int spanSize = spans[i].fontSize > 0 ? spans[i].fontSize : fontSize;
+                float spanSize = spans[i].fontSize > 0 ? spans[i].fontSize : fontSize;
                 FontAsset font = spanFont == fontName ? _fontAsset : ResolveFont(spanFont);
 
                 if (spans[i].IsPicture)
@@ -373,7 +392,9 @@ namespace ArctisAurora.Core.UI
                 }
                 else
                     _runs.Add(new TextMeasurer.Run(s, start, count, spanFont, font.atlasMetaData, Zoomed(spanSize), spans[i].style,
-                        space: spans[i].spaceWidth * textZoom, fill: spans[i].fill));
+                        space: spans[i].spaceWidth * textZoom, fill: spans[i].fill, grid: advanceGrid,
+                        urlStretch: spans[i].urlStretch * textZoom, urlBreakPenalty: spans[i].urlBreakPenalty, urlBigBreakPenalty: spans[i].urlBigBreakPenalty,
+                        variant: font.atlasMetaData.VariantOf(spans[i].variant)));
                 styles[i] = new RunStyle
                 {
                     font = font,
@@ -395,12 +416,12 @@ namespace ArctisAurora.Core.UI
         private MathBox MathBoxFor(in StyleSpan span, FontAsset font)
         {
             string source = SheetLinks.HasMathLinks(span.mathSource) ? SheetLinks.ExpandMath(NotePath(), span.mathSource) : span.mathSource;
-            if (mathBoxes.TryGetValue((source, span.mathDisplay, font), out MathBox cached)) return cached;
+            if (mathBoxes.TryGetValue((source, span.mathDisplay, font, span.mathStrut, mathRules), out MathBox cached)) return cached;
 
             MathBox box = font.mathConstants == null
                 ? new MathBox { error = true }
-                : MathLayout.Layout(MathParser.Parse(source), span.mathDisplay, font.atlasMetaData, font.mathConstants);
-            mathBoxes[(source, span.mathDisplay, font)] = box;
+                : MathLayout.Layout(MathParser.Parse(source), span.mathDisplay, font.atlasMetaData, font.mathConstants, strut: span.mathStrut, rules: mathRules);
+            mathBoxes[(source, span.mathDisplay, font, span.mathStrut, mathRules)] = box;
             return box;
         }
 
@@ -408,10 +429,10 @@ namespace ArctisAurora.Core.UI
         private MathBox FittedBox(in StyleSpan span, FontAsset font, float lineWidth)
         {
             string source = SheetLinks.HasMathLinks(span.mathSource) ? SheetLinks.ExpandMath(NotePath(), span.mathSource) : span.mathSource;
-            (string, FontAsset, float) key = (source, font, lineWidth);
-            _fitted ??= new Dictionary<(string, FontAsset, float), MathBox>();
+            (string, FontAsset, float, float) key = (source, font, lineWidth, span.mathStrut);
+            _fitted ??= new Dictionary<(string, FontAsset, float, float), MathBox>();
             if ((_fittedBefore == null || !_fittedBefore.TryGetValue(key, out MathBox? box)) && !_fitted.TryGetValue(key, out box))
-                box = MathLayout.Layout(MathParser.Parse(source), true, font.atlasMetaData, font.mathConstants!, lineWidth);
+                box = MathLayout.Layout(MathParser.Parse(source), true, font.atlasMetaData, font.mathConstants!, lineWidth, span.mathStrut, mathRules);
             _fitted[key] = box;
             return box;
         }
@@ -452,7 +473,7 @@ namespace ArctisAurora.Core.UI
             return (w * textZoom, h * textZoom);
         }
 
-        private float Zoomed(int size) => size * textZoom;
+        private float Zoomed(float size) => size * textZoom;
 
         protected virtual string FontFor(in StyleSpan span) => span.fontName ?? fontName;
 
@@ -461,6 +482,11 @@ namespace ArctisAurora.Core.UI
         protected virtual bool OptimalBreaks => false;
 
         protected virtual bool WidowControl => false;
+
+        // How far a line may hang below the text bottom: its descent, so a line fits while its baseline does.
+        internal float Overhang => baselineDepth * textZoom;
+
+        internal float LineSkip => lineSkip * textZoom;
 
         protected virtual float FirstLineIndent => 0f;
 
@@ -494,8 +520,8 @@ namespace ArctisAurora.Core.UI
                 foreach (LineSegment segment in line.segments)
                     for (int k = segment.charStart; k < segment.charStart + segment.charCount && k < s.Length; k++)
                     {
-                        pen += TextMeasurer.MeasureAdvance(s[k], _runs[segment.runIndex], pen);
-                        if (s[k] != ' ' && s[k] != '\t') visible = pen;
+                        pen += TextMeasurer.AdvanceAt(_runs[segment.runIndex], k, pen);
+                        if (s[k] != '\t' && (s[k] == TextMeasurer.NoBreakSpace || TextMeasurer.SpaceFactor(s[k]) == 0f)) visible = pen;
                     }
 
                 line.left += MathF.Max(0f, room - visible - line.hyphen) * factor;
@@ -521,34 +547,40 @@ namespace ArctisAurora.Core.UI
             float room = line.room > 0f ? line.room : _wrapWidth;
             if (room == float.MaxValue || line.segments.Count == 0 || line.fillExtra != 0f) return;
 
-            float pen = 0f, visible = 0f, spaceWidth = 0f, inner = 0f;
-            int end = 0, spaceCount = 0, spaces = 0;
+            float pen = 0f, visible = 0f, shrinkable = 0f, inner = 0f, stretchWeight = 0f, shrinkWeight = 0f, innerStretch = 0f, innerShrink = 0f;
+            int end = 0;
             bool tab = false;
             foreach (LineSegment segment in line.segments)
                 for (int k = segment.charStart; k < segment.charStart + segment.charCount && k < s.Length; k++)
                 {
-                    float advance = TextMeasurer.MeasureAdvance(s[k], _runs[segment.runIndex], pen);
+                    TextMeasurer.Run run = _runs[segment.runIndex];
+                    float advance = TextMeasurer.AdvanceAt(run, k, pen);
+                    float factor = TextMeasurer.SpaceFactor(s[k]);
                     pen += advance;
                     if (s[k] == '\t') tab = true;
-                    else if (s[k] == ' ' || s[k] == TextMeasurer.NoBreakSpace && _runs[segment.runIndex].space == 0f)
+                    else if (factor > 0f && (s[k] != TextMeasurer.NoBreakSpace || run.space == 0f))
                     {
-                        spaceWidth += advance;
-                        spaceCount++;
+                        float glue = factor >= 2f ? advance * 0.75f : advance;
+                        shrinkable += glue / factor;
+                        stretchWeight += glue * TextMeasurer.GlueStretch * factor;
+                        shrinkWeight += glue * TextMeasurer.GlueShrink / factor;
                     }
                     else
                     {
+                        stretchWeight += UrlStretch(run, k);
                         visible = pen;
                         end = k + 1;
-                        inner = spaceWidth;
-                        spaces = spaceCount;
+                        inner = shrinkable;
+                        innerStretch = stretchWeight;
+                        innerShrink = shrinkWeight;
                     }
                 }
 
             visible += line.hyphen;
-            if (tab || spaces == 0 || visible == room || visible < room && !stretch) return;
+            if (tab || innerStretch == 0f || visible == room || visible < room && !stretch) return;
             if (visible > room && (!OptimalBreaks || visible - room > inner * TextMeasurer.GlueShrink + 0.01f)) return;
 
-            line.spaceExtra = (room - visible) / spaces;
+            line.spaceExtra = (room - visible) / (visible < room ? innerStretch : innerShrink);
             line.justifyEnd = end;
             line.width += room - visible;
         }
@@ -568,8 +600,8 @@ namespace ArctisAurora.Core.UI
                     for (int k = segment.charStart; k < segment.charStart + segment.charCount && k < s.Length; k++)
                     {
                         if (segment.runIndex < spans.Count && spans[segment.runIndex].fill) fills++;
-                        pen += TextMeasurer.MeasureAdvance(s[k], _runs[segment.runIndex], pen);
-                        if (s[k] != ' ' && s[k] != '\t') visible = pen;
+                        pen += TextMeasurer.AdvanceAt(_runs[segment.runIndex], k, pen);
+                        if (s[k] != '\t' && (s[k] == TextMeasurer.NoBreakSpace || TextMeasurer.SpaceFactor(s[k]) == 0f)) visible = pen;
                     }
 
                 float slack = room - visible - line.hyphen;
@@ -584,11 +616,19 @@ namespace ArctisAurora.Core.UI
             _layout.lines[line + 1].segments is { Count: > 0 } next && next[0].runIndex < spans.Count && spans[next[0].runIndex].mathDisplay;
 
         // The justify stretch a character takes after its own advance.
-        private float Stretch(TextLine line, int index)
+        private float Stretch(TextLine line, int index, in TextMeasurer.Run run)
         {
             if (line.fillExtra != 0f && FillAt(index)) return line.fillExtra;
-            return line.spaceExtra != 0f && index < line.justifyEnd && text[index] is ' ' or TextMeasurer.NoBreakSpace ? line.spaceExtra : 0f;
+            if (line.spaceExtra == 0f || index >= line.justifyEnd || run.space != 0f) return 0f;
+            float factor = TextMeasurer.SpaceFactor(text[index]);
+            if (factor == 0f) return line.spaceExtra > 0f ? line.spaceExtra * UrlStretch(run, index) : 0f;
+            float glue = TextMeasurer.AdvanceAt(run, index, 0f) * (factor >= 2f ? 0.75f : 1f);
+            return line.spaceExtra > 0f ? line.spaceExtra * glue * TextMeasurer.GlueStretch * factor : line.spaceExtra * glue * TextMeasurer.GlueShrink / factor;
         }
+
+        // The \Urlmuskip stretch after a URL character, px: none after a break marker or the run's last character.
+        private float UrlStretch(in TextMeasurer.Run run, int index) =>
+            run.urlStretch > 0f && index + 1 < run.charStart + run.charCount && !TextMeasurer.IsZeroWidthBreak(text[index]) ? run.urlStretch : 0f;
 
         // Whether character index belongs to a fill span.
         private bool FillAt(int index)
@@ -608,8 +648,9 @@ namespace ArctisAurora.Core.UI
             if (line.spaceExtra == 0f && line.fillExtra == 0f) return segment.width;
 
             float width = segment.width;
+            TextMeasurer.Run run = _runs[segment.runIndex];
             for (int k = segment.charStart; k < segment.charStart + segment.charCount; k++)
-                width += Stretch(line, k);
+                width += Stretch(line, k, run);
             return width;
         }
 
@@ -629,7 +670,8 @@ namespace ArctisAurora.Core.UI
 
             Profiling.Zone.Start("Text.MeasureBlock");
             _layout = TextMeasurer.MeasureBlock(_runs, wrapWidth, metrics, lineHeight, FirstLineIndent, reuse: _layout, optimal: OptimalBreaks,
-                                                ragged: Alignment != TextAlignment.Justify, lastExtra: LastLineExtra, baselineDepth: baselineDepth * textZoom);
+                                                ragged: Alignment != TextAlignment.Justify, lastExtra: LastLineExtra, baselineDepth: baselineDepth * textZoom,
+                                                lineSkip: LineSkip, strut: strut, tolerance: tolerance, pretolerance: pretolerance, emergencyStretch: emergencyStretch * textZoom);
             laidAround = false;
             Profiling.Zone.End("Text.MeasureBlock");
             _wrapWidth = wrapWidth;
@@ -649,7 +691,7 @@ namespace ArctisAurora.Core.UI
             if (_layout == null) return 0f;
 
             _layout = TextMeasurer.MeasureBlock(_runs, _wrapWidth, metrics, lineHeight, FirstLineIndent, slots, _layout, lastExtra: LastLineExtra,
-                                                baselineDepth: baselineDepth * textZoom);
+                                                baselineDepth: baselineDepth * textZoom, lineSkip: LineSkip, strut: strut);
             laidAround = slots != null;
             Align();
             return _layout.height;
@@ -761,14 +803,14 @@ namespace ArctisAurora.Core.UI
                         {
                             float x = pen + MathLeft(run, math);
                             foreach (MathGlyph g in math.glyphs)
-                                WriteGlyph(quads, g.ch, g.face, ink, alpha, font, size * g.scale, 0u, 0f,
+                                WriteGlyph(quads, g.ch, font.atlasMetaData.Effective(0, g.face), ink, alpha, font, size * g.scale, 0u, 0f,
                                            x + g.x * size, baselineY - g.y * size, z, clip, gradientRect);
                             foreach (MathRule r in math.rules)
                                 WriteRect(quads, x + r.x * size, MathF.Round(baselineY - r.y * size), MathF.Max(1f, r.width * size),
                                           MathF.Max(1f, MathF.Round(r.height * size)), ink, alpha, z, clip, gradientRect);
                             if (math.tag != null)
                                 foreach (MathGlyph g in math.tag.glyphs)
-                                    WriteGlyph(quads, g.ch, g.face, ink, alpha, font, size * g.scale, 0u, 0f,
+                                    WriteGlyph(quads, g.ch, font.atlasMetaData.Effective(0, g.face), ink, alpha, font, size * g.scale, 0u, 0f,
                                                pen + run.imageWidth + g.x * size, baselineY - g.y * size, z, clip, gradientRect);
                             pen += run.imageWidth;
                         }
@@ -784,8 +826,8 @@ namespace ArctisAurora.Core.UI
                         float effectStart = started + (index - run.charStart) * stagger;
                         if (run.space != 0f || run.fill)
                         {
-                            UIEngine.recorder?.Glyph(font, font.atlasMetaData.Effective(run.style), ' ', run.fontSize, pen, baselineY, paint, clip);
-                            float advance = run.fill ? Stretch(line, index) : run.space;
+                            UIEngine.recorder?.Glyph(font, run.face, ' ', run.fontSize, pen, baselineY, paint, clip);
+                            float advance = run.fill ? Stretch(line, index, run) : run.space;
                             if (run.fill && spans[segment.runIndex].leader != null)
                                 WriteLeaders(quads, spans[segment.runIndex], run, font, paint, alpha, pen, pen + advance, baselineY, z, clip, gradientRect);
                             pen += advance;
@@ -799,15 +841,18 @@ namespace ArctisAurora.Core.UI
                         if (s[index] == TextMeasurer.SoftHyphen)
                         {
                             if (line.hyphen > 0f && index == line.segments[^1].charStart + line.segments[^1].charCount - 1)
-                                pen += WriteGlyph(quads, '-', run.style, paint, alpha, font, run.fontSize, effect, effectStart,
-                                                  pen, baselineY, z, clip, gradientRect);
+                            {
+                                WriteGlyph(quads, '-', run.face, paint, alpha, font, run.fontSize, effect, effectStart, pen, baselineY, z, clip, gradientRect);
+                                pen += TextMeasurer.MeasureAdvance('-', run);
+                            }
                             continue;
                         }
-                        if (s[index] == TextMeasurer.ZeroWidthSpace) continue;
+                        if (TextMeasurer.IsZeroWidthBreak(s[index])) continue;
                         uint ink = tokens != null && index < tokens.Length && tokens[index] != SyntaxToken.Plain
                             ? Palettes.Code(palette ?? Palettes.Default, tokens[index]) : paint;
-                        pen += WriteGlyph(quads, s[index] == TextMeasurer.NoBreakSpace ? ' ' : s[index], run.style, ink, alpha, font, run.fontSize,
-                                          effect, effectStart, pen, baselineY, z, clip, gradientRect) + Stretch(line, index);
+                        WriteGlyph(quads, TextMeasurer.SpaceFactor(s[index]) > 0f ? ' ' : s[index], run.face, ink, alpha, font, run.fontSize,
+                                   effect, effectStart, pen, baselineY, z, clip, gradientRect);
+                        pen += TextMeasurer.AdvanceAt(run, index, pen - lineStart) + Stretch(line, index, run);
                     }
 
                     float weight = MathF.Max(1f, run.fontSize * decorationWeight);
@@ -834,9 +879,10 @@ namespace ArctisAurora.Core.UI
                 foreach (SheetBoxCell cell in sheet.cells)
                 {
                     float pen = x;
-                    foreach (char c in cell.text)
-                        pen += WriteGlyph(quads, c, run.style, cell.error ? danger : paint, alpha, font, run.fontSize, 0u, 0f,
-                                          pen, baselineY, z, clip, gradientRect);
+                    string text = cell.text;
+                    for (int i = 0; i < text.Length; i++)
+                        pen += WriteGlyph(quads, text[i], run.face, cell.error ? danger : paint, alpha, font, run.fontSize, 0u, 0f,
+                                          pen, baselineY, z, clip, gradientRect) + (i + 1 < text.Length ? TextMeasurer.Kern(text[i], text[i + 1], run) : 0f);
                 }
                 return;
             }
@@ -859,9 +905,10 @@ namespace ArctisAurora.Core.UI
                 Vector4 cellClip = new Vector4(MathF.Max(column.X, x + cell.rect.x), MathF.Max(column.Y, top + cell.rect.y),
                                                MathF.Min(column.Z, x + cell.rect.Right), MathF.Min(column.W, top + cell.rect.Bottom));
                 float pen = x + cell.pen;
-                foreach (char c in cell.text)
-                    pen += WriteGlyph(quads, c, run.style, cell.error ? danger : paint, alpha, font, run.fontSize, 0u, 0f,
-                                      pen, top + cell.baseline, z, cellClip, gradientRect);
+                string text = cell.text;
+                for (int i = 0; i < text.Length; i++)
+                    pen += WriteGlyph(quads, text[i], run.face, cell.error ? danger : paint, alpha, font, run.fontSize, 0u, 0f,
+                                      pen, top + cell.baseline, z, cellClip, gradientRect) + (i + 1 < text.Length ? TextMeasurer.Kern(text[i], text[i + 1], run) : 0f);
             }
         }
 
@@ -957,14 +1004,14 @@ namespace ArctisAurora.Core.UI
             {
                 float x = cell + span.leaderInset * textZoom;
                 foreach (char c in span.leader)
-                    x += WriteGlyph(quads, c, run.style, paint, alpha, font, run.fontSize, 0u, 0f, x, baselineY, z, clip, gradientRect);
+                    x += WriteGlyph(quads, c, run.face, paint, alpha, font, run.fontSize, 0u, 0f, x, baselineY, z, clip, gradientRect);
             }
         }
 
         // how far the line box's left edge sits left of the text's, px at this zoom
         protected virtual float LeaderOffset => 0f;
 
-        private float WriteGlyph(DataPool quads, char character, FontStyle glyphStyle, uint paint, float alpha,
+        private float WriteGlyph(DataPool quads, char character, int face, uint paint, float alpha,
                                  FontAsset font, float size, uint effect, float effectStart,
                                  float penX, float baselineY, float z,
                                  Vector4 clip, Vector4 gradientRect)
@@ -979,11 +1026,10 @@ namespace ArctisAurora.Core.UI
                 if (glyph == null) return 0f;
             }
 
-            FontStyle effective = atlas.Effective(glyphStyle);
-            GlyphMetrics m = glyph.Metrics(effective);
+            GlyphMetrics m = atlas.Metrics(glyph, face);
             if (UIEngine.recorder != null)
             {
-                UIEngine.recorder.Glyph(font, effective, atlas.chars[index], size, penX, baselineY, paint, clip);
+                UIEngine.recorder.Glyph(font, face, atlas.chars[index], size, penX, baselineY, paint, clip);
                 return m.advanceWidth * size;
             }
 
@@ -1015,7 +1061,7 @@ namespace ArctisAurora.Core.UI
             g.clip = clip;
             g.gradientRect = gradientRect;
 
-            int cell = atlas.CellIndex(index, effective);
+            int cell = atlas.CellIndex(index, face);
             float k = MathF.Ceiling(MathF.Sqrt(atlas.cellCount));
             float cellUV = 1f / k;
             float xOffset = cell % k * cellUV;
@@ -1063,7 +1109,7 @@ namespace ArctisAurora.Core.UI
                 TextMeasurer.Run run = _runs[segment.runIndex];
                 for (int i = 0; i < segment.charCount; i++)
                 {
-                    float advance = TextMeasurer.MeasureAdvance(text[segment.charStart + i], run, pen) + Stretch(line, segment.charStart + i);
+                    float advance = TextMeasurer.AdvanceAt(run, segment.charStart + i, pen) + Stretch(line, segment.charStart + i, run);
                     if (localX < pen + advance * 0.5f) return segment.charStart + i;
                     pen += advance;
                 }
@@ -1103,7 +1149,7 @@ namespace ArctisAurora.Core.UI
 
                     TextMeasurer.Run run = _runs[segment.runIndex];
                     for (int c = segment.charStart; c < offset; c++)
-                        x += TextMeasurer.MeasureAdvance(text[c], run, x - line.left) + Stretch(line, c);
+                        x += TextMeasurer.AdvanceAt(run, c, x - line.left) + Stretch(line, c, run);
 
                     return new CaretGeometry(x, line.top, line.height, line.baseline);
                 }
@@ -1239,11 +1285,14 @@ namespace ArctisAurora.Core.UI
             List<(int offset, string id)>? anchors = space == null ? null : Anchors();
             List<TextLine> lines = _layout.lines;
             bool keep = WidowControl && lines.Count > 1;
+            float overhang = Overhang;
+            float skip = LineSkip;
             float y = blockTop;
             for (int i = 0; i < lines.Count; i++)
             {
                 TextLine line = lines[i];
-                float at = space == null ? bands.Push(y, line.height) : space.PushLine(bands, y, line.height, AnchorsIn(anchors!, line));
+                if (i > 0) y += TextMeasurer.Interline(lines[i - 1], line, skip);
+                float at = space == null ? bands.Push(y, line.height, overhang) : space.PushLine(bands, y, line.height, AnchorsIn(anchors!, line), overhang);
                 if (keep && i > 0 && at > y + PageBands.tolerance && bands.PageOf(at) > bands.PageOf(y))
                 {
                     // a club line left behind or a widow carried over: the lines before it follow onto the new page
@@ -1255,9 +1304,9 @@ namespace ArctisAurora.Core.UI
                         for (int j = from; j < i; j++)
                         {
                             lines[j].top = top - blockTop;
-                            top += lines[j].height;
+                            top += lines[j].height + TextMeasurer.Interline(lines[j], lines[j + 1], skip);
                         }
-                        at = space == null ? bands.Push(top, line.height) : space.PushLine(bands, top, line.height, AnchorsIn(anchors!, line));
+                        at = space == null ? bands.Push(top, line.height, overhang) : space.PushLine(bands, top, line.height, AnchorsIn(anchors!, line), overhang);
                     }
                 }
                 if (line.ink > line.ascent && bands.AtTextTop(at)) at += line.ink - line.ascent;

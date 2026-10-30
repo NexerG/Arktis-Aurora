@@ -19,7 +19,7 @@ namespace ArctisAurora.Core.UI
 
         // glyph: x is the pen, y the baseline
         public FontAsset? font;
-        public FontStyle face;
+        public int face;
         public char character;
         public float size;
 
@@ -39,7 +39,7 @@ namespace ArctisAurora.Core.UI
     {
         public readonly List<DrawItem> items = new List<DrawItem>();
 
-        public void Glyph(FontAsset font, FontStyle face, char character, float size, float pen, float baseline, uint paint, Vector4 clip) =>
+        public void Glyph(FontAsset font, int face, char character, float size, float pen, float baseline, uint paint, Vector4 clip) =>
             items.Add(new DrawItem
             {
                 kind = DrawKind.Glyph, font = font, face = face, character = character, size = size,

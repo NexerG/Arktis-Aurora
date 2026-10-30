@@ -37,13 +37,13 @@ namespace ArctisAurora.Tests
             IconSet.GenerateIconAtlas("default", svgs, bakeSize, root);
             yield return 1;
 
-            AssetImporter.ImportFont(charsets["Latin"], "arial", AssetImporter.ResolveSystemFont("arial.ttf"), 0,
-                null, null, null, bakeSize, root);
+            AssetImporter.ImportFont(charsets["Latin"], "arial", new[] { AssetImporter.ResolveSystemFont("arial.ttf") }, new[] { 0 },
+                new[] { 0 }, string.Empty, bakeSize, root);
             yield return 1;
 
-            AssetImporter.ImportFont(charsets["Math"], "cambria", AssetImporter.ResolveSystemFont("cambria.ttc"), 1,
-                AssetImporter.ResolveSystemFont("cambriab.ttf"), AssetImporter.ResolveSystemFont("cambriai.ttf"), null,
-                bakeSize, root);
+            AssetImporter.ImportFont(charsets["Math"], "cambria", new[] { AssetImporter.ResolveSystemFont("cambria.ttc"),
+                AssetImporter.ResolveSystemFont("cambriab.ttf"), AssetImporter.ResolveSystemFont("cambriai.ttf") }, new[] { 1, 0, 0 },
+                new[] { 0, 1, 2 }, string.Empty, bakeSize, root);
             yield return 1;
 
             yield return t.EndMeasure();

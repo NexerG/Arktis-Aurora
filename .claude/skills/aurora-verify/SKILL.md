@@ -18,7 +18,7 @@ list already uses. Running and writing tests, and poking a running app with `--s
 | **boot-verified** | the app started and got through bootstrap | launch it, watch for the throw |
 | **test-verified** | named tests covering the change passed under `--test` | `<Host>.exe --test[=<Suite>]` (`aurora-test`); a logic check, not a visual one |
 | **golden-verified** | a `t.Golden` shot matched, pixel for pixel, a golden a person approved | `--test` (`aurora-test` § Golden images); only as good as the approval |
-| **shot-verified** | you looked at a readback PNG of the presented frame yourself | a throwaway `t.Golden` test, Read its `actual.png` (`aurora-test`) |
+| **shot-verified** | you looked at a readback PNG of the presented frame yourself | a throwaway `t.Golden` test, Read its `actual.png` (`aurora-test`); for a TeX PDF export, `aurora-pdfdiff` (text positions) |
 | **GUI-verified** | someone looked at the window and saw the behaviour | capture, or the user looked |
 | **NOT GUI-verified** | the honest default | say it out loud |
 
@@ -39,8 +39,10 @@ or a host's `Data/XML/Documents/Inputs/InputMap.inputs.axml` that resolves to no
 ## Build
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" && dotnet build AuroraEngine/ArctisAurora.sln 2>&1 | grep -E "error|Build succeeded|Build FAILED"
+cd "$(git rev-parse --show-toplevel)" && _Build/build.sh
 ```
+
+Exit code is the build's own; `BUILD OK` is the only pass.
 
 Nothing in the build compiles or validates shaders — a `.spv` change is invisible to it. See `shader-pipeline`.
 

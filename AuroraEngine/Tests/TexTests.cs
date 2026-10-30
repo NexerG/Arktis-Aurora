@@ -1,4 +1,6 @@
+using ArctisAurora.Core.ECS.EngineEntity;
 using ArctisAurora.Core.Filing;
+using ArctisAurora.Core.Filing.Serialization;
 using ArctisAurora.Core.Registry;
 using ArctisAurora.Core.Registry.Assets;
 using ArctisAurora.Core.Testing;
@@ -293,9 +295,9 @@ namespace ArctisAurora.Tests
             float px = 96f / 72.27f;
             List<XElement> after = TexLowering.Compile("\\documentclass{article}\\begin{document}Text\n\n\\begin{equation}x\\end{equation}\n\nMore\\end{document}",
                 out List<TexError> errors).Elements("Block").ToList();
-            t.Check(errors.Count == 0 && after.Count == 3 && Near((float?)after[1].Attribute("SpaceBefore") ?? 0f, 12f * px, 0.05f)
-                && Near((float?)after[2].Attribute("SpaceBefore") ?? 0f, 6f * px, 0.05f),
-                $"a display after a blank line: an empty line above, \\belowdisplayshortskip below: {string.Join(" / ", after.Select(b => b.Attribute("SpaceBefore")?.Value))}");
+            t.Check(errors.Count == 0 && after.Count == 4 && (string?)after[1].Attribute("KeepWithNext") == "true" && after[1].Element("Run")?.Attribute("Text") == null
+                && after[2].Attribute("SpaceBefore") == null && Near((float?)after[3].Attribute("SpaceBefore") ?? 0f, 6f * px, 0.05f),
+                $"a display after a blank line: an empty line kept with it above, \\belowdisplayshortskip below: {string.Join(" / ", after.Select(b => b.Attribute("SpaceBefore")?.Value))}");
 
             List<XElement> inside = TexLowering.Compile("\\documentclass{article}\\begin{document}Text \\[x\\] more\n\nNext\\end{document}", out errors)
                 .Elements("Block").ToList();
@@ -323,10 +325,9 @@ namespace ArctisAurora.Tests
             bool Holds(XElement block, string text) => block.Elements("Run").Any(r => ((string?)r.Attribute("Text") ?? "").Replace("­", "").Contains(text));
             XElement? big = document.Elements("Block").FirstOrDefault(b => Holds(b, "Big"));
             XElement? caption = document.Descendants("Block").FirstOrDefault(b => Holds(b, "Single"));
-            float px = 96f / 72.27f;
-            t.Check(errors.Count == 0 && big != null && Near((float)big.Attribute("LineHeight")!, 2f * 20f * px / 19f, 0.002f),
-                $"\\fontsize's \\baselineskip, stretched, over the 19 px it is set in: {big?.Attribute("LineHeight")?.Value}");
-            t.Check(caption != null && Near((float)caption.Attribute("LineHeight")!, 12f * px / 13f, 0.002f),
+            t.Check(errors.Count == 0 && big != null && Near((float)big.Attribute("LineHeight")!, 2f * 20f / 14f, 0.002f),
+                $"\\fontsize's \\baselineskip, stretched, over the 14pt it is set in: {big?.Attribute("LineHeight")?.Value}");
+            t.Check(caption != null && Near((float)caption.Attribute("LineHeight")!, 12f / 10f, 0.002f),
                 $"setspace leaves floats single-spaced: {caption?.Attribute("LineHeight")?.Value}");
             yield break;
         }
@@ -368,6 +369,673 @@ namespace ArctisAurora.Tests
                 && blocks[2].Attribute("SpaceBefore") == null,
                 $"\\\\ in centred text ends the paragraph and takes its \\parskip back: {string.Join(" / ", blocks.Select(b => b.Attribute("SpaceBefore")?.Value))}");
             yield break;
+        }
+        #endregion
+
+        #region ---- L11: the thesis against its reference, page and list rules ----
+        [A_XSDActionDependency("Tex.PageOverhang", "Test")]
+        private static IEnumerator<int> PageOverhang(TestContext t)
+        {
+            PageBands bands = new PageBands(0f, 100f, 200f);
+            t.Check(bands.Push(85f, 20f, 6f) == 85f && bands.Push(85f, 20f) == 200f && bands.Push(90f, 20f, 6f) == 200f,
+                "a line fits while its baseline does, its descent hanging below the text bottom");
+            t.Check(new PageSpace(0f).Push(bands, 85f, 20f, 0f, 6f) == 85f && new PageSpace(0f).Push(bands, 85f, 20f) == 200f,
+                "the paginate pass's push takes the same overhang");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.ListTopSkip", "Test")]
+        private static IEnumerator<int> ListTopSkip(TestContext t)
+        {
+            TexTypesetter typesetter = Typeset("\\documentclass{article}\\setlength{\\parskip}{3pt}\\begin{document}Text\n\\begin{itemize}\\item a\\end{itemize}\\end{document}",
+                out List<TexError> errors);
+            List<TexNode> v = typesetter.vlist;
+            List<TexParagraph> pars = Pars(typesetter);
+            float gap = 0f;
+            for (int i = v.IndexOf(pars[0]) + 1; i < v.IndexOf(pars[1]); i++)
+                if (v[i] is TexVGlue g) gap += Pt(g.glue.width);
+            t.Check(errors.Count == 0 && pars.Count == 2 && Near(gap, 11f), $"a list opens \\topsep and the outer \\parskip below the text: {gap}pt");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.ListIndent", "Test")]
+        private static IEnumerator<int> ListIndent(TestContext t)
+        {
+            XElement document = TexLowering.Compile("\\documentclass{article}\\begin{document}\\begin{itemize}\\item a\\begin{itemize}\\item b\\end{itemize}\\end{itemize}"
+                + "\\end{document}", out List<TexError> errors);
+            XElement layout = document.Element("DocumentLayout")!;
+            float normal = 0f;
+            foreach (XElement style in layout.Elements("TextStyle"))
+                if ((string?)style.Attribute("Type") == "Text") normal = (float)style.Attribute("FontSize")!;
+            XElement? nested = null;
+            foreach (XElement block in document.Elements("Block"))
+                if ((string?)block.Attribute("Level") == "1") nested = block;
+            t.Check(errors.Count == 0 && Near((float)layout.Attribute("ListIndent")!, 2.5f * normal, 0.01f), $"\\leftmargini is 2.5em: {layout.Attribute("ListIndent")?.Value}");
+            t.Check(nested != null && Near(2f * (float)nested.Attribute("ListIndent")!, 4.7f * normal, 0.01f),
+                $"a second-level item stands \\leftmargini plus \\leftmarginii in: {nested?.Attribute("ListIndent")?.Value}");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.KeepWithNext", "Test")]
+        private static IEnumerator<int> KeepWithNext(TestContext t)
+        {
+            XElement document = new XElement("Document",
+                new XElement("DocumentLayout", new XElement("Page", new XAttribute("Mode", "Paged"), new XAttribute("Size", "A6"))));
+            for (int i = 0; i < 40; i++)
+            {
+                document.Add(new XElement("Block", new XElement("Run", new XAttribute("Text", $"line {i}"))));
+                document.Add(new XElement("Block", new XAttribute("StylingType", "Heading2"), new XAttribute("KeepWithNext", "true"), new XElement("Run", new XAttribute("Text", $"heading {i}"))));
+            }
+            document.Add(new XElement("Block", new XElement("Run", new XAttribute("Text", "end"))));
+            RichTextDocument parsed = DocumentXml.Parse(document);
+            bool written = false;
+            foreach (XElement e in DocumentXml.ToXml(parsed).Descendants())
+                if ((string?)e.Attribute("KeepWithNext") == "true") written = true;
+            t.Check(parsed.blocks[1] is NoteBlock { keepWithNext: true } && written, "KeepWithNext round-trips through .axml");
+
+            DocumentEditorControl editor = ShowDocument(t, document);
+            yield return 2;
+            int split = -1, moved = 0;
+            for (int i = 1; i < 81; i += 2)
+            {
+                int? heading = editor.PageAt(i, 0), next = editor.PageAt(i + 1, 0), before = editor.PageAt(i - 1, 0);
+                if (heading != next) split = i;
+                if (heading > before) moved++;
+            }
+            t.Check(split < 0 && moved > 0 && editor.PageAt(80, 0) > 0, $"no heading ends a page apart from the block after it: split at {split}, {moved} moved");
+            t.Show(new StackPanelControl());
+        }
+        #endregion
+
+        #region ---- L11c: the thesis against its reference, display vertical model ----
+        [A_XSDActionDependency("Tex.Interline", "Test")]
+        private static IEnumerator<int> Interline(TestContext t)
+        {
+            TextLine text = new TextLine { ascent = 19f, descent = 5f, ink = 11f, inkDepth = 3f, pitch = 24f };
+            TextLine tall = new TextLine { ascent = 30f, descent = 5f, ink = 30f, inkDepth = 2f, pitch = 24f };
+            TextLine deep = new TextLine { ascent = 19f, descent = 12f, ink = 11f, inkDepth = 12f, pitch = 24f };
+            TextLine note = new TextLine { ascent = 19f, descent = 5f, ink = 30f };
+            t.Check(TextMeasurer.Interline(text, text, 1f) == 0f, "ordinary lines keep \\baselineskip apart");
+            t.Check(Near(TextMeasurer.Interline(text, tall, 1f), 3f + 30f + 1f - 35f), $"a tall line sits \\lineskip under the depth above: {TextMeasurer.Interline(text, tall, 1f)}");
+            t.Check(Near(TextMeasurer.Interline(deep, text, 1f), 24f - 31f), $"under a deep line whose ink still fits, \\baselineskip: {TextMeasurer.Interline(deep, text, 1f)}");
+            t.Check(TextMeasurer.Interline(text, note, 1f) == 0f, "a line without a fixed depth takes no interline glue");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.InlineTallLine", "Test")]
+        private static IEnumerator<int> InlineTallLine(TestContext t)
+        {
+            IGlyphMetrics metrics = new FontAssetGlyphMetrics();
+            AtlasMetaData atlas = AssetRegistries.GetRegistryByValueType<string, FontAsset>(typeof(FontAsset))["default"].atlasMetaData;
+            string text = "Line ￼";
+            List<TextMeasurer.Run> runs = new List<TextMeasurer.Run>
+            {
+                new TextMeasurer.Run(text, 0, 5, "default", atlas, 16, FontStyle.Regular),
+                new TextMeasurer.Run(text, 5, 1, "default", atlas, 16, FontStyle.Regular, imageWidth: 480f, imageHeight: 40f, math: true, depth: 2f)
+            };
+            List<TextLine> lines = TextMeasurer.MeasureBlock(runs, 500f, metrics, 1.5f, baselineDepth: 5f, lineSkip: 1.5f).lines;
+            float apart = lines.Count == 2 ? lines[1].baseline - lines[0].baseline : 0f;
+            t.Check(lines.Count == 2 && Near(apart, lines[0].inkDepth + 40f + 1.5f, 0.001f),
+                $"a formula taller than the line box sits \\lineskip under the line above's ink: {apart} with depth {(lines.Count > 0 ? lines[0].inkDepth : 0f)}");
+            List<TextLine> plain = TextMeasurer.MeasureBlock(runs, 500f, metrics, 1.5f).lines;
+            t.Check(plain.Count == 2 && Near(plain[1].baseline - plain[0].baseline, plain[0].descent + 40f, 0.001f), "notes stack line boxes as before");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.DisplayInterline", "Test")]
+        private static IEnumerator<int> DisplayInterline(TestContext t)
+        {
+            XElement document = new XElement("Document",
+                new XElement("DocumentLayout", new XAttribute("BaselineDepth", "6"), new XAttribute("LineSkip", "1.33"), new XAttribute("BlockSpacing", "0")),
+                new XElement("Block", new XElement("Run", new XAttribute("Text", "Text above"))),
+                new XElement("Block", new XElement("Run", new XAttribute("Math", @"\begin{matrix}a\\b\\c\\d\end{matrix}"), new XAttribute("Display", "true"),
+                    new XAttribute("FontName", TexLowering.MathFont))));
+            DocumentEditorControl editor = ShowDocument(t, document);
+            yield return 2;
+
+            BlockControl? above = null, display = null;
+            foreach (Entity child in Content(editor).children)
+                if (child is BlockControl block)
+                {
+                    if (above == null) above = block;
+                    else display ??= block;
+                }
+            if (above == null || display == null || above.Lines.Count == 0 || display.Lines.Count == 0)
+            {
+                t.Check(false, "the text and the display are laid out");
+                yield break;
+            }
+            TextLine over = above.Lines[^1], formula = display.Lines[0];
+            float apart = display.arrangedRect.y + formula.baseline - (above.arrangedRect.y + over.baseline);
+            t.Check(formula.ink > formula.pitch - over.inkDepth && Near(apart, over.inkDepth + formula.ink + display.LineSkip, 0.05f),
+                $"a display taller than the line box sits \\lineskip under the block above's ink: {apart}, ink {formula.ink} pitch {formula.pitch}");
+            t.Show(new StackPanelControl());
+        }
+
+        [A_XSDActionDependency("Tex.MatrixStrut", "Test")]
+        private static IEnumerator<int> MatrixStrut(TestContext t)
+        {
+            static float Strut(string source)
+            {
+                foreach (XElement run in TexLowering.Compile(source, out _).Descendants("Run"))
+                    if (run.Attribute("Strut") is XAttribute strut) return (float)strut;
+                return 0f;
+            }
+            const string matrix = "Text \\[\\begin{bmatrix}a\\\\b\\end{bmatrix}\\]\\end{document}";
+            float spaced = Strut("\\documentclass[12pt]{article}\\usepackage{setspace}\\onehalfspacing\\begin{document}" + matrix);
+            float stretched = Strut("\\documentclass[12pt]{article}\\renewcommand{\\arraystretch}{2}\\begin{document}" + matrix);
+            t.Check(Near(spaced, 1.241f * 14.5f / 12f, 0.002f), $"a matrix row's strut is the stretched \\baselineskip: {spaced} em");
+            t.Check(Near(stretched, 2f * 14.5f / 12f, 0.002f), $"\\arraystretch multiplies it: {stretched} em");
+            t.Check(Strut("\\documentclass{article}\\begin{document}$x$\\end{document}") == 0f, "a formula without an array carries no strut");
+
+            FontAsset font = AssetRegistries.GetRegistryByValueType<string, FontAsset>(typeof(FontAsset))[TexLowering.MathFont];
+            MathNode rows = MathParser.Parse(@"\begin{matrix}a\\b\end{matrix}");
+            MathBox plain = MathLayout.Layout(rows, true, font.atlasMetaData, font.mathConstants!);
+            MathBox same = MathLayout.Layout(rows, true, font.atlasMetaData, font.mathConstants!, strut: 1.2f);
+            MathBox tall = MathLayout.Layout(rows, true, font.atlasMetaData, font.mathConstants!, strut: 2.4f);
+            float grown = tall.height + tall.depth - (plain.height + plain.depth);
+            t.Check(same.height == plain.height && same.depth == plain.depth && Near(grown, 2.4f, 0.01f),
+                $"notes keep 1.2 em rows; a 2.4 em strut adds 1.2 em to each of the two rows: {grown}");
+            yield break;
+        }
+        #endregion
+
+        #region ---- L11c2: classic TeX math rules ----
+        [A_XSDActionDependency("Tex.MathRulesMode", "Test")]
+        private static IEnumerator<int> MathRulesMode(TestContext t)
+        {
+            XElement classic = TexLowering.Compile("\\documentclass{article}\\begin{document}$x_c$\\end{document}", out _).Element("DocumentLayout")!;
+            XElement unicode = TexLowering.Compile("\\documentclass{article}\\usepackage{unicode-math}\\begin{document}$x_c$\\end{document}", out _)
+                .Element("DocumentLayout")!;
+            t.Check((string?)classic.Attribute("MathRules") == "Tfm" && unicode.Attribute("MathRules") == null,
+                $"LaTeX without unicode-math places math by TeX's font dimensions: {classic.Attribute("MathRules")?.Value} / {unicode.Attribute("MathRules")?.Value}");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.ClassicScripts", "Test")]
+        private static IEnumerator<int> ClassicScripts(TestContext t)
+        {
+            FontAsset font = AssetRegistries.GetRegistryByValueType<string, FontAsset>(typeof(FontAsset))[TexLowering.MathFont];
+            MathConstants c = font.mathConstants!;
+            static float Below(MathBox box, char ch)
+            {
+                foreach (MathGlyph g in box.glyphs)
+                    if (g.ch == ch) return -g.y;
+                return float.NaN;
+            }
+            MathNode subscript = MathParser.Parse("x_c");
+            float tfm = Below(MathLayout.Layout(subscript, false, font.atlasMetaData, c, rules: MathRules.Tfm), 'c');
+            float open = Below(MathLayout.Layout(subscript, false, font.atlasMetaData, c), 'c');
+            t.Check(Near(tfm, 0.15f, 0.001f) && Near(open, c.subscriptShiftDown, 0.001f), $"a lone subscript drops sub1 0.15 em, OpenType's 0.247: {tfm} / {open}");
+
+            MathBox integral = MathLayout.Layout(MathParser.Parse(@"\int_\Omega f"), true, font.atlasMetaData, c, rules: MathRules.Tfm);
+            MathBox sign = MathLayout.Layout(MathParser.Parse(@"\int"), true, font.atlasMetaData, c, rules: MathRules.Tfm);
+            float drop = Below(integral, 'Ω');
+            t.Check(Near(drop, sign.depth + c.subDrop * c.scriptPercentScaleDown / 100f, 0.002f),
+                $"a big operator's subscript hangs sub_drop at script size under its depth: {drop} for depth {sign.depth}");
+            yield break;
+        }
+        #endregion
+
+        #region ---- L11d: floats, captions and display skips against the thesis ----
+        [A_XSDActionDependency("Tex.SetspaceDisplaySkip", "Test")]
+        private static IEnumerator<int> SetspaceDisplaySkip(TestContext t)
+        {
+            float px = 96f / 72.27f;
+            XElement document = TexLowering.Compile("\\documentclass[12pt]{article}\\usepackage{setspace}\\onehalfspacing\\begin{document}Text \\[x\\] more\n\nNext\\end{document}",
+                out List<TexError> errors);
+            XElement? display = null, after = null;
+            int index = 0;
+            foreach (XElement block in document.Elements("Block"))
+            {
+                if (index == 1) display = block;
+                else if (index == 2) after = block;
+                index++;
+            }
+            float above = (float?)display?.Attribute("SpaceBefore") ?? 0f, below = (float?)after?.Attribute("SpaceBefore") ?? 0f;
+            t.Check(errors.Count == 0 && Near(above, 12f * 1.241f * px, 0.05f) && Near(below, 12f * 1.241f * px, 0.05f),
+                $"setspace stretches \\abovedisplayskip and \\belowdisplayskip by \\baselinestretch: {above} / {below}");
+            t.Check(display?.Attribute("ShrinkBefore") == null && after?.Attribute("ShrinkBefore") == null, "and leaves them rigid");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.CaptionSkip", "Test")]
+        private static IEnumerator<int> CaptionSkip(TestContext t)
+        {
+            float px = 96f / 72.27f;
+            XElement document = TexLowering.Compile("\\documentclass{article}\\begin{document}\\begin{figure}[h]Body\\caption{Below}\\end{figure}"
+                + "\\begin{table}[h]\\caption{Above}\\begin{tabular}{l}x\\end{tabular}\\end{table}\\end{document}", out List<TexError> errors);
+            XElement? below = BlockHolding(document, "Below"), above = BlockHolding(document, "Above");
+            XElement? table = null;
+            if (above != null)
+                foreach (XElement next in above.ElementsAfterSelf("Table"))
+                {
+                    table = next;
+                    break;
+                }
+            t.Check(errors.Count == 0 && below != null && (string?)below.Attribute("Strut") == "true" && Near((float?)below.Attribute("SpaceBefore") ?? 0f, 10f * px, 0.05f),
+                $"a caption after the float's body takes \\abovecaptionskip above it and a strut: {below?.Attribute("SpaceBefore")?.Value}");
+            t.Check(above != null && (string?)above.Attribute("Strut") == "true" && above.Attribute("SpaceBefore") == null
+                && Near((float?)table?.Attribute("SpaceBefore") ?? 0f, 10f * px, 0.05f),
+                $"a caption first takes it below instead: {table?.Attribute("SpaceBefore")?.Value}");
+
+            IGlyphMetrics metrics = new FontAssetGlyphMetrics();
+            AtlasMetaData atlas = AssetRegistries.GetRegistryByValueType<string, FontAsset>(typeof(FontAsset))["default"].atlasMetaData;
+            List<TextMeasurer.Run> runs = new List<TextMeasurer.Run> { new TextMeasurer.Run("Line", 0, 4, "default", atlas, 16, FontStyle.Regular) };
+            TextLine line = TextMeasurer.MeasureBlock(runs, 500f, metrics, 1.5f, baselineDepth: 5f, strut: true).lines[0];
+            t.Check(Near(line.ascent, MathF.Max(line.ink, 0.7f * 24f)) && Near(line.descent, MathF.Max(line.inkDepth, 0.3f * 24f)),
+                $"a strut line stands 0.7 of its box above the baseline and 0.3 below: {line.ascent}+{line.descent}");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.HereFloatSpacing", "Test")]
+        private static IEnumerator<int> HereFloatSpacing(TestContext t)
+        {
+            XElement layout = TexLowering.Compile("\\documentclass[12pt]{article}\\begin{document}x\\end{document}", out _).Element("DocumentLayout")!;
+            float shrink = (float?)layout.Element("Page")?.Attribute("InTextSepShrink") ?? 0f;
+            t.Check(Near(shrink, 4f * 25.4f / 72.27f, 0.005f), $"\\intextsep shrinks by 4pt at 12pt: {shrink} mm");
+
+            XElement document = new XElement("Document",
+                new XElement("DocumentLayout", new XAttribute("BaselineDepth", "6"), new XAttribute("LineSkip", "1.33"), new XAttribute("BlockSpacing", "0"),
+                    new XElement("Page", new XAttribute("Mode", "Paged"), new XAttribute("Size", "A4"), new XAttribute("InTextSep", "5"))),
+                new XElement("Block", new XElement("Run", new XAttribute("Text", "Text above"))),
+                new XElement("Float", new XAttribute("Kind", "figure"), new XAttribute("Placement", "H"),
+                    new XElement("Block", new XElement("Run", new XAttribute("Text", "Inside")))),
+                new XElement("Block", new XElement("Run", new XAttribute("Text", "Text below"))));
+            DocumentEditorControl editor = ShowDocument(t, document);
+            yield return 2;
+
+            BlockControl? before = null, inside = null, after = null;
+            foreach (Entity child in Content(editor).children)
+                if (child is BlockControl block)
+                {
+                    if (before == null) before = block;
+                    else if (inside == null) inside = block;
+                    else after ??= block;
+                }
+            if (before == null || inside == null || after == null || before.Lines.Count == 0 || inside.Lines.Count == 0 || after.Lines.Count == 0)
+            {
+                t.Check(false, "the text and the float are laid out");
+                yield break;
+            }
+            float sep = 5f * PageLayout.PxPerMm;
+            TextLine over = before.Lines[^1], first = after.Lines[0];
+            float floatTop = inside.arrangedRect.y, floatBottom = inside.arrangedRect.y + inside.Lines[^1].top + inside.Lines[^1].height;
+            float gapAbove = floatTop - (before.arrangedRect.y + over.baseline);
+            float gapBelow = after.arrangedRect.y + first.baseline - floatBottom;
+            t.Check(Near(gapAbove, over.inkDepth + before.LineSkip + sep, 0.05f),
+                $"a float set here stands \\intextsep under the ink above and its \\lineskip: {gapAbove}, depth {over.inkDepth}");
+            t.Check(Near(gapBelow, sep + first.pitch, 0.05f), $"the text after it starts a whole \\baselineskip under the gap: {gapBelow}, pitch {first.pitch}");
+            t.Show(new StackPanelControl());
+        }
+
+        [A_XSDActionDependency("Tex.HFloatSpacing", "Test")]
+        private static IEnumerator<int> HFloatSpacing(TestContext t)
+        {
+            XElement document = TexLowering.Compile("\\documentclass{article}\\usepackage{setspace}\\setstretch{2}\\begin{document}Body\n\n"
+                + "\\begin{figure}[H]Inside\\caption{Single}\\end{figure}\\begin{figure}[h]Here\\end{figure}\\end{document}", out List<TexError> errors);
+            XElement? inside = BlockHolding(document, "Inside"), caption = BlockHolding(document, "Single"), here = BlockHolding(document, "Here");
+            t.Check(errors.Count == 0 && inside != null && inside.Attribute("LineHeight") == null,
+                $"an [H] float keeps the body's stretched spacing: {inside?.Attribute("LineHeight")?.Value}");
+            t.Check(caption != null && Near((float?)caption.Attribute("LineHeight") ?? 0f, 1.2f, 0.002f) && here != null && Near((float?)here.Attribute("LineHeight") ?? 0f, 1.2f, 0.002f),
+                $"its caption and every other float are single-spaced: {caption?.Attribute("LineHeight")?.Value} / {here?.Attribute("LineHeight")?.Value}");
+            yield break;
+        }
+
+        // The first block anywhere under root with a run holding text, soft hyphens aside.
+        private static XElement? BlockHolding(XElement root, string text)
+        {
+            foreach (XElement block in root.Descendants("Block"))
+                foreach (XElement run in block.Elements("Run"))
+                    if (((string?)run.Attribute("Text") ?? "").Replace("­", "").Contains(text)) return block;
+            return null;
+        }
+        #endregion
+
+        #region ---- L11f: line breaking as TeX ----
+        [A_XSDActionDependency("Tex.ExactSize", "Test")]
+        private static IEnumerator<int> ExactSize(TestContext t)
+        {
+            XElement document = TexLowering.Compile("\\documentclass[12pt]{article}\\begin{document}Body {\\small small}\\end{document}", out _);
+            float text = 0f;
+            foreach (XElement style in document.Element("DocumentLayout")!.Elements("TextStyle"))
+                if ((string?)style.Attribute("Type") == "Text") text = (float)style.Attribute("FontSize")!;
+            float small = 0f;
+            foreach (XElement run in document.Descendants("Run"))
+                if ((string?)run.Attribute("Text") == "small") small = (float)run.Attribute("FontSize")!;
+            t.Check(Near(text, 12f * 96f / 72.27f, 0.001f) && Near(small, 10.95f * 96f / 72.27f, 0.001f),
+                $"sizes are TeX points exactly, not whole pixels: 12pt {text}, \\small {small}");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.SpaceFactor", "Test")]
+        private static IEnumerator<int> SpaceFactor(TestContext t)
+        {
+            static string Text(string body)
+            {
+                XElement document = TexLowering.Compile("\\documentclass{article}\\begin{document}" + body + "\\end{document}", out _);
+                StringBuilder text = new StringBuilder();
+                foreach (XElement run in document.Descendants("Run"))
+                    text.Append((string?)run.Attribute("Text"));
+                return text.ToString().Replace("­", "");
+            }
+            char sentence = TextMeasurer.FactorSpace(3f), colon = TextMeasurer.FactorSpace(2f), semicolon = TextMeasurer.FactorSpace(1.5f),
+                comma = TextMeasurer.FactorSpace(1.25f);
+            string plain = Text("One. Two, three; four: seven");
+            t.Check(plain == $"One.{sentence}Two,{comma}three;{semicolon}four:{colon}seven", $"punctuation sets TeX's space factors: {Escape(plain)}");
+            string upper = Text("NASA. And x.) Then");
+            t.Check(upper == $"NASA. And x.){sentence}Then", $"a capital before the stop keeps a plain space; a closing parenthesis is transparent: {Escape(upper)}");
+            string marked = Text("NASA\\@. Then e.g.\\@ so");
+            t.Check(marked == $"NASA.{sentence}Then e.g. so", $"\\@ sets the factor to 1000: {Escape(marked)}");
+            string french = Text("\\frenchspacing One. Two, three");
+            t.Check(french == "One. Two, three", $"\\frenchspacing makes every space plain: {Escape(french)}");
+
+            AtlasMetaData atlas = AssetRegistries.GetRegistryByValueType<string, FontAsset>(typeof(FontAsset))["default"].atlasMetaData;
+            TextMeasurer.Run run = new TextMeasurer.Run("x", 0, 1, "default", atlas, 16, FontStyle.Regular);
+            float space = TextMeasurer.MeasureAdvance(' ', run);
+            t.Check(Near(TextMeasurer.MeasureAdvance(sentence, run), space * 4f / 3f, 0.001f) && Near(TextMeasurer.MeasureAdvance(comma, run), space, 0.001f),
+                $"from a factor of 2 a space is a third wider: {TextMeasurer.MeasureAdvance(sentence, run)} against {space}");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.Pretolerance", "Test")]
+        private static IEnumerator<int> Pretolerance(TestContext t)
+        {
+            XElement layout = TexLowering.Compile("\\documentclass{article}\\tolerance 1414 \\emergencystretch 1.5em\\begin{document}x\\end{document}", out _)
+                .Element("DocumentLayout")!;
+            t.Check((string?)layout.Attribute("Tolerance") == "1414" && (string?)layout.Attribute("Pretolerance") == "100"
+                && Near((float)layout.Attribute("EmergencyStretch")!, 15f * 96f / 72.27f, 0.01f),
+                $"\\tolerance, \\pretolerance and \\emergencystretch reach the layout: {layout.Attribute("Tolerance")?.Value} {layout.Attribute("Pretolerance")?.Value} {layout.Attribute("EmergencyStretch")?.Value}");
+
+            IGlyphMetrics metrics = new FontAssetGlyphMetrics();
+            AtlasMetaData atlas = AssetRegistries.GetRegistryByValueType<string, FontAsset>(typeof(FontAsset))["default"].atlasMetaData;
+            const string text = "Para­graph hy­phen­ation re­mark­ably for­ward words to­gether with com­put­ers and ty­po­graph­ers through­out";
+            List<TextMeasurer.Run> runs = new List<TextMeasurer.Run> { new TextMeasurer.Run(text, 0, text.Length, "default", atlas, 16, FontStyle.Regular) };
+            static bool Hyphenated(BlockLayout block)
+            {
+                foreach (TextLine line in block.lines)
+                    if (line.hyphen > 0f) return true;
+                return false;
+            }
+            bool everHyphenates = false, firstPassHyphenates = false;
+            for (float width = 200f; width < 400f; width += 3f)
+            {
+                everHyphenates |= Hyphenated(TextMeasurer.MeasureBlock(runs, width, metrics, 1.5f, optimal: true));
+                firstPassHyphenates |= Hyphenated(TextMeasurer.MeasureBlock(runs, width, metrics, 1.5f, optimal: true, pretolerance: 10000f));
+            }
+            t.Check(everHyphenates && !firstPassHyphenates,
+                $"a first pass within \\pretolerance tries no hyphens; without it some width hyphenates: {everHyphenates} / {firstPassHyphenates}");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.FontspecLigatures", "Test")]
+        private static IEnumerator<int> FontspecLigatures(TestContext t)
+        {
+            static string Text(string preamble)
+            {
+                XElement document = TexLowering.Compile("\\documentclass{article}" + preamble + "\\begin{document}fine -- office\\end{document}", out _);
+                StringBuilder text = new StringBuilder();
+                foreach (XElement run in document.Descendants("Run"))
+                    text.Append((string?)run.Attribute("Text"));
+                return text.ToString().Replace("­", "");
+            }
+            string modern = Text("");
+            string times = Text("\\usepackage{fontspec}\\setmainfont{Times New Roman}");
+            t.Check(modern.Contains("ﬁne") && modern.Contains("oﬃce") && times.Contains("fine") && times.Contains("office") && times.Contains("–"),
+                $"f-ligatures in Latin Modern only, TeX's dashes in every font: {modern} / {times}");
+            yield break;
+        }
+
+        #endregion
+
+        #region ---- L11g, L11h: glyph widths in thousandths, kerning ----
+        [A_XSDActionDependency("Tex.AdvanceGrid", "Test")]
+        private static IEnumerator<int> AdvanceGrid(TestContext t)
+        {
+            XElement layout = TexLowering.Compile("\\documentclass{article}\\begin{document}x\\end{document}", out _).Element("DocumentLayout")!;
+            t.Check((string?)layout.Attribute("AdvanceGrid") == "1000", $"a TeX document keeps glyph widths in thousandths of an em: {layout.Attribute("AdvanceGrid")?.Value}");
+
+            AtlasMetaData atlas = AssetRegistries.GetRegistryByValueType<string, FontAsset>(typeof(FontAsset))[TexLowering.TermesFont].atlasMetaData;
+            float em = atlas.TableAdvance('a', 0);
+            TextMeasurer.Run exact = new TextMeasurer.Run("a", 0, 1, TexLowering.TermesFont, atlas, 100f, FontStyle.Regular);
+            TextMeasurer.Run gridded = new TextMeasurer.Run("a", 0, 1, TexLowering.TermesFont, atlas, 100f, FontStyle.Regular, grid: 1000);
+            t.Check(Near(TextMeasurer.MeasureAdvance('a', exact), em * 100f, 0.0001f)
+                && Near(TextMeasurer.MeasureAdvance('a', gridded), MathF.Floor(em * 1000f + 0.001f) / 10f, 0.0001f),
+                $"the grid truncates, it does not round: {TextMeasurer.MeasureAdvance('a', gridded)} from {em * 100f}");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Font.KernPairs", "Test")]
+        private static IEnumerator<int> KernPairs(TestContext t)
+        {
+            AtlasMetaData carlito = AssetRegistries.GetRegistryByValueType<string, FontAsset>(typeof(FontAsset))[TexLowering.CarlitoFont].atlasMetaData;
+            t.Check(carlito.Kern('T', 'a', 0) < 0f && carlito.Kern('A', 'V', 0) < 0f
+                && carlito.Kern('a', 'b', 0) == 0f && carlito.Kern(' ', 'A', 0) == 0f,
+                $"the baked font carries its pairs, none with a space: Ta {carlito.Kern('T', 'a', 0)}, AV {carlito.Kern('A', 'V', 0)}");
+
+            string times = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "times.ttf");
+            if (!File.Exists(times)) yield break;
+            char[] chars = "TaVuiv.1AWow".ToCharArray();
+            List<uint> keys = new List<uint>(64);
+            List<float> values = new List<float>(64);
+            FontKerning.Read(times, 0, chars, keys, values);
+            float Pair(char a, char b)
+            {
+                int k = keys.IndexOf((uint)a << 16 | b);
+                return k < 0 ? 0f : TextMeasurer.Grid(values[k], 1000);
+            }
+            // LuaLaTeX's kerns in the thesis PDF, in em at 11.955 bp; Vu, Ti, 11 and Wi sit one thousandth nearer zero there
+            (string pair, float em)[] reference = { ("Ta", -0.069f), ("Vu", -0.059f), ("Ti", -0.034f), ("11", -0.036f), ("v.", -0.064f), ("Wi", -0.039f), ("Av", -0.074f) };
+            StringBuilder wrong = new StringBuilder();
+            foreach ((string pair, float em) in reference)
+                if (!Near(Pair(pair[0], pair[1]), em, 0.0011f)) wrong.Append($"{pair} {Pair(pair[0], pair[1])} (want {em}); ");
+            t.Check(wrong.Length == 0, $"Times New Roman's pairs match the kerns LuaLaTeX set to a thousandth of an em: {wrong}");
+        }
+
+        [A_XSDActionDependency("Font.OldAtlasLoads", "Test")]
+        private static IEnumerator<int> OldAtlasLoads(TestContext t)
+        {
+            AtlasMetaData baked = new AtlasMetaData { glyphCount = 1, chars = new[] { 'a' }, glyphs = new[] { new Glyph() }, pxRange = 4f, cellSize = 32 };
+            string path = Path.Combine(Path.GetTempPath(), "aurora-old-atlas.agd");
+            Serializer.SerializeAttributed(baked, path);
+            byte[] bytes = File.ReadAllBytes(path);
+            File.WriteAllBytes(path, bytes[..^(3 * sizeof(int))]);
+            AtlasMetaData read = new AtlasMetaData();
+            Serializer.DeserializeAttributed(path, ref read);
+            File.Delete(path);
+            read.BuildCharIndex();
+            t.Check(read.glyphCount == 1 && read.cellSize == 32 && read.kernKeys.Length == 0 && read.Kern('a', 'a', 0) == 0f,
+                $"an .agd baked before kerning loads with no pairs: {read.glyphCount} glyphs, {read.kernKeys.Length} pairs");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Text.KernLayout", "Test")]
+        private static IEnumerator<int> KernLayout(TestContext t)
+        {
+            const string word = "AVAWAYTa";
+            TextRunControl kerned = new TextRunControl { text = word, fontName = TexLowering.CarlitoFont, fontSize = 40,
+                horizontalAlignment = HorizontalAlignment.Left, verticalAlignment = VerticalAlignment.Top };
+            t.Show(kerned);
+            yield return 2;
+
+            AtlasMetaData atlas = AssetRegistries.GetRegistryByValueType<string, FontAsset>(typeof(FontAsset))[TexLowering.CarlitoFont].atlasMetaData;
+            TextMeasurer.Run run = new TextMeasurer.Run(word, 0, word.Length, TexLowering.CarlitoFont, atlas, 40f, FontStyle.Regular);
+            float plain = 0f, expected = 0f;
+            for (int i = 0; i < word.Length; i++)
+            {
+                plain += TextMeasurer.MeasureAdvance(word[i], run);
+                expected += TextMeasurer.AdvanceAt(run, i, expected);
+            }
+            float end = kerned.CaretAt(word.Length).x;
+            t.Check(Near(end, expected, 0.01f) && end < plain - 5f, $"the caret ends where the kerned pen does, short of the unkerned width: {end} / {expected} / {plain}");
+
+            bool hits = true;
+            for (int k = 0; k < word.Length; k++)
+            {
+                CaretGeometry caret = kerned.CaretAt(k);
+                hits &= kerned.IndexAt(new Vector2(kerned.arrangedRect.x + caret.x + 1f, kerned.arrangedRect.y + caret.top + 2f)) == k;
+            }
+            t.Check(hits, "a click just right of each caret position lands on that character");
+        }
+        #endregion
+
+        #region ---- compiler errors: preamble, packages, @, text-mode math ----
+        [A_XSDActionDependency("Tex.PreambleRegisters", "Test")]
+        private static IEnumerator<int> PreambleRegisters(TestContext t)
+        {
+            string lines = Lines("\\documentclass{article}\\hbadness 1414\n\\hfuzz 0.3 pt\n\\widowpenalty=10000\n\\vfuzz \\hfuzz\n"
+                + "\\addto\\captionenglish{\\renewcommand{\\proofname}{X}}\\setcounter{page}{2}\n"
+                + "\\renewcommand*\\descriptionlabel[1]{\\hspace\\labelsep\\normalfont\\bfseries #1.}\\begin{document}x\\end{document}", out List<TexError> errors);
+            t.Check(errors.Count == 0 && lines == "x", $"the thesis class's registers, \\addto, the page counter and \\descriptionlabel read clean: {Messages(errors)} / {lines}");
+
+            lines = Lines(@"\begin{description}\item[Term] text\end{description}\renewcommand\descriptionlabel[1]{#1:}\begin{description}\item[B] c\end{description}");
+            t.Check(lines == "Term text / B: c", $"a description label goes through \\descriptionlabel: {lines}");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.Amsthm", "Test")]
+        private static IEnumerator<int> Amsthm(TestContext t)
+        {
+            TexTypesetter typesetter = Typeset("\\documentclass{article}\\usepackage{amsthm}\\newtheorem{theorem}{Teorema}[section]\\newtheorem{lemma}[theorem]{Lema}\n"
+                + "\\newtheoremstyle{custom}{}{}{}{\\parindent}{\\bfseries}{. }{}{}\\swapnumbers\\theoremstyle{definition}\\newtheorem*{remark}{Pastaba}\n"
+                + "\\begin{document}\\section{A}\n\\begin{theorem}[note]\nBody\n\\end{theorem}\n\\begin{lemma}More\\end{lemma}\n\\begin{remark}N\\end{remark}\n"
+                + "\\begin{proof}P\\end{proof}\\end{document}", out List<TexError> errors);
+            List<TexParagraph> pars = Pars(typesetter);
+            string[] texts = new string[pars.Count];
+            for (int i = 0; i < pars.Count; i++) texts[i] = Line(pars[i]);
+            string all = string.Join(" / ", texts);
+            t.Check(errors.Count == 0 && all == "1 A / Teorema 1.1 (note). Body / Lema 1.2. More / Pastaba. N / Proof. P $\\square$",
+                $"numbered within the section, a shared counter, a note, unnumbered, proof: {Messages(errors)} / {all}");
+
+            bool bodyItalic = false, remarkUpright = false;
+            foreach (TexParagraph p in pars)
+                foreach (TexNode node in p.list)
+                {
+                    if (node is TexChar { ch: 'B' } b) bodyItalic = b.style.font.italic;
+                    if (node is TexChar { ch: 'N' } n) remarkUpright = !n.style.font.italic;
+                }
+            t.Check(bodyItalic && remarkUpright, "plain theorems set their body italic, definition-style ones upright");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.Appendix", "Test")]
+        private static IEnumerator<int> Appendix(TestContext t)
+        {
+            string lines = Lines(@"\section{A}\section{B}\appendix\section{C}\section{D}", out List<TexError> errors);
+            t.Check(errors.Count == 0 && lines == "1 A / 2 B / A C / B D", $"\\appendix restarts sections at A: {Messages(errors)} / {lines}");
+
+            lines = Lines(@"\documentclass{report}\begin{document}\chapter{C}\appendix\chapter{D}\section{S}\end{document}", out errors);
+            t.Check(errors.Count == 0 && lines == "Chapter 1 / C / Chapter A / D / A.1 S", $"in a report it restarts chapters: {Messages(errors)} / {lines}");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.AtCatcode", "Test")]
+        private static IEnumerator<int> AtCatcode(TestContext t)
+        {
+            string folder = Path.Combine(Path.GetTempPath(), "aurora-tex-at");
+            Directory.CreateDirectory(folder);
+            File.WriteAllText(Path.Combine(folder, "AtTest.cls"),
+                "\\LoadClass{article}\\makeatother\\RequirePackage{amsthm}\\newtheorem{theorem}{T}\\edef\\atcode{\\the\\catcode`\\@}\n");
+            File.WriteAllText(Path.Combine(folder, "atpkg.sty"), "\\def\\pkg@x{}\n");
+            TexTypesetter typesetter = new TexTypesetter("\\documentclass{AtTest}\\makeatletter\\usepackage{atpkg}\\edef\\inside{\\the\\catcode`\\@}\\makeatother\n"
+                + "\\begin{document}\\atcode,\\inside, a@b\\end{document}", null, folder);
+            typesetter.Run();
+            Directory.Delete(folder, true);
+            List<TexParagraph> pars = Pars(typesetter);
+            string line = pars.Count == 1 ? Line(pars[0]) : "";
+            t.Check(typesetter.errors.Count == 0 && line == "12,11, a@b",
+                $"a package reads @ as a letter and puts back the catcode it found, in a class after \\makeatother and inside \\makeatletter: {Messages(typesetter.errors)} / {line}");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.TextModeMath", "Test")]
+        private static IEnumerator<int> TextModeMath(TestContext t)
+        {
+            string lines = MathLines(@"a \cdot b c", out List<TexError> errors);
+            t.Check(errors.Count == 1 && Has(errors, "Missing $ inserted") && lines == "a $\\cdot$b c", $"a math command in text is set alone as math: {Messages(errors)} / {lines}");
+
+            lines = MathLines(@"{x \omega y} z", out errors);
+            t.Check(errors.Count == 1 && lines == "x $\\omega$y z", $"a math command in a group closes its math before the group ends: {Messages(errors)} / {lines}");
+
+            lines = MathLines("a^2 b\n\nc", out errors);
+            t.Check(errors.Count == 2 && lines == "a$^2 b$ / c", $"a superscript in text starts math up to the paragraph's end: {Messages(errors)} / {lines}");
+
+            lines = MathLines(@"$\frac{a}{b}$ \nope", out errors);
+            t.Check(errors.Count == 1 && Has(errors, @"Undefined control sequence \nope"), $"other undefined commands stay undefined: {Messages(errors)}");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.AlgorithmFloat", "Test")]
+        private static IEnumerator<int> AlgorithmFloat(TestContext t)
+        {
+            TexFloat? ruled = FirstFloat(Typeset(@"\documentclass{article}\usepackage{algorithm}\begin{document}\listofalgorithms\begin{algorithm}[H]body\caption{Sort}\end{algorithm}\end{document}", out List<TexError> errors));
+            string shape = ruled == null ? "none" : Shape(ruled.vlist);
+            t.Check(errors.Count == 0 && ruled != null && ruled.kind == "algorithm" && ruled.placement == "H" && shape == "rule,skip,Algorithm 1 Sort,skip,rule,skip,body,skip,rule",
+                $"ruled by default: the caption on top between rules, a rule closing it: {Messages(errors)} / {shape}");
+
+            ruled = FirstFloat(Typeset("\\documentclass{article}\\usepackage{algorithm}\\makeatletter\\renewcommand{\\fnum@algorithm}{\\thealgorithm}\\makeatother\n"
+                + "\\renewcommand\\thealgorithm{\\arabic{algorithm} algoritmas}\\begin{document}\\begin{algorithm}\\caption{Sort}x\\end{algorithm}\\end{document}", out errors));
+            shape = ruled == null ? "none" : Shape(ruled.vlist);
+            t.Check(errors.Count == 0 && shape.Contains(",1 algoritmas Sort,"), $"the thesis's \\fnum@algorithm and \\thealgorithm: {Messages(errors)} / {shape}");
+
+            TexFloat? plain = FirstFloat(Typeset(@"\documentclass{article}\usepackage[plain,section]{algorithm}\floatname{algorithm}{Algoritmas}\begin{document}\section{S}\begin{algorithm}\caption{Sort}body\end{algorithm}\end{document}", out errors));
+            shape = plain == null ? "none" : Shape(plain.vlist);
+            t.Check(errors.Count == 0 && shape == "body,Algoritmas 1.1: Sort", $"plain puts the caption last, numbered within the section, \\floatname renames it: {Messages(errors)} / {shape}");
+
+            Typeset(@"\begin{algorithm}x\end{algorithm}", out errors);
+            t.Check(Has(errors, "Environment algorithm undefined"), $"no algorithm without the package: {Messages(errors)}");
+            yield break;
+        }
+
+        // A typesetter with the math-only names of the notes' math, as TexLowering.Compile sets it.
+        private static string MathLines(string source, out List<TexError> errors)
+        {
+            TexTypesetter typesetter = new TexTypesetter(source);
+            typesetter.expander.mathOnly = static name => MathSymbols.commands.ContainsKey(name);
+            typesetter.Run();
+            errors = typesetter.errors;
+            List<TexParagraph> pars = Pars(typesetter);
+            string[] texts = new string[pars.Count];
+            for (int i = 0; i < pars.Count; i++) texts[i] = Line(pars[i]);
+            return string.Join(" / ", texts);
+        }
+
+        private static TexFloat? FirstFloat(TexTypesetter typesetter)
+        {
+            foreach (TexNode node in typesetter.vlist)
+            {
+                if (node is TexFloat f) return f;
+                if (node is not TexParagraph p) continue;
+                foreach (TexNode inner in p.list)
+                    if (inner is TexFloat g) return g;
+            }
+            return null;
+        }
+
+        // A float's vertical list as rule, skip or a paragraph's text.
+        private static string Shape(List<TexNode> vlist)
+        {
+            string[] parts = new string[vlist.Count];
+            for (int i = 0; i < vlist.Count; i++)
+                parts[i] = vlist[i] switch { TexRuleNode => "rule", TexVGlue => "skip", TexParagraph p => Line(p), _ => vlist[i].GetType().Name };
+            return string.Join(",", parts);
+        }
+
+        private static string Messages(List<TexError> errors)
+        {
+            string[] messages = new string[errors.Count];
+            for (int i = 0; i < errors.Count; i++) messages[i] = errors[i].message;
+            return string.Join("; ", messages);
+        }
+        #endregion
+
+        #region ---- helpers ----
+        private static string Escape(string text)
+        {
+            StringBuilder escaped = new StringBuilder(text.Length);
+            foreach (char c in text)
+                escaped.Append(c >= TextMeasurer.FirstFactorSpace && c < TextMeasurer.FirstFactorSpace + 4 ? $"[{c - TextMeasurer.FirstFactorSpace}]" : c.ToString());
+            return escaped.ToString();
         }
         #endregion
 
@@ -562,12 +1230,13 @@ namespace ArctisAurora.Tests
                 "article's margins");
             string Style(string type) => string.Join(",", layout.Elements("TextStyle").Where(s => (string?)s.Attribute("Type") == type)
                 .Select(s => $"{s.Attribute("FontSize")?.Value} {s.Attribute("FontName")?.Value}"));
-            t.Check(Style("Text") == "13 latin-modern" && Style("Heading1") == "19 latin-modern" && Style("Code") == "13 latin-modern-mono",
+            t.Check(Style("Text") == "13.284 latin-modern" && Style("Heading1") == "19.128 latin-modern" && Style("Code") == "13.284 latin-modern-mono",
                 "text, heading and code styles in Latin Modern");
 
             XElement[] expected =
             {
-                new XElement("Block", new XAttribute("StylingType", "Heading1"), new XAttribute("LineHeight", "1.258"), new XAttribute("SpaceBefore", "20.038"),
+                new XElement("Block", new XAttribute("StylingType", "Heading1"), new XAttribute("KeepWithNext", "true"), new XAttribute("LineHeight", "1.25"), new XAttribute("SpaceBefore", "20.038"),
+                    new XAttribute("ShrinkBefore", "1.145"),
                     new XElement("Run", new XAttribute("Text", "1"), new XAttribute("Bold", "true")),
                     new XElement("Run", new XAttribute("Text", "\u00A0"), new XAttribute("Bold", "true"), new XAttribute("Space", "19.128")),
                     new XElement("Run", new XAttribute("Text", "In\u00ADtro"), new XAttribute("Bold", "true"))),
@@ -578,7 +1247,7 @@ namespace ArctisAurora.Tests
                     new XElement("Run", new XAttribute("Math", "x^2"), new XAttribute("FontName", "latin-modern-math")),
                     new XElement("Run", new XAttribute("Text", "."))),
                 new XElement("Block", new XAttribute("Align", "Justify"), new XAttribute("List", "Bullet"), new XAttribute("Level", 0),
-                    new XAttribute("Marker", "Disc"), new XAttribute("SpaceBefore", "10.627"), new XElement("Run", new XAttribute("Text", "One")))
+                    new XAttribute("Marker", "Disc"), new XAttribute("SpaceBefore", "10.627"), new XAttribute("ShrinkBefore", "5.313"), new XElement("Run", new XAttribute("Text", "One")))
             };
             string body = string.Concat(document.Elements("Block").Select(b => b.ToString(SaveOptions.DisableFormatting)));
             string want = string.Concat(expected.Select(b => b.ToString(SaveOptions.DisableFormatting)));
@@ -831,7 +1500,8 @@ namespace ArctisAurora.Tests
         }
 
         // A paragraph's text with its boxes' text, URL break marks left out, spaces collapsed.
-        private static string BoxLine(TexParagraph p) => Regex.Replace(BoxText(p.list).Replace("\u200B", ""), " {2,}", " ").Trim();
+        private static string BoxLine(TexParagraph p) =>
+            Regex.Replace(BoxText(p.list).Replace("\u200B", "").Replace("\uE005", "").Replace("\uE006", ""), " {2,}", " ").Trim();
 
         // The paragraphs of a document typeset with a .bib beside it, as BoxLine reads them.
         private static List<string> BibLines(string source, string bib, out List<TexError> errors)
@@ -886,6 +1556,88 @@ namespace ArctisAurora.Tests
             t.Check(unsorted[0] == "See [Nex25b; App25] and ." && Entry(unsorted, "Ann One et al. Many. 1999.") is string four && four.StartsWith("[OTTF99]"),
                 $"citation order without sortcites, four initials under maxalphanames=4, et al. past maxnames: {unsorted[0]} / {string.Join(" / ", unsorted)}");
             yield break;
+        }
+
+        // a justified block holding one long URL run in a column narrow enough to wrap it
+        private static XElement UrlBlock(string url, float stretch, float breakPenalty, float bigBreakPenalty)
+        {
+            XElement run = new XElement("Run", new XAttribute("Text", url), new XAttribute("FontName", "latin-modern-mono"));
+            if (stretch > 0f)
+            {
+                run.SetAttributeValue("UrlStretch", stretch);
+                run.SetAttributeValue("UrlBreakPenalty", breakPenalty);
+                run.SetAttributeValue("UrlBigBreakPenalty", bigBreakPenalty);
+            }
+            return new XElement("Document",
+                new XElement("DocumentLayout", new XAttribute("BlockSpacing", "0"), new XAttribute("OptimalBreaks", "true"), new XAttribute("Tolerance", "10000"),
+                    new XElement("TextStyle", new XAttribute("Type", "Text"), new XAttribute("FontSize", "16")),
+                    new XElement("Page", new XAttribute("Mode", "Paged"), new XAttribute("Size", "A6"))),
+                new XElement("Block", new XAttribute("Align", "Justify"), run));
+        }
+
+        // Each line's last character before its break, break markers left out.
+        private static string LineEnds(BlockControl block)
+        {
+            StringBuilder ends = new StringBuilder(16);
+            string text = block.text ?? "";
+            for (int i = 0; i < block.Lines.Count - 1; i++)
+            {
+                LineSegment last = block.Lines[i].segments[^1];
+                int k = last.charStart + last.charCount - 1;
+                while (k > 0 && TextMeasurer.IsZeroWidthBreak(text[k])) k--;
+                ends.Append(text[k]);
+            }
+            return ends.ToString();
+        }
+
+        [A_XSDActionDependency("Tex.UrlStretch", "Test")]
+        private static IEnumerator<int> UrlStretch(TestContext t)
+        {
+            string folder = Folder(("refs.bib", "@online{a, title = {Site}, url = {https://example.com/a-long/path/to/somewhere}, year = 2025}\n"));
+            XElement lowered = TexLowering.Compile("\\documentclass{article}\\usepackage{biblatex}\\addbibresource{refs.bib}\n"
+                + "\\begin{document}\\nocite{*}Plain \\url{https://example.com/a/b}.\\printbibliography\\end{document}\n", out _, null, folder);
+            Directory.Delete(folder, true);
+            XElement? bibUrl = null, plainUrl = null;
+            foreach (XElement run in lowered.Descendants("Run"))
+            {
+                string text = (string?)run.Attribute("Text") ?? "";
+                if (text.Contains("somewhere")) bibUrl = run;
+                else if (text.Contains("example.com/a")) plainUrl = run;
+            }
+            t.Check(bibUrl != null && (float?)bibUrl.Attribute("UrlStretch") > 0f && (string?)bibUrl.Attribute("UrlBreakPenalty") == "200"
+                && (string?)bibUrl.Attribute("UrlBigBreakPenalty") == "100" && ((string?)bibUrl.Attribute("Text"))!.Contains("-\uE006"),
+                $"a bibliography URL carries \\biburlsetup's stretch, penalties and break markers: {bibUrl}");
+            t.Check(plainUrl != null && plainUrl.Attribute("UrlStretch") == null && ((string?)plainUrl.Attribute("Text"))!.Contains("/\u200B"),
+                $"a \\url in the text keeps the url package's free breaks: {plainUrl}");
+
+            string url = "https://e.com/abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789";
+            DocumentEditorControl editor = ShowDocument(t, UrlBlock(url.Replace("/", "/\uE005"), 0f, 0f, 0f));
+            yield return 2;
+            BlockControl plain = (BlockControl)View(editor, 0);
+            float plainWidth = plain.Lines[0].width;
+            editor = ShowDocument(t, UrlBlock(url.Replace("/", "/\uE005"), 2f, 0f, 0f));
+            yield return 2;
+            BlockControl stretched = (BlockControl)View(editor, 0);
+            t.Check(plain.Lines.Count > 1 && stretched.Lines.Count > 1 && stretched.Lines[0].width > plainWidth + 1f,
+                $"a justified line ending inside a URL spreads its slack between the URL's characters: {plainWidth:0.0} -> {stretched.Lines[0].width:0.0}");
+            t.Show(new StackPanelControl());
+        }
+
+        [A_XSDActionDependency("Tex.UrlBreakPenalty", "Test")]
+        private static IEnumerator<int> UrlBreakPenalty(TestContext t)
+        {
+            StringBuilder url = new StringBuilder(256);
+            for (int i = 0; i < 12; i++)
+                url.Append("ab-\uE006cd/\uE005ef");
+            DocumentEditorControl editor = ShowDocument(t, UrlBlock(url.ToString(), 1f, 10000f, 0f));
+            yield return 2;
+            string big = LineEnds((BlockControl)View(editor, 0));
+            editor = ShowDocument(t, UrlBlock(url.ToString(), 1f, 0f, 10000f));
+            yield return 2;
+            string ordinary = LineEnds((BlockControl)View(editor, 0));
+            t.Check(big.Length > 1 && big.Replace("-", "").Length == 0, $"a heavy ordinary penalty leaves lines ending at the big breaks: {big}");
+            t.Check(ordinary.Length > 1 && ordinary.Replace("/", "").Length == 0, $"a heavy big penalty leaves lines ending at the ordinary breaks: {ordinary}");
+            t.Show(new StackPanelControl());
         }
 
         [A_XSDActionDependency("Tex.BiblatexDrivers", "Test")]
@@ -1585,8 +2337,8 @@ namespace ArctisAurora.Tests
             List<string?> anchors = top[0].Elements("Run").Select(r => (string?)r.Attribute("Note")).Where(n => n != null).ToList();
             t.Check(anchors.SequenceEqual(new[] { "1", "2" }), $"the marks in the text name their footnotes: {string.Join(",", anchors)}");
             XElement note = top[1].Elements("Block").Single();
-            int small = (int)MathF.Round(8f * 96f / 72.27f);
-            t.Check(BlockText(note).Contains("One note.") && note.Elements("Run").Any(r => (int?)r.Attribute("FontSize") == small)
+            float small = 8f * 96f / 72.27f;
+            t.Check(BlockText(note).Contains("One note.") && note.Elements("Run").Any(r => MathF.Abs(((float?)r.Attribute("FontSize") ?? 0f) - small) < 0.001f)
                 && note.Elements("Run").All(r => r.Attribute("Note") == null), $"a footnote is set in \\footnotesize and its own mark anchors nothing: {note}");
             t.Check(MathF.Abs(((float?)document.Descendants("Page").Single().Attribute("FootnoteSkip") ?? 0f) - 9f * 25.4f / 72.27f) < 0.01f, "\\skip\\footins is the page's footnote skip");
 
@@ -1681,7 +2433,7 @@ namespace ArctisAurora.Tests
                 $"a float stands where it was set, or after the paragraph it is in: {string.Join(", ", top.Select(e => e.Name.LocalName))}");
             t.Check((string?)top[1].Attribute("Kind") == "figure" && (string?)top[1].Attribute("Placement") == "!t"
                 && (string?)top[3].Attribute("Kind") == "table" && (string?)top[3].Attribute("Placement") == "b", "<Float> carries the kind and placement");
-            t.Check(top[1].Elements("Block").Count() == 2 && BlockText(top[1].Elements("Block").Last()).Contains("Figure 1: A"), "the float holds its body and caption");
+            t.Check(top[1].Elements("Block").Count() == 2 && BlockText(top[1].Elements("Block").Last()).Contains("Figure 1:" + TextMeasurer.FactorSpace(2f) + "A"), "the float holds its body and caption");
             t.Check(top[2].Attribute("SpaceBefore") != null && top[1].Elements("Block").First().Attribute("SpaceBefore") == null,
                 "the space above a float stays with the next block in the text");
             XElement page = document.Descendants("Page").Single();
@@ -1833,6 +2585,71 @@ namespace ArctisAurora.Tests
             float y = new PageSpace(0f).Push(bands, bands.top + 9 * bands.stride + 1000f, 200f);
             t.Check(bands.PageOf(y) == 10, $"a line past page 9's foot moves to page 10: {bands.PageOf(y)}");
             yield break;
+        }
+
+        // count one-line blocks 10 px apart on A6 pages, each gap shrinking by shrink px
+        private static XElement ShrinkItems(int count, float shrink)
+        {
+            XElement document = new XElement("Document",
+                new XElement("DocumentLayout", new XAttribute("BlockSpacing", "0"),
+                    new XElement("TextStyle", new XAttribute("Type", "Text"), new XAttribute("FontSize", "18")),
+                    new XElement("Page", new XAttribute("Mode", "Paged"), new XAttribute("Size", "A6"))));
+            for (int i = 0; i < count; i++)
+            {
+                XElement block = new XElement("Block", new XAttribute("SpaceBefore", "10"), new XElement("Run", new XAttribute("Text", "item " + i)));
+                if (shrink > 0f) block.SetAttributeValue("ShrinkBefore", shrink);
+                document.Add(block);
+            }
+            return document;
+        }
+
+        // How many blocks the first page holds.
+        private static int FirstPageCount(DocumentEditorControl editor)
+        {
+            int count = 0;
+            while (count < editor.session.document.blocks.Length && editor.PageAt(count, 0) == 1) count++;
+            return count;
+        }
+
+        [A_XSDActionDependency("Tex.PageShrink", "Test")]
+        private static IEnumerator<int> PageShrink(TestContext t)
+        {
+            DocumentEditorControl editor = ShowDocument(t, ShrinkItems(40, 0f));
+            yield return 2;
+            int natural = FirstPageCount(editor);
+            float naturalGap = View(editor, 1).arrangedRect.y - View(editor, 0).arrangedRect.Bottom;
+
+            editor = ShowDocument(t, ShrinkItems(40, 9f));
+            yield return 2;
+            int shrunk = FirstPageCount(editor);
+            t.Check(natural > 2 && shrunk == natural + 1, $"shrinking the gaps takes one more block onto the first page: {natural} -> {shrunk}");
+
+            float first = View(editor, 1).arrangedRect.y - View(editor, 0).arrangedRect.Bottom;
+            bool even = true;
+            for (int i = 2; i < shrunk; i++)
+                even &= MathF.Abs(View(editor, i).arrangedRect.y - View(editor, i - 1).arrangedRect.Bottom - first) < 0.05f;
+            t.Check(even && first < naturalGap - 0.1f, $"every gap on the page shrinks by the same amount: {first:0.00} vs natural {naturalGap:0.00}");
+            float next = View(editor, shrunk + 1).arrangedRect.y - View(editor, shrunk).arrangedRect.Bottom;
+            t.Check(MathF.Abs(next - naturalGap) < 0.05f, $"the next page, not overfull, keeps its gaps natural: {next:0.00}");
+            t.Show(new StackPanelControl());
+        }
+
+        [A_XSDActionDependency("Tex.PageShrinkRigid", "Test")]
+        private static IEnumerator<int> PageShrinkRigid(TestContext t)
+        {
+            DocumentEditorControl editor = ShowDocument(t, ShrinkItems(5, 0f));
+            yield return 2;
+            float[] tops = new float[5];
+            for (int i = 0; i < tops.Length; i++)
+                tops[i] = View(editor, i).arrangedRect.y;
+
+            editor = ShowDocument(t, ShrinkItems(5, 9f));
+            yield return 2;
+            bool same = true;
+            for (int i = 0; i < tops.Length; i++)
+                same &= MathF.Abs(View(editor, i).arrangedRect.y - tops[i]) < 0.01f;
+            t.Check(same, "a page that fits keeps its gaps natural, shrink or not");
+            t.Show(new StackPanelControl());
         }
         #endregion
 
@@ -2197,9 +3014,9 @@ namespace ArctisAurora.Tests
             const string source = "\\documentclass[12pt]{article}\\usepackage{setspace}\\setstretch{1.2}\\begin{document}\\onehalfspacing\nText\n\n\\doublespacing\nMore\\end{document}";
             TexTypesetter spaced = Typeset(source, out List<TexError> errors);
             t.Check(errors.Count == 0 && spaced.lineSpread == 1.241f, $"the stretch the first paragraph ends under holds: {spaced.lineSpread} {string.Join("; ", errors)}");
-            t.Check((string?)TexLowering.Compile(source, out _).Element("DocumentLayout")!.Attribute("LineHeight") == "1.494", "and scales the line height");
-            t.Check((string?)TexLowering.Compile("\\documentclass{article}\\begin{document}x\\end{document}", out _).Element("DocumentLayout")!.Attribute("LineHeight") == "1.226",
-                "no setspace keeps \\baselineskip 12pt, against the 13 px \\normalsize");
+            t.Check((string?)TexLowering.Compile(source, out _).Element("DocumentLayout")!.Attribute("LineHeight") == "1.5", "and scales the line height");
+            t.Check((string?)TexLowering.Compile("\\documentclass{article}\\begin{document}x\\end{document}", out _).Element("DocumentLayout")!.Attribute("LineHeight") == "1.2",
+                "no setspace keeps \\baselineskip 12pt, against the 10pt \\normalsize");
             t.Check(Typeset("\\documentclass{article}\\begin{document}\\doublespacing x\\end{document}", out _).lineSpread == 1.667f, "\\doublespacing at 10pt");
             TexChar a = Chars("\\documentclass{article}\\newfontface\\sectionfont{Calibri}\\begin{document}{\\large\\fontsize{11pt}{13pt}\\sectionfont A}\\end{document}")[0];
             t.Check(Pt(a.style.font.size) == 11f, $"a \\newfontface command selects the pending \\fontsize: {Pt(a.style.font.size)}pt");

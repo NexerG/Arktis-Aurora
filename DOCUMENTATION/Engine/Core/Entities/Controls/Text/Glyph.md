@@ -30,7 +30,7 @@ Per-glyph outline + metrics. Holds the raw quadratic-bezier `contours` parsed fr
 
 ## Fields & Properties
 
-The metrics live in a `GlyphMetrics` struct and the glyph carries one per face of the family, because every face measures its own advances and ink boxes for the same character. The outlines do not: only the regular face's contours are parsed into a `Glyph`, and each other face's measurements are folded onto it during the bake.
+The metrics live in a `GlyphMetrics` struct, and every face measures its own advances and ink boxes for the same character. A glyph carries only the first face's set, `regular`; an atlas keeps every other face's in [[Atlas Meta Data]]'s flat `faceMetrics` array, reached through `AtlasMetaData.Metrics(glyph, face)` with the glyph's `index`. During the bake each face is read into its own glyph array and `regular` is that face's working set.
 
 ```C#
 [@Serializable]
@@ -47,11 +47,11 @@ public struct GlyphMetrics
 	public float tsb;
 }
 
-// one set per face of the family
+// the first face's metrics; an atlas keeps the other faces' in AtlasMetaData.faceMetrics
 public GlyphMetrics regular;
-public GlyphMetrics bold;
-public GlyphMetrics italic;
-public GlyphMetrics boldItalic;
+
+// position in the atlas's glyphs, set on load
+[@NonSerializable] public int index;
 
 [@NonSerializable] public List<List<Edge>> edgeContours = new();  // built for MTSDF
 [NonSerializable]  public List<Bezier> contours = new();          // raw outline
@@ -64,9 +64,6 @@ Converts the raw `contours` (on-/off-curve bezier points) into `edgeContours` of
 
 ### `SetParams` *(public)*
 Stores the glyph bounds and computes the normalized `glyphWidth`/`glyphHeight` from `unitsPerEm`.
-
-### `Metrics` / `SetMetrics` *(public)*
-Read and write one face's `GlyphMetrics` by [[Atlas Meta Data]]'s `FontStyle`. `SetMetrics` exists for the bake's fold loop, which walks the family's faces in block order and writes each one's measurements onto the regular face's glyph.
 
 ## Related
 - [[Aurora Font]] â€” parses outlines into glyphs and bakes the MTSDF atlas

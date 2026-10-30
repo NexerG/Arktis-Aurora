@@ -109,9 +109,10 @@ namespace ArctisAurora.Core.UI
         };
 
         // Lays out a parsed formula, in em at font size 1; align, flalign and multline spread over lineWidth when given.
-        public static MathBox Layout(MathNode root, bool display, AtlasMetaData atlas, MathConstants constants, float lineWidth = 0f)
+        public static MathBox Layout(MathNode root, bool display, AtlasMetaData atlas, MathConstants constants, float lineWidth = 0f, float strut = 0f,
+            MathRules rules = MathRules.OpenType)
         {
-            Layouter layouter = new Layouter(atlas, constants, display ? lineWidth : 0f);
+            Layouter layouter = new Layouter(atlas, constants, display ? lineWidth : 0f, strut, rules == MathRules.Tfm);
             if (root is MathError error)
             {
                 MathBox box = layouter.Text(error.source, FontStyle.Regular, 1f);
@@ -145,11 +146,17 @@ namespace ArctisAurora.Core.UI
             private float lineWidth;
             public bool fills;
 
-            public Layouter(AtlasMetaData atlas, MathConstants constants, float lineWidth)
+            // what scales the array row struts: the asked strut over the default's height plus depth; classic TeX's script rules
+            private readonly float strutScale;
+            private readonly bool tfm;
+
+            public Layouter(AtlasMetaData atlas, MathConstants constants, float lineWidth, float strut, bool tfm)
             {
                 this.atlas = atlas;
                 c = constants;
                 this.lineWidth = lineWidth;
+                strutScale = strut > 0f ? strut / (strutHeight + strutDepth) : 1f;
+                this.tfm = tfm;
             }
 
             private float Scale(MathStyle style) => style switch
@@ -201,7 +208,7 @@ namespace ArctisAurora.Core.UI
                 }
 
                 face = Present(glyph, face);
-                GlyphMetrics m = glyph.Metrics(atlas.Effective(face));
+                GlyphMetrics m = atlas.Metrics(glyph, atlas.Effective(0, face));
                 int range = m.yMax - m.yMin;
                 box.width = m.advanceWidth * scale;
                 if (range != 0)
@@ -219,7 +226,7 @@ namespace ArctisAurora.Core.UI
             {
                 Glyph glyph = atlas.GetGlyph(ch);
                 if (glyph == null) return (0f, 0f, 0f, 0f);
-                GlyphMetrics m = glyph.Metrics(atlas.Effective(Present(glyph, face)));
+                GlyphMetrics m = atlas.Metrics(glyph, atlas.Effective(0, Present(glyph, face)));
                 int range = m.yMax - m.yMin;
                 if (range == 0) return (0f, 0f, m.leftSideOffset * scale, 0f);
                 return (m.glyphHeight * m.yMin / range * scale, m.glyphHeight * m.yMax / range * scale,
@@ -229,9 +236,9 @@ namespace ArctisAurora.Core.UI
             // The face asked for, or Regular when that face lacks the character and Regular has it.
             private FontStyle Present(Glyph glyph, FontStyle face)
             {
-                GlyphMetrics m = glyph.Metrics(atlas.Effective(face));
+                GlyphMetrics m = atlas.Metrics(glyph, atlas.Effective(0, face));
                 if (m.xMin != m.xMax || m.yMin != m.yMax) return face;
-                GlyphMetrics regular = glyph.Metrics(FontStyle.Regular);
+                GlyphMetrics regular = glyph.regular;
                 return regular.xMin != regular.xMax || regular.yMin != regular.yMax ? FontStyle.Regular : face;
             }
 
@@ -347,7 +354,7 @@ namespace ArctisAurora.Core.UI
                 MathBox sup = scripts.sup == null ? null : Node(scripts.sup, scriptStyle, cramped);
                 MathBox sub = scripts.sub == null ? null : Node(scripts.sub, scriptStyle, true);
 
-                return limits ? Limits(nucleus, sup, sub, k) : Attach(scripts.nucleus, nucleus, sup, sub, cramped, k);
+                return limits ? Limits(nucleus, sup, sub, k) : Attach(scripts.nucleus, nucleus, sup, sub, display, cramped, k, Scale(scriptStyle));
             }
 
             private MathBox Limits(MathBox nucleus, MathBox sup, MathBox sub, float k)
@@ -365,25 +372,45 @@ namespace ArctisAurora.Core.UI
                     float drop = MathF.Max(c.lowerLimitGapMin * k + sub.height, c.lowerLimitBaselineDropMin * k);
                     box.Place(sub, (width - sub.width) * 0.5f, -(nucleus.depth + drop));
                 }
+                if (tfm && sup != null) box.height += c.bigOpSpacing5 * k;
+                if (tfm && sub != null) box.depth += c.bigOpSpacing5 * k;
                 return box;
             }
 
-            private MathBox Attach(MathNode nucleusNode, MathBox nucleus, MathBox sup, MathBox sub, bool cramped, float k)
+            private MathBox Attach(MathNode nucleusNode, MathBox nucleus, MathBox sup, MathBox sub, bool display, bool cramped, float k, float scriptK)
             {
                 bool character = nucleusNode is MathSymbol { bigOp: false };
                 float u = 0f, v = 0f;
 
-                if (sup != null)
+                if (tfm)
                 {
-                    u = MathF.Max((cramped ? c.superscriptShiftUpCramped : c.superscriptShiftUp) * k,
-                                  sup.depth + c.superscriptBottomMin * k);
-                    if (!character) u = MathF.Max(u, nucleus.height - c.superscriptBaselineDropMax * k);
+                    // TeX's rule 18, the drops taken from the script size's font
+                    if (!character)
+                    {
+                        u = nucleus.height - c.supDrop * scriptK;
+                        v = nucleus.depth + c.subDrop * scriptK;
+                    }
+                    if (sup == null) v = MathF.Max(v, MathF.Max(c.sub1 * k, sub.height - c.subscriptTopMax * k));
+                    else
+                    {
+                        u = MathF.Max(u, MathF.Max((cramped ? c.sup3 : display ? c.sup1 : c.sup2) * k, sup.depth + c.superscriptBottomMin * k));
+                        if (sub != null) v = MathF.Max(v, c.sub2 * k);
+                    }
                 }
-                if (sub != null)
+                else
                 {
-                    v = c.subscriptShiftDown * k;
-                    if (!character) v = MathF.Max(v, nucleus.depth + c.subscriptBaselineDropMin * k);
-                    if (sup == null) v = MathF.Max(v, sub.height - c.subscriptTopMax * k);
+                    if (sup != null)
+                    {
+                        u = MathF.Max((cramped ? c.superscriptShiftUpCramped : c.superscriptShiftUp) * k,
+                                      sup.depth + c.superscriptBottomMin * k);
+                        if (!character) u = MathF.Max(u, nucleus.height - c.superscriptBaselineDropMax * k);
+                    }
+                    if (sub != null)
+                    {
+                        v = c.subscriptShiftDown * k;
+                        if (!character) v = MathF.Max(v, nucleus.depth + c.subscriptBaselineDropMin * k);
+                        if (sup == null) v = MathF.Max(v, sub.height - c.subscriptTopMax * k);
+                    }
                 }
                 if (sup != null && sub != null)
                 {
@@ -499,7 +526,7 @@ namespace ArctisAurora.Core.UI
                     MathArrayKind.Small => MathStyle.Script,
                     _ => MathStyle.Text
                 };
-                float stretch = kind == MathArrayKind.Cases ? casesStretch : 1f;
+                float stretch = (kind == MathArrayKind.Cases ? casesStretch : 1f) * strutScale;
                 bool struts = kind is MathArrayKind.Matrix or MathArrayKind.Array or MathArrayKind.Cases;
 
                 // pass 1: cells, row extents and column widths

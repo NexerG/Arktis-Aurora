@@ -2,7 +2,7 @@
 <ContextMenu>
 	<ContextButton Text="Cut" Action="Text.Cut"/>
 	<ContextButton Text="Copy" Action="Text.Copy"/>
-	<ContextButton Text="Paste" Action="Text.Paste"/>
+	<ContextButton Text="Paste" Action="Sheet.PasteLink"/>
 	<ContextLine/>
 	<ContextButton Text="Encrypt blocks..." Action="Notes.EncryptBlocks"/>
 	<ContextLine/>

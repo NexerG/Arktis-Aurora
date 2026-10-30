@@ -22,6 +22,7 @@
 	<Test Action="TextInput.UnderlineToggles"/>
 	<Test Action="TextInput.MixedSelectionToggles"/>
 	<Test Action="TextInput.HighlightApplies"/>
+	<Test Action="TextInput.FontVariant"/>
 	<Test Action="TextInput.DecorationsDraw"/>
 	<Test Action="TextInput.ColorPickerPicks"/>
 	<Test Action="TextInput.MarkdownColourRoundTrip"/>

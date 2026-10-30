@@ -145,8 +145,8 @@ namespace ArctisAurora.Core.UI
         private static float Advance(string text, in TextMeasurer.Run run)
         {
             float advance = 0f;
-            foreach (char c in text)
-                advance += TextMeasurer.MeasureAdvance(c, run);
+            for (int i = 0; i < text.Length; i++)
+                advance += TextMeasurer.MeasureAdvance(text[i], run) + (i + 1 < text.Length ? TextMeasurer.Kern(text[i], text[i + 1], run) : 0f);
             return advance;
         }
 

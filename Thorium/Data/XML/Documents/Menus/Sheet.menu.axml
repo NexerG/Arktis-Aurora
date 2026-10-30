@@ -2,8 +2,8 @@
 <ContextMenu>
 	<ContextButton Text="Cut" Action="Text.Cut"/>
 	<ContextButton Text="Copy" Action="Text.Copy"/>
-	<ContextButton Text="Paste" Action="Text.Paste"/>
-	<ContextButton Text="Paste link" Action="Sheet.PasteLink"/>
+	<ContextButton Text="Paste" Action="Sheet.PasteLink"/>
+	<ContextButton Text="Paste values" Action="Text.Paste"/>
 	<ContextLine/>
 	<ContextButton Text="Insert rows above" Action="Sheet.InsertRowsAbove"/>
 	<ContextButton Text="Insert columns left" Action="Sheet.InsertColumnsLeft"/>

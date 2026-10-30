@@ -37,6 +37,7 @@ namespace ArctisAurora.Core.UI
 
         // the gap above the table, px; null takes the layout's block spacing
         public float? spaceBefore { get => model.spaceBefore; set => model.spaceBefore = value; }
+        public float shrinkBefore { get => model.shrinkBefore; set => model.shrinkBefore = value; }
 
         // where a table narrower than the note sits; Justify is Left
         public TextAlignment alignment { get => model.alignment; set => model.alignment = value; }
@@ -303,6 +304,8 @@ namespace ArctisAurora.Core.UI
             if (slack > 0f && alignment is TextAlignment.Center or TextAlignment.Right)
                 finalRect = new LayoutRect(finalRect.x + (alignment == TextAlignment.Center ? slack * 0.5f : slack), finalRect.y,
                     arrange.desired.X, finalRect.height);
+            else if (model.indent > 0f)
+                finalRect = new LayoutRect(finalRect.x + model.indent * zoom, finalRect.y, arrange.desired.X, finalRect.height);
             base.ArrangeCore(finalRect);
             ArrangeBorders();
             ArrangeRules();

@@ -29,7 +29,7 @@ namespace ArctisAurora.Core.UI
         [A_XSDElementProperty("FontSize", "UI", "Font size in pixels.")]
         public int fontSize
         {
-            get => label.fontSize;
+            get => (int)label.fontSize;
             set { label.fontSize = value; box.fontSize = value; }
         }
 

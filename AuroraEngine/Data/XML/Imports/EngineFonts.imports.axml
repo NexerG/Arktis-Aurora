@@ -3,7 +3,7 @@
 		   xsi:schemaLocation="http://arctisaurora/AuroraAssetRegistryTypes ../Schemas/AssetRegistryTypeSchema.xsd">
 
 	<Charset Name="Latin" Chars=" !&quot;#$%&amp;'()*+,-./0123456789:;&lt;=&gt;?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~ĄČĘĖĮŠŲŪŽąčęėįšųūž›€"/>
-	<Charset Name="Math" Chars=" !&quot;#$%&amp;'()*+,-./0123456789:;&lt;=&gt;?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩαβγδεζηθικλμνξοπρςστυφχψωϑϕϖϱϵ⎛⎜⎝⎞⎟⎠⎡⎢⎣⎤⎥⎦⎧⎨⎩⎪⎫⎬⎭⎮←↑→↓↔↕ℂℕℙℚℝℤℏℓ℘ℑℜℵ±×÷·¬−∓∗∘∙√∝∞∠∣∥∧∨∩∪∫∬∭∮∴∵∼≃≅≈≠≡≤≥≪≫≺≻⊂⊃⊆⊇⊕⊖⊗⊘⊙⊢⊤⊥⋅⋆⋮⋯⋱∀∂∃∄∅∇∈∉∋∏∐∑⋀⋁⋂⋃…′″↦⇐⇑⇒⇓⇔⟵⟶⟷⟸⟹⟺⟼⟨⟩⌈⌉⌊⌋‖⌠⌡⎷ˆ˜˙¨¯´ˇ˘⃗"/>
+	<Charset Name="Math" Chars=" !&quot;#$%&amp;'()*+,-./0123456789:;&lt;=&gt;?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩαβγδεζηθικλμνξοπρςστυφχψωϑϕϖϱϵ⎛⎜⎝⎞⎟⎠⎡⎢⎣⎤⎥⎦⎧⎨⎩⎪⎫⎬⎭⎮←↑→↓↔↕ℂℕℙℚℝℤℏℓ℘ℑℜℵ±×÷·¬−∓∗∘∙√∝∞∠∣∥∧∨∩∪∫∬∭∮∴∵∼≃≅≈≠≡≤≥≪≫≺≻⊂⊃⊆⊇⊕⊖⊗⊘⊙⊢⊤⊥⋅⋆⋮⋯⋱∀∂∃∄∅∇∈∉∋∏∐∑⋀⋁⋂⋃…′″↦⇐⇑⇒⇓⇔⟵⟶⟷⟸⟹⟺⟼⟨⟩⌈⌉⌊⌋‖⌠⌡⎷ˆ˜˙¨¯´ˇ˘⃗□"/>
 
 	<!-- language packs, joined by commas in an import's Charset -->
 	<Charset Name="LatinExtended" Chars="¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿĀāĂăĄąĆćĈĉĊċČčĎďĐđĒēĔĕĖėĘęĚěĜĝĞğĠġĢģĤĥĦħĨĩĪīĬĭĮįİıĲĳĴĵĶķĸĹĺĻļĽľĿŀŁłŃńŅņŇňŉŊŋŌōŎŏŐőŒœŔŕŖŗŘřŚśŜŝŞşŠšŢţŤťŦŧŨũŪūŬŭŮůŰűŲųŴŵŶŷŸŹźŻżŽžſ"/>

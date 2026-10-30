@@ -1,2 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<FontImportStamp Source="arial.ttf" Face="0" SourceHash="80CA0E74D9D83A331C72AE6F6BEF606AD416840E655CDB49B77E96AE31694E21" BoldSource="arialbd.ttf" ItalicSource="ariali.ttf" BoldItalicSource="arialbi.ttf" Charset=" !&quot;#$%&amp;'()*+,-./0123456789:;&lt;=&gt;?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~ĄČĘĖĮŠŲŪŽąčęėįšųūž›€" GlyphSize="64" ImporterVersion="5" />
+<FontImportStamp Family="Arial" Source="arial.ttf" Face="0" SourceHash="80CA0E74D9D83A331C72AE6F6BEF606AD416840E655CDB49B77E96AE31694E21" Charset=" !&quot;#$%&amp;'()*+,-./0123456789:;&lt;=&gt;?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~ĄČĘĖĮŠŲŪŽąčęėįšųūž›€" GlyphSize="64" ImporterVersion="8">
+  <Face Key="0" Source="arial.ttf" Index="0" />
+  <Face Key="1" Source="arialbd.ttf" Index="0" />
+  <Face Key="2" Source="ariali.ttf" Index="0" />
+  <Face Key="3" Source="arialbi.ttf" Index="0" />
+</FontImportStamp>

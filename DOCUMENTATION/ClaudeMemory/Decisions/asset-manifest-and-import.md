@@ -202,10 +202,10 @@ carries `Data/Fonts/<name>/<name>.import.axml`:
 |-------|--------------------|
 | `Source` | the entry now points at a different face |
 | `SourceHash` | SHA256 of every `.ttf` in the family — an installed face was replaced |
-| `BoldSource` / `ItalicSource` / `BoldItalicSource` | which secondary faces the probe resolved, by filename |
+| `<Face Key Source Index/>` children | every baked face in block order (key = variant × 4 + style), by filename; replaced `BoldSource` / `ItalicSource` / `BoldItalicSource` in [[font-variants]] |
 | `Charset` | resolved character string, stored verbatim, not hashed — debuggable |
 | `GlyphSize` | atlas cell size changed |
-| `ImporterVersion` | a `const` in `AssetImporter`; bump to re-cook everything. **4** since [[bold-italic-face]] |
+| `ImporterVersion` | a `const` in `AssetImporter`; bump to re-cook everything. **7** since [[font-variants]] |
 
 All of them must match, **and** the `.agd` and `_atlas.png` must exist — a stamp alone never authorises
 a skip. Granularity is per font: changing one entry re-bakes that family and leaves the others.

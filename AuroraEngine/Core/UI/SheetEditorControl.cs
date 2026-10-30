@@ -646,7 +646,8 @@ namespace ArctisAurora.Core.UI
         {
             if (editing || sheet == null) return false;
 
-            string text = ClipboardText.Get();
+            string? text = ClipboardText.Get();
+            if (string.IsNullOrEmpty(text)) return false;
             if (copiedText == null || text != copiedText) return Paste(text);
 
             (SheetDocument source, string? sourcePath, SheetPage page, int top, int left, int bottom, int right) = copiedFrom;

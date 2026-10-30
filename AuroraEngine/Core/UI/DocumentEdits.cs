@@ -30,6 +30,7 @@ namespace ArctisAurora.Core.UI
         public float? rightIndentLast;
         public float? ruleWeight;
         public float? spaceBefore;
+        public float shrinkBefore;
         public PageBreak pageBreak;
         public string? pageStyle;
         public string? markLeft;
@@ -43,6 +44,8 @@ namespace ArctisAurora.Core.UI
         public ListMarker? listMarker;
         public float? listIndent;
         public float? lineHeight;
+        public bool keepWithNext;
+        public bool strut;
         public int? listStart;
         public bool isChecked;
         public string text = string.Empty;

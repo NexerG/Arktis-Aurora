@@ -121,7 +121,7 @@ namespace ArctisAurora.Core.UI
         private sealed class Writer
         {
             private readonly PdfDocument pdf;
-            private readonly Dictionary<(FontAsset, FontStyle), PdfType3Font?> faces = new Dictionary<(FontAsset, FontStyle), PdfType3Font?>();
+            private readonly Dictionary<(FontAsset, int), PdfType3Font?> faces = new Dictionary<(FontAsset, int), PdfType3Font?>();
             private readonly Dictionary<string, int> pictures = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             private readonly HashSet<int> fonts = new HashSet<int>();
 
@@ -222,33 +222,44 @@ namespace ArctisAurora.Core.UI
                 return r.Append(">> >>").ToString();
             }
 
-            // The source face a font asset draws a style with, or null when its file cannot be found.
-            private PdfType3Font? Face(FontAsset font, FontStyle style)
+            // The source file of one atlas face, the stamp's faces in block order, or null when it cannot be found.
+            private PdfType3Font? Face(FontAsset font, int atlasFace)
             {
-                if (faces.TryGetValue((font, style), out PdfType3Font? known)) return known;
+                if (faces.TryGetValue((font, atlasFace), out PdfType3Font? known)) return known;
 
                 PdfType3Font? face = null;
                 string stampPath = Paths.Font(font.folder, font.folder + ".import.axml");
                 if (DataFiles.Exists(stampPath))
                 {
                     XElement stamp = DataFiles.LoadXml(stampPath);
-                    string file = (string?)stamp.Attribute(style switch
-                    {
-                        FontStyle.Bold => "BoldSource",
-                        FontStyle.Italic => "ItalicSource",
-                        FontStyle.BoldItalic => "BoldItalicSource",
-                        _ => "Source"
-                    }) ?? string.Empty;
-                    int index = style == FontStyle.Regular ? (int?)stamp.Attribute("Face") ?? 0 : 0;
+                    XElement? entry = null;
+                    int at = 0;
+                    foreach (XElement listed in stamp.Elements("Face"))
+                        if (at++ == atlasFace)
+                        {
+                            entry = listed;
+                            break;
+                        }
+                    string file = (string?)entry?.Attribute("Source") ?? string.Empty;
+                    int index = (int?)entry?.Attribute("Index") ?? 0;
                     string shipped = Paths.Font(font.folder, file);
-                    string? path = file.Length == 0 ? null : DataFiles.Exists(shipped) ? shipped : AssetImporter.ResolveSystemFont(file);
+                    string? path = file.Length == 0 ? null : DataFiles.Exists(shipped) ? shipped : AssetImporter.ResolveSystemFont(file) ?? Beside(stamp, file);
                     if (path != null) face = new PdfType3Font(pdf, path, index);
-                    else Log.Warn($"font '{font.folder}' {style}: source '{file}' not found, its text is left out.");
+                    else Log.Warn($"font '{font.folder}' face {atlasFace}: source '{file}' not found, its text is left out.");
                 }
                 else Log.Warn($"font '{font.folder}' has no import stamp, its text is left out.");
 
-                faces.Add((font, style), face);
+                faces.Add((font, atlasFace), face);
                 return face;
+            }
+
+            // A face file in the folder of the stamp's regular source, when that source is a full path.
+            private static string? Beside(XElement stamp, string file)
+            {
+                string source = (string?)stamp.Attribute("Source") ?? string.Empty;
+                if (!Path.IsPathRooted(source)) return null;
+                string path = Path.Combine(Path.GetDirectoryName(source)!, file);
+                return File.Exists(path) ? path : null;
             }
 
             // A picture's image object, JPEG passed through, anything else decoded with its alpha as a soft mask; 0 when unreadable.

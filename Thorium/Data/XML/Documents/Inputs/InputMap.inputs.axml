@@ -118,19 +118,13 @@
 		<Press />
 	</Keybind>
 
-	<Keybind Trigger="V" Action="Sheet.PasteLink">
-		<Modifier Key="LeftControl" />
-		<Modifier Key="LeftShift" />
-		<Press />
-	</Keybind>
-
-	<Keybind Trigger="V" Action="Text.PasteLink">
-		<Modifier Key="LeftControl" />
-		<Modifier Key="LeftShift" />
-		<Press />
-	</Keybind>
-
 	<Keybind Trigger="V" Action="Text.Paste">
+		<Modifier Key="LeftControl" />
+		<Modifier Key="LeftShift" />
+		<Press />
+	</Keybind>
+
+	<Keybind Trigger="V" Action="Sheet.PasteLink">
 		<Modifier Key="LeftControl" />
 		<Press />
 	</Keybind>

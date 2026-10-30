@@ -74,7 +74,19 @@ This file holds **open work**. A landed entry moves to [[Changelog]]; one that s
 		- [x] **tables (2026-09-29)** — landed, See `ClaudeMemory/Decisions/document-tables.md`
 			- [ ] typing p95 up ~0.03 ms on the 1M-char scenario — likely `Blocks()` type-testing page panels, not pinned
 		- [ ] **math in notes, M1–M5 (2026-10-02, M5 2026-10-06)** — landed, test-verified; **NOT GUI-verified** (popup placement, live reflow, click-away, focus loss mid-edit). M5 (matrices/`cases`/`aligned`, `\tag`) landed with L6 → `math-plan`
-		- [ ] **LaTeX editor** — native route agreed 2026-10-05; L1–L6, L7a–L7g, L8, L9, L10a, L10b, L10c, L10d, L10e, L10f and L10g landed → `ClaudeMemory/Context/tex-plan.md`
+		- [ ] **LaTeX editor** — native route agreed 2026-10-05; L1–L6, L7a–L7g, L8, L9, L10a, L10b, L10c, L10d, L10e, L10f, L10g, L11a, L11b, L11c, L11c2, L11d, L11f, L11e, L11g, L11h and L12a landed → `ClaudeMemory/Context/tex-plan.md`
+			- [ ] **Thesis page breaks drift from p17 and p27** — reference p17 shrinks its float gaps, ours does not; p27 holds 2 more lines than the reference, so figure 10 goes to the top of p28 (p28–29 −36 to −56 pt). The p9 drift was L12a-F1, reversed 2026-10-30 → `latex-editor`
+			- [ ] **[Nex25b] URL entry 4 lines vs 3** — TeX URL lines stand 19.1 pt apart vs our 18.1, not investigated → `latex-editor`
+			- [ ] **Table and caption gaps off by 0.6–1.8 pt** — [h] table last row→caption 1.7 pt long (fixed BaselineDepth vs array strut depth), top caption→first row 26.6 vs 27.2, p6 table 1.8 pt right (old TableControl x offset) → `latex-editor`
+			- [ ] **`\setdisplayskipstretch` and float skips** — not supported; `\textfloatsep`/`\floatsep` untouched (floatSeps uses 14 at 12pt, size12.clo may say 12, unverified) → `latex-editor`
+			- [ ] **TFM math attributes lost on font re-import** — `MathConstants.Read` + `Save` writes Sub1…BigOpSpacing5 as 0, so TFM mode puts subscripts on the baseline; the L11h, L12a, font-variants and L11d (importerVersion 8) re-bakes wiped them again (restored by hand), needs a durable home → `latex-editor`
+			- [ ] **Thesis page 19 paragraph is 7 lines, reference 8** — glyph widths and kerns match; some TeX break rule or glue value still differs, not found → `latex-editor`
+			- [ ] **fontspec / `\fontseries` cannot choose a font variant** — `\setmainfont{Calibri Light}` draws plain Calibri → `font-variants`
+			- [ ] **GUI check of the toolbar Variant dropdown** — never clicked in the app; a Light run never looked at on screen → `font-variants`
+			- [ ] **Re-measure thesis headings against the reference PDF with Windows Calibri** — the thesis now uses calibri.ttf, not Calibri-nm.ttf → `font-variants`
+			- [ ] **fontspec ligatures from the font's GSUB (Calibri "ti")** — L11f gives fontspec fonts only TeX's text ligatures → `latex-editor`
+			- [ ] **Thesis list bullet size and list top ~5 pt low (page 14)** — not investigated → `latex-editor`
+			- [x] **`\cite` inside recovered text-mode math prints raw source (2026-10-30)** — a math command in text is now set alone as math (L12a-F1 reversed); [Gam15] is cited again → `latex-editor`
 			- [ ] **L1 (2026-10-05)** — `.tex` opens as source in the note editor, saves byte-identical; `ArctisAurora.Core.Tex` TeX expander, not wired to the UI. **Verified**: builds clean; Tex 11/11, Syntax incl. `Syntax.Latex`, Thorium `--test` 156 passed (only the pre-existing Boot failure besides `Tex.SourceEnterPaste`, since fixed); TextInput 88/88 after the fix; `Tex.SourceColours` golden checked. **NOT GUI-verified.** → `latex-editor`
 			- [x] **Enter on an empty last line kept as LaTeX (2026-10-05)** — `DocumentControl.EndCodeBlock` returns false in `plainText`; `Tex.SourceEnterPaste` passes → `latex-editor`
 			- [x] **`.tex` joins the `.txt` gates (2026-10-05)** — `CanAlign`, `InsertTable`, `PasteImage` refuse in a `.tex`; no test → `latex-editor`
@@ -90,16 +102,13 @@ This file holds **open work**. A landed entry moves to [[Changelog]]; one that s
 				- [ ] **review the Carbon and AuroraEditor font/icon re-bakes** — booting them for the schema regeneration re-baked their atlases; the files are dirty in the tree → `latex-editor`
 			- [ ] **L10a — read the template (2026-10-28)** — `\input`/`\include`, local `.cls`/`.sty` read through the expander, `\@startsection`, title page; first stage of L10 (thesis vs its LuaLaTeX PDF). **Verified**: builds clean; `Tex` suite 60 passed, 1 failed (pre-existing Boot); thesis exported headless, text checked (27 A4 pages, truth 35). **NOT GUI-verified.** → `latex-editor`
 				- [ ] **`\input file` unbraced form** — only the braced LaTeX form works → `latex-editor`
-				- [ ] **`@` letter state after local files** — restored by counting nested files, so a `\usepackage` of a local file inside `\makeatletter` ends with `@` other → `latex-editor`
 				- [ ] **`titlepage` keeps the page counter; thesis logo missing** — `images/MIF.png` is not in the folder (only `VU_MIF.png`) → `latex-editor`
-			- [ ] **over-wide tabular should overflow the right margin** — TeX lets it stick out; the thesis glossary `tabular{rcp{.7\textwidth}}` sits 17–26 pt left because ours fits the text width → `latex-editor`
-			- [ ] **remaining display/figure drifts in the thesis (2026-10-29)** — pages 9–11 and 25–31 drift 2–14 pt around displays and figure/caption blocks; TOC page 2 holds one line fewer (+18 pt); p33/p34 bibliography/URL lines → `latex-editor`
+			- [ ] **remaining display/figure drifts in the thesis (2026-10-29)** — pages 9–11 and 25–31 drift 2–14 pt around displays and figure/caption blocks; p33/p34 bibliography/URL lines → `latex-editor`
 			- [ ] **mid-page `\lineskip`** — a tall glyph pushing its line down mid-page is not modelled, only the page-top case → `latex-editor`
 			- [ ] **Lithuanian `\today`** — not done (L10d gap) → `latex-editor`
 			- [ ] **per-character language for `\foreignlanguage`** — language is per paragraph (L10d-F2 a), so `\foreignlanguage` and a mid-paragraph `\selectlanguage` leave the hyphenation of the words they cover alone; per character through `TexStyle` splits runs at every language change → `latex-editor`
 			- [ ] **starred titlesec headings lose the before-code `\hspace`** — TURINYS and SANTRAUKA sit 7 pt left of the thesis (86.46 vs 93.54 pt); the `\hspace{0.25 cm}` is lost on `\section*`; pre-existing → `latex-editor`
-			- [ ] **`\appendix` unsupported** — undefined; the thesis's `\appendix` lines → `latex-editor`
-			- [ ] **keep headings with the next paragraph** — with widow control a heading can be left alone at a page bottom (not seen in the thesis) → `latex-editor`
+			- [ ] **`boxed` algorithm style has no frame** — caption goes last but no `\fbox` exists in the engine; `algorithmic` (`\STATE`, `\IF`) still unsupported → `latex-editor`
 			- [ ] **em dash does not draw at 13px in a note** — U+2014 from L3 lowering is emitted but missing in the preview golden; a `LabelControl` draws it faintly; likely a sub-pixel-tall quad (renderer, unproven) → `latex-editor`
 			- [ ] **delete the dead `TexLowering.Spaces` helper** — unused since L7c; its line holds a literal U+00A0 the Edit tool cannot match → `latex-editor`
 			- [ ] **Carbon `Tex.Lowering` fails** — passes in Thorium, fails when the Tex suite runs in the Carbon host; likely host data, unknown if pre-existing; not investigated → `latex-editor`
@@ -161,7 +170,7 @@ This file holds **open work**. A landed entry moves to [[Changelog]]; one that s
 	- [ ] **stage 4 follow-up: graph polish** — no unpin, pan/zoom not saved, no local graph, search/filter, colour groups or label collision avoidance; boundary pins are machine-layout dependent; graph files can't be encrypted → `link-graph`
 	- [ ] **stage 4 follow-up: "Graph" in Vault.menu's New submenu and the row context menus** — only File > New and the folder menu have it → `link-graph`
 	- [ ] **stage 5: server vaults** — design only until a server exists → `link-graph-plan`
-	- [ ] **stage 1 follow-up: unexplained failures** — `Sheet.PasteLinks`, `Sheet.NotePasteLinks`, `Sheet.MathLinks` fail at Ctrl+Shift+V, the paste landing twice (`'start￼￼'`), so the key fires twice, not the paste code; `VaultLock.Create` makes a second id → `link-graph`
+	- [ ] **stage 1 follow-up: unexplained failure** — `VaultLock.Create` makes a second id → `link-graph`
 - [ ] **Release build fails on the SixLabors.ImageSharp 4.1.3 licence check (2026-10-26)** — `ValidateLicenseTask` passes only configurations named `Debug*` and the repo has no sixlabors.lic / SixLaborsLicenseKey; blocks Release+PROFILE builds and Release shipping; measured with a `DebugPerf` configuration (Optimize, TRACE;PROFILE) → `engine-profiling`
 - [ ] **Thorium productivity suite (user, 2026-10-02)** — Thorium houses notes, sheets and a todo board
 	- [ ] **sheets** → `ClaudeMemory/Context/sheets-plan.md`

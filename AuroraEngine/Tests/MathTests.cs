@@ -31,7 +31,7 @@ namespace ArctisAurora.Tests
         // a placed glyph's ink, bottom and top, in the box's coordinates
         private static (float bottom, float top) InkOf(MathGlyph g)
         {
-            GlyphMetrics m = atlas.GetGlyph(g.ch).Metrics(atlas.Effective(g.face));
+            GlyphMetrics m = atlas.Metrics(atlas.GetGlyph(g.ch), atlas.Effective(0, g.face));
             int range = m.yMax - m.yMin;
             return (g.y + m.glyphHeight * m.yMin / range * g.scale, g.y + m.glyphHeight * m.yMax / range * g.scale);
         }

@@ -5,8 +5,10 @@
 	<Test Action="Fonts.MathFontBaked"/>
 	<Test Action="Fonts.CffCharstring"/>
 	<Test Action="Fonts.CatalogGroups"/>
+	<Test Action="Fonts.CatalogVariants"/>
 	<Test Action="Fonts.StyleDeltaFont"/>
 	<Test Action="Fonts.LanguagePackCovered" Timeout="60000"/>
+	<Test Action="Fonts.ImportVariants" Timeout="60000"/>
 	<Test Action="Fonts.Previews" Timeout="60000"/>
 	<Test Action="Fonts.ImportFamily" Timeout="600000"/>	<Test Action="Perf.AtlasBake"/>
 </TestSuite>

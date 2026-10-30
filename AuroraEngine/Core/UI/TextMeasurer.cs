@@ -53,8 +53,10 @@ namespace ArctisAurora.Core.UI
         public float width;
         public float ascent;
         public float descent;
-        // the tallest glyph above the baseline, kept for fixed-depth lines only
+        // the tallest and deepest ink about the baseline and the line box's height, kept for fixed-depth lines only
         public float ink;
+        public float inkDepth;
+        public float pitch;
 
         // Y of the line's top within its own block. Document space is this plus the block's top,
         // which the block cache supplies — the measurer never sees document coordinates.
@@ -66,7 +68,7 @@ namespace ArctisAurora.Core.UI
         // the width the line may fill from left; 0 is the whole wrap width
         public float room;
 
-        // justify: what each space before justifyEnd gains
+        // justify: the glue ratio of each space and URL gap before justifyEnd
         public float spaceExtra;
         public int justifyEnd;
 
@@ -109,6 +111,8 @@ namespace ArctisAurora.Core.UI
         public readonly List<TextLine> lines = new List<TextLine>();
         public float width;
         public float height;
+        public float lineSkip;
+        public bool strut;
 
         // lines of the previous measure, handed out again by NextLine
         private readonly List<TextLine> spare = new List<TextLine>();
@@ -126,24 +130,27 @@ namespace ArctisAurora.Core.UI
             public int charStart;
             public int charCount;
             public AtlasMetaData atlas;
-            public FontStyle face;
+            public int face;
             public float fontSize;
             public bool picture;
             public bool math;
             public bool floating;
             public float space;
             public bool fill;
+            public int grid;
 
             public int start;
             public int length;
             public float ascent;
             public float descent;
             public float ink;
+            public float inkDepth;
+            public float pitch;
 
             public bool Matches(in TextMeasurer.Run run) =>
                 ReferenceEquals(text, run.text) && charStart == run.charStart && charCount == run.charCount
                 && ReferenceEquals(atlas, run.atlas) && face == run.face && fontSize == run.fontSize
-                && picture == run.picture && math == run.math && floating == run.floating && space == run.space && fill == run.fill;
+                && picture == run.picture && math == run.math && floating == run.floating && space == run.space && fill == run.fill && grid == run.grid;
         }
 
         // Empties the layout, keeping its lines for NextLine.
@@ -163,7 +170,7 @@ namespace ArctisAurora.Core.UI
             TextLine line = spare[^1];
             spare.RemoveAt(spare.Count - 1);
             line.segments.Clear();
-            line.width = line.ascent = line.descent = line.ink = line.top = line.left = line.room = line.spaceExtra = line.hyphen = line.fillExtra = 0f;
+            line.width = line.ascent = line.descent = line.ink = line.inkDepth = line.pitch = line.top = line.left = line.room = line.spaceExtra = line.hyphen = line.fillExtra = 0f;
             line.justifyEnd = 0;
             return line;
         }
@@ -184,9 +191,9 @@ namespace ArctisAurora.Core.UI
             public readonly float fontSize;
             public readonly FontStyle style;
 
-            // resolved once per run
+            // resolved once per run: the atlas face drawn from the variant and style
             public readonly AtlasMetaData atlas;
-            public readonly FontStyle face;
+            public readonly int face;
 
             // The slice of text this run covers, so several differently-styled spans can share one
             // string instead of each holding a substring cut on every measure.
@@ -209,6 +216,14 @@ namespace ArctisAurora.Core.UI
             // a fill run: no width of its own, the line's slack once aligned
             public readonly bool fill;
 
+            // em widths truncated to 1/grid em, as LuaTeX's font loader does; 0 keeps them exact
+            public readonly int grid;
+
+            // a biblatex URL: stretch between its characters, px, and the penalties at its two break markers
+            public readonly float urlStretch;
+            public readonly float urlBreakPenalty;
+            public readonly float urlBigBreakPenalty;
+
             public Run(string text, string fontName, AtlasMetaData atlas, float fontSize, FontStyle style = FontStyle.Regular)
             {
                 this.text = text;
@@ -216,21 +231,26 @@ namespace ArctisAurora.Core.UI
                 this.atlas = atlas;
                 this.fontSize = fontSize;
                 this.style = style;
-                face = atlas.Effective(style);
+                face = atlas.Effective(0, style);
                 charStart = 0;
                 charCount = text?.Length ?? 0;
             }
 
             public Run(string text, int charStart, int charCount, string fontName, AtlasMetaData atlas, float fontSize, FontStyle style,
                 bool picture = false, float imageWidth = 0f, float imageHeight = 0f, bool floating = false,
-                bool math = false, float depth = 0f, float space = 0f, bool fill = false)
+                bool math = false, float depth = 0f, float space = 0f, bool fill = false, int grid = 0,
+                float urlStretch = 0f, float urlBreakPenalty = 0f, float urlBigBreakPenalty = 0f, int variant = 0)
             {
+                this.grid = grid;
+                this.urlStretch = urlStretch;
+                this.urlBreakPenalty = urlBreakPenalty;
+                this.urlBigBreakPenalty = urlBigBreakPenalty;
                 this.text = text;
                 this.fontName = fontName;
                 this.atlas = atlas;
                 this.fontSize = fontSize;
                 this.style = style;
-                face = atlas.Effective(style);
+                face = atlas.Effective(variant, style);
                 this.charStart = charStart;
                 this.charCount = charCount;
                 this.picture = picture;
@@ -259,8 +279,30 @@ namespace ArctisAurora.Core.UI
         // a break that shows nothing and takes no room, as inside a URL
         public const char ZeroWidthSpace = '​';
 
+        // the same inside a biblatex URL, after an ordinary and a big break character: its run's penalty applies
+        public const char UrlBreak = '';
+        public const char UrlBigBreak = '';
+
+        public static bool IsZeroWidthBreak(char c) => c == ZeroWidthSpace || c == UrlBreak || c == UrlBigBreak;
+
         // a space no line breaks at, as wide and as stretchy as any other
         public const char NoBreakSpace = ' ';
+
+        // spaces after punctuation by TeX's space factor: stretch × factor, shrink ÷ factor, a third of a space wider from 2
+        public const char FirstFactorSpace = '';
+        private static readonly float[] spaceFactors = { 1.25f, 1.5f, 2f, 3f };
+
+        // A space's factor: 1 for a plain or tied space, 0 for anything else.
+        public static float SpaceFactor(char c) =>
+            c is ' ' or NoBreakSpace ? 1f : c >= FirstFactorSpace && c < FirstFactorSpace + 4 ? spaceFactors[c - FirstFactorSpace] : 0f;
+
+        // The marker space for a TeX space factor, sf/1000; a plain space under 1.25.
+        public static char FactorSpace(float factor)
+        {
+            for (int k = spaceFactors.Length - 1; k >= 0; k--)
+                if (factor >= spaceFactors[k]) return (char)(FirstFactorSpace + k);
+            return ' ';
+        }
 
         // Knuth-Plass: interword glue as a share of the space, and TeX's plain parameters
         internal const float GlueStretch = 0.5f;
@@ -313,10 +355,12 @@ namespace ArctisAurora.Core.UI
         // firstLineOffset applies to line 0 only; ragged lines stretch without limit, as TeX's fil glue.
         public static BlockLayout MeasureBlock(IReadOnlyList<Run> runs, float contentWidth, IGlyphMetrics metrics,
             float lineHeight, float firstLineOffset = 0f, ILineSlots slots = null, BlockLayout reuse = null, bool optimal = false, bool ragged = false,
-            float lastExtra = 0f, float baselineDepth = 0f)
+            float lastExtra = 0f, float baselineDepth = 0f, float lineSkip = 0f, bool strut = false, float tolerance = Tolerance, float pretolerance = -1f, float emergencyStretch = 0f)
         {
             BlockLayout layout = reuse ?? new BlockLayout();
             layout.Reset();
+            layout.lineSkip = lineSkip;
+            layout.strut = strut;
             Flatten(layout, runs, metrics, lineHeight, baselineDepth);
             int count = layout.count;
             byte[] flags = layout.flags;
@@ -331,7 +375,7 @@ namespace ArctisAurora.Core.UI
                 return layout;
             }
 
-            if (optimal && BreakOptimal(layout, count, contentWidth, firstLineOffset, ragged, runs, lastExtra))
+            if (optimal && BreakOptimal(layout, count, contentWidth, firstLineOffset, ragged, runs, lastExtra, tolerance, pretolerance, emergencyStretch))
             {
                 ExtendLast(layout, contentWidth, lastExtra);
                 IndentFirst(layout, firstLineOffset, contentWidth);
@@ -497,9 +541,10 @@ namespace ArctisAurora.Core.UI
             public Breakpoint previous;
         }
 
-        // Knuth-Plass over the block's characters; false when no break set fits, leaving the block to the greedy loop.
+        // Knuth-Plass over the block's characters in TeX's passes: unhyphenated within pretolerance (skipped when negative), hyphenated
+        // within tolerance, then with emergency stretch; false when none fits, leaving the block to the greedy loop.
         private static bool BreakOptimal(BlockLayout layout, int count, float contentWidth, float firstLineOffset, bool ragged, IReadOnlyList<Run> runs,
-            float lastExtra)
+            float lastExtra, float tolerance, float pretolerance, float emergencyStretch)
         {
             float[] advances = layout.advances;
             byte[] flags = layout.flags;
@@ -507,16 +552,63 @@ namespace ArctisAurora.Core.UI
             float[] stretch = new float[count + 1];
             float[] shrink = new float[count + 1];
             int[] fills = new int[count + 1];
+            // each break's penalty, made only for a block holding a biblatex URL
+            float[]? penalties = null;
+            List<BlockLayout.MeasuredRun> measured = layout.runs;
+            int r = 0;
             for (int i = 0; i < count; i++)
             {
                 if ((flags[i] & Tab) != 0) return false;
                 float glue = flags[i] is BreakAfter or Tie ? advances[i] : 0f;
+                float factor = 1f;
+                float url = 0f;
+                while (i >= measured[r].start + measured[r].length) r++;
+                if (glue > 0f)
+                {
+                    factor = MathF.Max(1f, SpaceFactor(measured[r].text[measured[r].charStart + i - measured[r].start]));
+                    if (factor >= 2f) glue *= 0.75f;
+                }
+                else if (runs[r].urlStretch > 0f)
+                {
+                    char c = measured[r].text[measured[r].charStart + i - measured[r].start];
+                    if (c == UrlBreak || c == UrlBigBreak)
+                    {
+                        penalties ??= new float[count];
+                        penalties[i] = c == UrlBreak ? runs[r].urlBreakPenalty : runs[r].urlBigBreakPenalty;
+                    }
+                    else if (i + 1 < measured[r].start + measured[r].length) url = runs[r].urlStretch;
+                }
                 width[i + 1] = width[i] + advances[i];
-                stretch[i + 1] = stretch[i] + glue * GlueStretch;
-                shrink[i + 1] = shrink[i] + glue * GlueShrink;
+                stretch[i + 1] = stretch[i] + glue * GlueStretch * factor + url;
+                shrink[i + 1] = shrink[i] + glue * GlueShrink / factor;
                 fills[i + 1] = fills[i] + ((flags[i] & Fill) != 0 ? 1 : 0);
             }
 
+            for (int pass = pretolerance >= 0f ? 0 : 1; pass < (emergencyStretch > 0f ? 3 : 2); pass++)
+            {
+                Breakpoint? chosen = BreakPass(layout, count, contentWidth, firstLineOffset, ragged, runs, lastExtra, width, stretch, shrink, fills, penalties,
+                    pass == 0 ? pretolerance : tolerance, pass > 0, pass == 2 ? emergencyStretch : 0f);
+                if (chosen == null) continue;
+
+                Stack<int> ends = new Stack<int>();
+                for (Breakpoint b = chosen; b.position >= 0; b = b.previous) ends.Push(b.position);
+                int lineStart = 0;
+                while (ends.Count > 0)
+                {
+                    int lineEnd = ends.Pop();
+                    AppendLine(layout, lineStart, lineEnd, runs);
+                    lineStart = lineEnd + 1;
+                }
+                return true;
+            }
+            return false;
+        }
+
+        // One pass: the cheapest break set whose lines all stay within threshold, soft hyphens only when hyphens; null when none.
+        private static Breakpoint? BreakPass(BlockLayout layout, int count, float contentWidth, float firstLineOffset, bool ragged, IReadOnlyList<Run> runs,
+            float lastExtra, float[] width, float[] stretch, float[] shrink, int[] fills, float[]? penalties, float threshold, bool hyphens, float background)
+        {
+            byte[] flags = layout.flags;
             List<Breakpoint> active = new List<Breakpoint> { new Breakpoint { position = -1, fitness = 2 } };
             Breakpoint[] best = new Breakpoint[4];
             int lastSolid = -1;
@@ -529,6 +621,7 @@ namespace ArctisAurora.Core.UI
                 bool breakable = forced || (flags[j] & BreakAfter) != 0 && !(flags[j] == BreakAfter && glueNext) || (flags[j + 1] & Picture) != 0;
                 if (!breakable) continue;
                 bool soft = (flags[j] & Soft) != 0 && j < count - 1;
+                if (soft && !hyphens && !forced) continue;
                 float hyphen = soft ? HyphenAt(layout, j, runs) : 0f;
 
                 Array.Clear(best);
@@ -546,7 +639,7 @@ namespace ArctisAurora.Core.UI
                     if (MathF.Abs(shortfall) < 0.01f || shortfall > 0f && (last || filled || ragged)) ratio = 0f;
                     else if (shortfall > 0f)
                     {
-                        float give = stretch[end + 1] - stretch[start];
+                        float give = stretch[end + 1] - stretch[start] + background;
                         ratio = give > 0f ? shortfall / give : float.PositiveInfinity;
                     }
                     else
@@ -561,12 +654,13 @@ namespace ArctisAurora.Core.UI
                         continue;
                     }
                     float badness = float.IsPositiveInfinity(ratio) ? float.PositiveInfinity : MathF.Min(10000f, 100f * MathF.Abs(ratio * ratio * ratio));
-                    if (badness > Tolerance) continue;
+                    if (badness > threshold) continue;
 
                     int fitness = ratio < -0.5f ? 3 : badness <= 12f ? 2 : ratio > 1f ? 0 : 1;
                     float demerits = from.demerits + (LinePenalty + badness) * (LinePenalty + badness);
                     if (Math.Abs(fitness - from.fitness) > 1) demerits += AdjDemerits;
                     if (soft) demerits += HyphenPenalty * HyphenPenalty + (from.hyphenated ? DoubleHyphenDemerits : 0f);
+                    if (penalties != null && !forced) demerits += penalties[j] * penalties[j];
                     if (j == count - 1 && from.hyphenated) demerits += FinalHyphenDemerits;
                     if (best[fitness] == null || demerits < best[fitness].demerits)
                         best[fitness] = new Breakpoint { position = j, line = from.line + 1, fitness = fitness, demerits = demerits, hyphenated = soft, previous = from };
@@ -575,23 +669,13 @@ namespace ArctisAurora.Core.UI
                 if (forced) active.Clear();
                 foreach (Breakpoint b in best)
                     if (b != null) active.Add(b);
-                if (active.Count == 0) return false;
+                if (active.Count == 0) return null;
             }
 
             Breakpoint chosen = active[0];
             foreach (Breakpoint b in active)
                 if (b.demerits < chosen.demerits) chosen = b;
-
-            Stack<int> ends = new Stack<int>();
-            for (Breakpoint b = chosen; b.position >= 0; b = b.previous) ends.Push(b.position);
-            int lineStart = 0;
-            while (ends.Count > 0)
-            {
-                int lineEnd = ends.Pop();
-                AppendLine(layout, lineStart, lineEnd, runs);
-                lineStart = lineEnd + 1;
-            }
-            return true;
+            return chosen;
         }
 
         // An object as wide as the column, a display formula, sits on a line of its own.
@@ -632,7 +716,7 @@ namespace ArctisAurora.Core.UI
                 BlockLayout.MeasuredRun slot = new BlockLayout.MeasuredRun
                 {
                     text = run.text, charStart = run.charStart, charCount = run.charCount, atlas = run.atlas, face = run.face,
-                    fontSize = run.fontSize, picture = run.picture, math = run.math, floating = run.floating, space = run.space, fill = run.fill, start = count
+                    fontSize = run.fontSize, picture = run.picture, math = run.math, floating = run.floating, space = run.space, fill = run.fill, grid = run.grid, start = count
                 };
 
                 if (!string.IsNullOrEmpty(run.text) && run.charCount > 0)
@@ -641,9 +725,10 @@ namespace ArctisAurora.Core.UI
                     (float ascent, float descent) = LineBox(run, metrics, lineHeight, baselineDepth);
                     slot.length = run.charCount;
 
+                    if (baselineDepth > 0f) slot.pitch = ascent + descent;
                     if (run.picture)
                     {
-                        if (!run.floating) (slot.ascent, slot.descent) = (run.imageHeight, descent);
+                        if (!run.floating) (slot.ascent, slot.descent, slot.ink) = (run.imageHeight, descent, baselineDepth > 0f ? run.imageHeight : 0f);
                         for (int i = 0; i < run.charCount; i++, count++)
                         {
                             advances[count] = run.floating ? 0f : run.imageWidth;
@@ -653,6 +738,7 @@ namespace ArctisAurora.Core.UI
                     else if (run.math)
                     {
                         (slot.ascent, slot.descent) = (MathF.Max(run.imageHeight, ascent), MathF.Max(run.depth, descent));
+                        if (baselineDepth > 0f) (slot.ink, slot.inkDepth) = (run.imageHeight, run.depth);
                         for (int i = 0; i < run.charCount; i++, count++)
                         {
                             advances[count] = run.imageWidth;
@@ -662,7 +748,7 @@ namespace ArctisAurora.Core.UI
                     else
                     {
                         (slot.ascent, slot.descent) = (ascent, descent);
-                        slot.ink = baselineDepth > 0f ? InkAscent(run) : 0f;
+                        if (baselineDepth > 0f) (slot.ink, slot.inkDepth) = InkExtent(run);
                         if (keep) count += run.charCount;
                         else
                         {
@@ -670,9 +756,9 @@ namespace ArctisAurora.Core.UI
                             for (int i = run.charStart; i < end; i++, count++)
                             {
                                 char c = run.text[i];
-                                advances[count] = MeasureAdvance(c, run);
-                                flags[count] = run.fill ? (byte)(BreakAfter | Fill) : c == ' ' ? BreakAfter : c == '\t' ? (byte)(BreakAfter | Tab)
-                                    : c == SoftHyphen ? (byte)(BreakAfter | Soft) : c == ZeroWidthSpace ? (byte)(BreakAfter | Zero)
+                                advances[count] = AdvanceAt(run, i, 0f);
+                                flags[count] = run.fill ? (byte)(BreakAfter | Fill) : c == ' ' || SpaceFactor(c) > 1f ? BreakAfter : c == '\t' ? (byte)(BreakAfter | Tab)
+                                    : c == SoftHyphen ? (byte)(BreakAfter | Soft) : IsZeroWidthBreak(c) ? (byte)(BreakAfter | Zero)
                                     : c == NoBreakSpace && run.space == 0f ? Tie : (byte)0;
                             }
                         }
@@ -704,20 +790,31 @@ namespace ArctisAurora.Core.UI
             return (ascent, lineBox - ascent);
         }
 
-        // The tallest glyph in a run above its baseline, for a fixed-depth line at a page top (TeX's \topskip).
-        private static float InkAscent(in Run run)
+        // The tallest and deepest glyph in a run about its baseline, for a fixed-depth line's \topskip and interline glue.
+        private static (float height, float depth) InkExtent(in Run run)
         {
-            float tallest = 0f;
+            float tallest = 0f, deepest = 0f;
             int end = run.charStart + run.charCount;
             for (int i = run.charStart; i < end; i++)
             {
                 Glyph? glyph = run.atlas.GetGlyph(run.text[i]);
                 if (glyph == null) continue;
-                GlyphMetrics m = glyph.Metrics(run.face);
+                GlyphMetrics m = run.atlas.Metrics(glyph, run.face);
                 float above = m.glyphHeight - m.tsb;
                 if (above > tallest) tallest = above;
+                if (m.tsb > deepest) deepest = m.tsb;
             }
-            return tallest * run.fontSize;
+            return (tallest * run.fontSize, deepest * run.fontSize);
+        }
+
+        // TeX's interline glue between two fixed-depth lines, as a shift on the lower line's top: the
+        // baselines stand \baselineskip apart, or \lineskip between the ink once that would go below 0.
+        internal static float Interline(TextLine above, TextLine below, float lineSkip)
+        {
+            if (below.pitch <= 0f || above.pitch <= 0f) return 0f;
+            float glue = below.pitch - above.inkDepth - below.ink;
+            float distance = glue >= 0f ? below.pitch : above.inkDepth + below.ink + lineSkip;
+            return distance - above.descent - below.ascent;
         }
 
         // Groups the run of characters into per-run segments and takes the line's box from the
@@ -754,12 +851,20 @@ namespace ArctisAurora.Core.UI
                 if (run.ascent > line.ascent) line.ascent = run.ascent;
                 if (run.descent > line.descent) line.descent = run.descent;
                 if (run.ink > line.ink) line.ink = run.ink;
+                if (run.inkDepth > line.inkDepth) line.inkDepth = run.inkDepth;
+                if (run.pitch > line.pitch) line.pitch = run.pitch;
             }
             if (to >= from && to < layout.count - 1 && (layout.flags[to] & Soft) != 0) line.hyphen = HyphenAt(layout, to, runs);
             line.width = width + line.hyphen;
+            if (layout.strut && line.pitch > 0f)
+            {
+                line.ascent = MathF.Max(line.ink, 0.7f * line.pitch);
+                line.descent = MathF.Max(line.inkDepth, 0.3f * line.pitch);
+            }
+            if (layout.lines.Count > 0) line.top += Interline(layout.lines[^1], line, layout.lineSkip);
 
             layout.lines.Add(line);
-            layout.height = top + line.height;
+            layout.height = line.top + line.height;
         }
 
         // An empty paragraph still occupies a line, or it would be zero tall and drop out of the
@@ -771,6 +876,7 @@ namespace ArctisAurora.Core.UI
             if (runs.Count == 0) return line;
 
             (line.ascent, line.descent) = LineBox(runs[0], metrics, lineHeight, baselineDepth);
+            if (baselineDepth > 0f) line.pitch = line.height;
             return line;
         }
 
@@ -784,14 +890,27 @@ namespace ArctisAurora.Core.UI
             if (run.math) return run.imageWidth;
             if (character == NoBreakSpace) character = ' ';
             if (run.space != 0f) return run.space;
-            if (run.fill || character == SoftHyphen || character == ZeroWidthSpace) return 0f;
-            if (character < AtlasMetaData.AdvanceTableSize) return run.atlas.TableAdvance(character, run.face) * run.fontSize;
+            if (SpaceFactor(character) > 1f) return MeasureAdvance(' ', run) * (SpaceFactor(character) >= 2f ? 4f / 3f : 1f);
+            if (run.fill || character == SoftHyphen || IsZeroWidthBreak(character)) return 0f;
+            if (character < AtlasMetaData.AdvanceTableSize) return Grid(run.atlas.TableAdvance(character, run.face), run.grid) * run.fontSize;
 
             Glyph glyph = run.atlas.GetGlyph(character) ?? run.atlas.GetGlyph(' ');
             if (glyph == null) return 0f;
 
-            return glyph.Metrics(run.face).advanceWidth * run.fontSize;
+            return Grid(run.atlas.Metrics(glyph, run.face).advanceWidth, run.grid) * run.fontSize;
         }
+
+        // The advance of the run's character at index, kern to the next included; layout, drawing, justifying, hit-testing and
+        // the caret all step through this so they cannot drift apart.
+        public static float AdvanceAt(in Run run, int index, float penInLine) =>
+            MeasureAdvance(run.text[index], run, penInLine) + (index + 1 < run.charStart + run.charCount ? Kern(run.text[index], run.text[index + 1], run) : 0f);
+
+        // The kern between two characters in the run's face, at its size and grid; 0 in a spacer, picture or formula run.
+        public static float Kern(char first, char second, in Run run) =>
+            run.space != 0f || run.picture || run.math || run.fill ? 0f : Grid(run.atlas.Kern(first, second, run.face), run.grid) * run.fontSize;
+
+        // An em width or kern truncated toward zero to the run's grid; 0 leaves it exact.
+        internal static float Grid(float em, int grid) => grid == 0 ? em : MathF.Truncate(em * grid + MathF.CopySign(0.001f, em)) / grid;
     }
 
     // Production metrics source. Kept out of TextMeasurer so the measurer itself never reaches for

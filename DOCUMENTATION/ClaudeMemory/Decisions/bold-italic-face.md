@@ -1,5 +1,7 @@
 # Decision — bold-italic is a fourth baked face, not a synthesised one
 
+**SUPERSEDED 2026-10-30 by [[font-variants]]:** faces are now a list keyed variant*4+style, selected by an int face index; the fixed four faces (`Glyph.bold/italic/boldItalic`, `AtlasMetaData.StyleBlock`, `hasBold…`) no longer exist.
+
 **Date:** 2026-09-04
 **Scope:** `ArctisAurora.Core.UISystem` — `FontStyle`, `Glyph`, `AtlasMetaData`, `AuroraFont.GenerateGlyphAtlas`;
 `ArctisAurora.Core.Filing.Serialization` — `AssetImporter`, `FontImport`, `FontImportStamp`;

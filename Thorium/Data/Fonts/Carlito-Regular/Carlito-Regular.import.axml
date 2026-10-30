@@ -1,2 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<FontImportStamp Family="Carlito" Source="Carlito-Regular.ttf" Face="0" SourceHash="E6EB15341A485499F538B09E5D807B57C912F8178279F75DB4F4559BB7FF88B6" BoldSource="Carlito-Bold.ttf" ItalicSource="Carlito-Italic.ttf" BoldItalicSource="Carlito-BoldItalic.ttf" Charset=" !&quot;#$%&amp;'()*+,-./0123456789:;&lt;=&gt;?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~ ¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿĀāĂăĄąĆćĈĉĊċČčĎďĐđĒēĔĕĖėĘęĚěĜĝĞğĠġĢģĤĥĦħĨĩĪīĬĭĮįİıĲĳĴĵĶķĸĹĺĻļĽľĿŀŁłŃńŅņŇňŉŊŋŌōŎŏŐőŒœŔŕŖŗŘřŚśŜŝŞşŠšŢţŤťŦŧŨũŪūŬŭŮůŰűŲųŴŵŶŷŸŹźŻżŽžſȷˆˇ˘˙˚˛˜˝–—‘’‚“”„†‡•…‰‹›€ﬀﬁﬂﬃﬄ" GlyphSize="64" ImporterVersion="5" />
+<FontImportStamp Family="Carlito" Source="Carlito-Regular.ttf" Face="0" SourceHash="E6EB15341A485499F538B09E5D807B57C912F8178279F75DB4F4559BB7FF88B6" Charset=" !&quot;#$%&amp;'()*+,-./0123456789:;&lt;=&gt;?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~ ¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿĀāĂăĄąĆćĈĉĊċČčĎďĐđĒēĔĕĖėĘęĚěĜĝĞğĠġĢģĤĥĦħĨĩĪīĬĭĮįİıĲĳĴĵĶķĸĹĺĻļĽľĿŀŁłŃńŅņŇňŉŊŋŌōŎŏŐőŒœŔŕŖŗŘřŚśŜŝŞşŠšŢţŤťŦŧŨũŪūŬŭŮůŰűŲųŴŵŶŷŸŹźŻżŽžſȷˆˇ˘˙˚˛˜˝–—‘’‚“”„†‡•…‰‹›€ﬀﬁﬂﬃﬄ" GlyphSize="64" ImporterVersion="8">
+  <Face Key="0" Source="Carlito-Regular.ttf" Index="0" />
+  <Face Key="1" Source="Carlito-Bold.ttf" Index="0" />
+  <Face Key="2" Source="Carlito-Italic.ttf" Index="0" />
+  <Face Key="3" Source="Carlito-BoldItalic.ttf" Index="0" />
+</FontImportStamp>

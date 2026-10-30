@@ -4,7 +4,7 @@
   <xs:import schemaLocation="AllTypesSchema.xsd" namespace="http://arctisaurora/AuroraTypes" />
   <xs:import schemaLocation="EntityRegistryTypeSchema.xsd" namespace="http://arctisaurora/AuroraEntityRegistryTypes" />
   <xs:simpleType name="UI">
-    <xs:union memberTypes="types:SpanChartMode types:ListMarker types:EffectLoop types:GradientKind types:GridSizeMode types:PaletteRole types:WindowCorners types:TextStyleType types:TextAlignment types:PageMode types:PageSize types:SlotPlace types:ScrollDirection types:PictureWrap types:PictureCollision types:WorkspaceKind types:FileKind types:Orientation" />
+    <xs:union memberTypes="types:SpanChartMode types:ListMarker types:EffectLoop types:GradientKind types:GridSizeMode types:PaletteRole types:WindowCorners types:TextStyleType types:TextAlignment types:PageMode types:MathRules types:PageSize types:SlotPlace types:ScrollDirection types:PictureWrap types:PictureCollision types:WorkspaceKind types:FileKind types:Orientation" />
   </xs:simpleType>
   <xs:attributeGroup name="FrameStrip.Attributes">
     <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
@@ -163,7 +163,7 @@
     <xs:attribute name="Gradient" type="xs:string" />
     <xs:attribute name="Effect" type="xs:string" />
     <xs:attribute name="FontName" type="xs:string" />
-    <xs:attribute name="FontSize" type="xs:int" />
+    <xs:attribute name="FontSize" type="xs:float" />
     <xs:attribute name="FontSizeAuthored" type="xs:boolean" />
     <xs:attribute name="StylingType" type="types:TextStyleType" />
     <xs:attribute name="Image" type="xs:string" />
@@ -176,9 +176,13 @@
     <xs:attribute name="Collision" type="types:PictureCollision" />
     <xs:attribute name="Math" type="xs:string" />
     <xs:attribute name="Display" type="xs:boolean" />
+    <xs:attribute name="Strut" type="xs:float" />
     <xs:attribute name="Sheet" type="xs:string" />
     <xs:attribute name="Space" type="xs:float" />
     <xs:attribute name="Fill" type="xs:boolean" />
+    <xs:attribute name="Leader" type="xs:string" />
+    <xs:attribute name="LeaderWidth" type="xs:float" />
+    <xs:attribute name="LeaderInset" type="xs:float" />
     <xs:attribute name="Note" type="xs:string" />
   </xs:attributeGroup>
   <xs:element name="Run" type="types:Run" />
@@ -229,7 +233,11 @@
       <xs:group minOccurs="0" maxOccurs="unbounded" ref="types:ContextMenuEntry.Children" />
     </xs:sequence>
   </xs:complexType>
+  <xs:attributeGroup name="ContextEntry.Attributes">
+    <xs:attribute name="When" type="xs:string" />
+  </xs:attributeGroup>
   <xs:attributeGroup name="ContextButton.Attributes">
+    <xs:attributeGroup ref="types:ContextEntry.Attributes" />
     <xs:attribute name="Text" type="xs:string" />
     <xs:attribute name="Action" type="actions:UI" />
   </xs:attributeGroup>
@@ -241,8 +249,10 @@
   <xs:element name="ContextLine" type="types:ContextLine" />
   <xs:complexType name="ContextLine">
     <xs:sequence />
+    <xs:attributeGroup ref="types:ContextEntry.Attributes" />
   </xs:complexType>
   <xs:attributeGroup name="ContextSubmenu.Attributes">
+    <xs:attributeGroup ref="types:ContextEntry.Attributes" />
     <xs:attribute name="Text" type="xs:string" />
     <xs:attribute name="Source" type="xs:string" />
   </xs:attributeGroup>
@@ -522,6 +532,9 @@
       <xs:enumeration value="Danger" />
       <xs:enumeration value="Ink" />
       <xs:enumeration value="MutedInk" />
+      <xs:enumeration value="Doc" />
+      <xs:enumeration value="Sheet" />
+      <xs:enumeration value="Planner" />
     </xs:restriction>
   </xs:simpleType>
   <xs:simpleType name="WindowCorners">
@@ -549,6 +562,9 @@
     <xs:attribute name="String" type="xs:string" />
     <xs:attribute name="Number" type="xs:string" />
     <xs:attribute name="Comment" type="xs:string" />
+    <xs:attribute name="Doc" type="xs:string" />
+    <xs:attribute name="Sheet" type="xs:string" />
+    <xs:attribute name="Planner" type="xs:string" />
     <xs:attribute name="Step" type="xs:float" />
     <xs:attribute name="Muted" type="xs:float" />
     <xs:attribute name="RowRadius" type="xs:float" />
@@ -647,7 +663,7 @@
   </xs:simpleType>
   <xs:attributeGroup name="TextStyle.Attributes">
     <xs:attribute name="Type" type="types:TextStyleType" />
-    <xs:attribute name="FontSize" type="xs:int" />
+    <xs:attribute name="FontSize" type="xs:float" />
     <xs:attribute name="FontName" type="xs:string" />
   </xs:attributeGroup>
   <xs:element name="TextStyle" type="types:TextStyle" />
@@ -665,9 +681,17 @@
   </xs:complexType>
   <xs:attributeGroup name="DocumentLayout.Attributes">
     <xs:attribute name="LineHeight" type="xs:float" />
+    <xs:attribute name="BaselineDepth" type="xs:float" />
+    <xs:attribute name="LineSkip" type="xs:float" />
+    <xs:attribute name="Tolerance" type="xs:float" />
+    <xs:attribute name="Pretolerance" type="xs:float" />
+    <xs:attribute name="EmergencyStretch" type="xs:float" />
+    <xs:attribute name="AdvanceGrid" type="xs:int" />
+    <xs:attribute name="MathRules" type="types:MathRules" />
     <xs:attribute name="BlockSpacing" type="xs:float" />
     <xs:attribute name="ListIndent" type="xs:float" />
     <xs:attribute name="OptimalBreaks" type="xs:boolean" />
+    <xs:attribute name="WidowControl" type="xs:boolean" />
   </xs:attributeGroup>
   <xs:element name="DocumentLayout" type="types:DocumentLayout" />
   <xs:complexType name="DocumentLayout">
@@ -694,6 +718,12 @@
     <xs:restriction base="xs:string">
       <xs:enumeration value="Paged" />
       <xs:enumeration value="Pageless" />
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:simpleType name="MathRules">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="OpenType" />
+      <xs:enumeration value="Tfm" />
     </xs:restriction>
   </xs:simpleType>
   <xs:simpleType name="PageSize">
@@ -839,6 +869,17 @@
     <xs:sequence />
     <xs:attributeGroup ref="types:StackPanel.Attributes" />
   </xs:complexType>
+  <xs:attributeGroup name="Switch.Attributes">
+    <xs:attributeGroup ref="types:Button.Attributes" />
+    <xs:attribute name="Options" type="xs:string" />
+    <xs:attribute name="Columns" type="xs:int" />
+    <xs:attribute name="Selected" type="xs:int" />
+  </xs:attributeGroup>
+  <xs:element name="Switch" type="types:Switch" />
+  <xs:complexType name="Switch">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:Switch.Attributes" />
+  </xs:complexType>
   <xs:attributeGroup name="TabItem.Attributes">
     <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
     <xs:attribute name="Header" type="xs:string" />
@@ -863,6 +904,7 @@
     <xs:attribute name="GripPressColorHex" type="xs:string" />
     <xs:attribute name="TearOffDocument" type="xs:string" />
     <xs:attribute name="StickyDocument" type="xs:string" />
+    <xs:attribute name="Bare" type="xs:boolean" />
     <xs:attribute name="TabContextMenu" type="xs:string" />
   </xs:attributeGroup>
   <xs:element name="TabView" type="types:TabView" />
@@ -903,13 +945,24 @@
   <xs:attributeGroup name="TextRun.Attributes">
     <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
     <xs:attribute name="Text" type="xs:string" />
-    <xs:attribute name="FontSize" type="xs:int" />
+    <xs:attribute name="FontSize" type="xs:float" />
     <xs:attribute name="FontName" type="xs:string" />
   </xs:attributeGroup>
   <xs:element name="TitleBar" type="types:TitleBar" />
   <xs:complexType name="TitleBar">
     <xs:sequence />
     <xs:attributeGroup ref="types:StackPanel.Attributes" />
+  </xs:complexType>
+  <xs:attributeGroup name="ToggleSwitch.Attributes">
+    <xs:attributeGroup ref="types:Button.Attributes" />
+    <xs:attribute name="OnText" type="xs:string" />
+    <xs:attribute name="OffText" type="xs:string" />
+    <xs:attribute name="On" type="xs:boolean" />
+  </xs:attributeGroup>
+  <xs:element name="ToggleSwitch" type="types:ToggleSwitch" />
+  <xs:complexType name="ToggleSwitch">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:ToggleSwitch.Attributes" />
   </xs:complexType>
   <xs:element name="WindowFrame" type="types:WindowFrame" />
   <xs:complexType name="WindowFrame">
@@ -971,6 +1024,7 @@
       <xs:enumeration value="Xml" />
       <xs:enumeration value="Sheet" />
       <xs:enumeration value="Planner" />
+      <xs:enumeration value="Graph" />
     </xs:restriction>
   </xs:simpleType>
   <xs:attributeGroup name="FileType.Attributes">

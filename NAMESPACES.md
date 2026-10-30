@@ -53,6 +53,7 @@ ArctisAurora.Core.Filing -> AuroraEngine/Core/Filing/FileTypes.cs
 ArctisAurora.Core.Filing -> AuroraEngine/Core/Filing/FileWriteQueue.cs
 ArctisAurora.Core.Filing -> AuroraEngine/Core/Filing/FolderPicker.cs
 ArctisAurora.Core.Filing -> AuroraEngine/Core/Filing/FontCatalog.cs
+ArctisAurora.Core.Filing -> AuroraEngine/Core/Filing/FontKerning.cs
 ArctisAurora.Core.Filing -> AuroraEngine/Core/Filing/FontPreviews.cs
 ArctisAurora.Core.Filing -> AuroraEngine/Core/Filing/Glyph.cs
 ArctisAurora.Core.Filing -> AuroraEngine/Core/Filing/IconSet.cs

@@ -592,13 +592,17 @@ namespace Thorium.Tests
             source.Copy();
             UIEngine.SetActiveControl(summary);
             summary.Select(4, 0, false);
-            yield return t.Key(Keys.V, Keys.LeftControl, Keys.LeftShift);
+            yield return t.Key(Keys.V, Keys.LeftControl);
             t.Check(cells.Get(4, 0) == "=[Budget]Data!A1" && cells.Get(4, 1) == "=[Budget]Data!B1",
-                $"Ctrl+Shift+V from another file names the file and page: {cells.Get(4, 0)} {cells.Get(4, 1)}");
+                $"Ctrl+V from another file names the file and page: {cells.Get(4, 0)} {cells.Get(4, 1)}");
             t.Check(Shown(4, 0) == "10" && Shown(4, 1) == "20", "and shows its values");
 
             summary.Undo();
             t.Check(cells.Get(4, 0) == null && cells.Get(4, 1) == null, "one undo takes the link back");
+
+            summary.Select(4, 0, false);
+            yield return t.Key(Keys.V, Keys.LeftControl, Keys.LeftShift);
+            t.Check(cells.Get(4, 0) == "10" && cells.Get(4, 1) == "20", $"Ctrl+Shift+V pastes the values: {cells.Get(4, 0)} {cells.Get(4, 1)}");
 
             ClipboardText.Set("x\ty");
             summary.Select(6, 0, false);
@@ -726,10 +730,10 @@ namespace Thorium.Tests
             sheet.Copy();
             content.SetCaret(NoteBlocks(note)[0], 5);
             note.FocusCaret();
-            yield return t.Key(Keys.V, Keys.LeftControl, Keys.LeftShift);
+            yield return t.Key(Keys.V, Keys.LeftControl);
             BlockControl first = NoteBlocks(note)[0];
             t.Check(Link(first)?.sheetRef == "Budget.sheet.axml#Data!B1" && first.text == "start" + BlockControl.PictureChar,
-                $"Ctrl+Shift+V in a note puts in a live cell: {Link(first)?.sheetRef} '{first.text}'");
+                $"Ctrl+V in a note puts in a live cell: {Link(first)?.sheetRef} '{first.text}'");
 
             content.SetCaret(first, 5);
             content.SetCaret(first, 6, true);
@@ -745,22 +749,25 @@ namespace Thorium.Tests
             sheet.Copy();
             content.SetCaret(first, 5);
             note.FocusCaret();
-            yield return t.Key(Keys.V, Keys.LeftControl, Keys.LeftShift);
+            yield return t.Key(Keys.V, Keys.LeftControl);
             first = NoteBlocks(note)[0];
             t.Check(Link(first)?.sheetRef == "Budget.sheet.axml#Data!A1:B2", $"a range pastes as a range link: {Link(first)?.sheetRef}");
 
             NoteContent(plain).SetCaret(NoteBlocks(plain)[0], 5);
             plain.FocusCaret();
-            yield return t.Key(Keys.V, Keys.LeftControl, Keys.LeftShift);
+            yield return t.Key(Keys.V, Keys.LeftControl);
             BlockControl plainFirst = NoteBlocks(plain)[0];
             t.Check(Link(plainFirst) == null && plainFirst.text.StartsWith("start10"), $"a .txt note pastes the values: '{plainFirst.text}'");
 
             ClipboardText.Set("elsewhere");
             content.SetCaret(NoteBlocks(note)[0], 0);
             note.FocusCaret();
-            yield return t.Key(Keys.V, Keys.LeftControl, Keys.LeftShift);
+            yield return t.Key(Keys.V, Keys.LeftControl);
             first = NoteBlocks(note)[0];
             t.Check(first.text.StartsWith("elsewhere") && first.spans.Count(span => span.IsSheet) == 1, "a clipboard from elsewhere pastes plainly");
+
+            yield return t.Key(Keys.Z, Keys.LeftControl);
+            t.Check(!NoteBlocks(note)[0].text.StartsWith("elsewhere"), $"one undo takes the plain paste back: '{NoteBlocks(note)[0].text}'");
 
             t.Show(new StackPanelControl());
             SheetBook.findSheet = before;
@@ -882,9 +889,9 @@ namespace Thorium.Tests
             NoteContent(note).SetCaret(p[0], p[0].text.Length);
             note.FocusCaret();
             yield return t.Key(Keys.M, Keys.LeftControl);
-            yield return t.Key(Keys.V, Keys.LeftControl, Keys.LeftShift);
+            yield return t.Key(Keys.V, Keys.LeftControl);
             TextBoxControl? box = UIEngine.activeControl as TextBoxControl;
-            t.Check(box?.text == @"\sheet{Budget.sheet.axml#Data!B1}", $"Ctrl+Shift+V in the formula's source puts in a reference: {box?.text}");
+            t.Check(box?.text == @"\sheet{Budget.sheet.axml#Data!B1}", $"Ctrl+V in the formula's source puts in a reference: {box?.text}");
             yield return t.Key(Keys.Enter);
             yield return 2;
             p = NoteBlocks(note);
@@ -892,7 +899,7 @@ namespace Thorium.Tests
 
             ClipboardText.Set("q");
             yield return t.Key(Keys.M, Keys.LeftControl);
-            yield return t.Key(Keys.V, Keys.LeftControl, Keys.LeftShift);
+            yield return t.Key(Keys.V, Keys.LeftControl);
             box = UIEngine.activeControl as TextBoxControl;
             t.Check(box?.text == "q", $"a clipboard from elsewhere pastes plainly: {box?.text}");
             yield return t.Key(Keys.Escape);
@@ -903,7 +910,7 @@ namespace Thorium.Tests
             ContextMenus.Close();
             yield return 2;
             t.Check(UIEngine.activeControl is not TextBoxControl, "a popup closed from outside is cancelled and gives the focus back");
-            yield return t.Key(Keys.V, Keys.LeftControl, Keys.LeftShift);
+            yield return t.Key(Keys.V, Keys.LeftControl);
             t.Check(NoteBlocks(note)[0].spans.Count(span => span.IsMath && span.mathSource == @"\sheet{Budget.sheet.axml#Data!B1}") == 1,
                 "Paste link after it reaches no closed popup");
             yield return 2;

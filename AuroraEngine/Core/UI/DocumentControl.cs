@@ -41,13 +41,14 @@ namespace ArctisAurora.Core.UI
         public readonly bool? underline;
         public readonly string colorHex;
         public readonly string highlightHex;
-        public readonly int? fontSize;
+        public readonly float? fontSize;
         public readonly bool? code;
         public readonly string fontName;
+        public readonly string variant;
 
         public StyleDelta(bool? bold = null, bool? italic = null, bool? strikethrough = null,
-            string colorHex = null, int? fontSize = null, bool? underline = null, string highlightHex = null,
-            bool? code = null, string fontName = null)
+            string colorHex = null, float? fontSize = null, bool? underline = null, string highlightHex = null,
+            bool? code = null, string fontName = null, string variant = null)
         {
             this.bold = bold;
             this.italic = italic;
@@ -58,13 +59,14 @@ namespace ArctisAurora.Core.UI
             this.fontSize = fontSize;
             this.code = code;
             this.fontName = fontName;
+            this.variant = variant;
         }
 
         // Everything a span carries, as a delta that would give another span the same look.
         public static StyleDelta Of(StyleSpan span) => new StyleDelta(
             span.IsBold, span.IsItalic, span.strikethrough, span.colorHex ?? string.Empty,
             span.fontSizeAuthored ? span.fontSize : null, span.underline, span.highlightHex ?? string.Empty,
-            fontName: span.fontName ?? string.Empty);
+            fontName: span.fontName ?? string.Empty, variant: span.variant ?? string.Empty);
 
         public void Apply(ref StyleSpan span)
         {
@@ -78,6 +80,7 @@ namespace ArctisAurora.Core.UI
             if (colorHex != null) span.colorHex = colorHex.Length == 0 ? null : colorHex;
             if (highlightHex != null) span.highlightHex = highlightHex.Length == 0 ? null : highlightHex;
             if (fontName != null) span.fontName = fontName.Length == 0 ? null : fontName;
+            if (variant != null) span.variant = variant.Length == 0 ? null : variant;
             if (fontSize.HasValue)
             {
                 span.fontSizeAuthored = true;
@@ -95,7 +98,7 @@ namespace ArctisAurora.Core.UI
         public StyleDelta With(StyleDelta over) => new StyleDelta(
             over.bold ?? bold, over.italic ?? italic, over.strikethrough ?? strikethrough,
             over.colorHex ?? colorHex, over.fontSize ?? fontSize, over.underline ?? underline,
-            over.highlightHex ?? highlightHex, over.code ?? code, over.fontName ?? fontName);
+            over.highlightHex ?? highlightHex, over.code ?? code, over.fontName ?? fontName, over.variant ?? variant);
 
         // Whether applying this would move anything on the span.
         public bool Changes(StyleSpan span) =>
@@ -107,7 +110,8 @@ namespace ArctisAurora.Core.UI
             || (highlightHex != null && (highlightHex.Length == 0 ? null : highlightHex) != span.highlightHex)
             || (fontSize.HasValue && fontSize != span.fontSize)
             || (code.HasValue && code != (span.stylingType == TextStyleType.Code))
-            || (fontName != null && (fontName.Length == 0 ? null : fontName) != span.fontName);
+            || (fontName != null && (fontName.Length == 0 ? null : fontName) != span.fontName)
+            || (variant != null && (variant.Length == 0 ? null : variant) != span.variant);
     }
 
     // The style the next character will take: the span the caret sits in, with an armed change laid
@@ -121,13 +125,15 @@ namespace ArctisAurora.Core.UI
         public readonly bool code;
         public readonly string colorHex;
         public readonly string highlightHex;
-        public readonly int fontSize;
+        public readonly float fontSize;
         public readonly string fontName;
+        public readonly string variant;
 
         public CaretStyle(BlockControl block, StyleSpan span, StyleDelta armed)
         {
             if (armed.fontName != null) span.fontName = armed.fontName.Length == 0 ? null : armed.fontName;
             fontName = block.FontAt(span);
+            variant = armed.variant == null ? span.variant : armed.variant.Length == 0 ? null : armed.variant;
             bold = armed.bold ?? span.IsBold;
             italic = armed.italic ?? span.IsItalic;
             strikethrough = armed.strikethrough ?? span.strikethrough;
@@ -168,14 +174,14 @@ namespace ArctisAurora.Core.UI
         // Page a y falls on, counting the margins and gap below a text area as its page.
         public int PageOf(float y) => Math.Max(0, (int)MathF.Floor((y - top + tolerance) / stride));
 
-        // A span that would cross its text area's bottom moves to the next page's top.
-        public float Push(float y, float spanHeight)
+        // A span that would cross its text area's bottom, past the overhang it may hang below, moves to the next page's top.
+        public float Push(float y, float spanHeight, float overhang = 0f)
         {
             float bandTop = top + PageOf(y) * stride;
             if (y < bandTop) return bandTop;
 
             float bandEnd = bandTop + height;
-            if (y + spanHeight <= bandEnd + tolerance) return y;
+            if (y + spanHeight - overhang <= bandEnd + tolerance) return y;
             if (spanHeight > height && y < bandEnd) return y;
             return bandTop + stride;
         }
@@ -208,7 +214,32 @@ namespace ArctisAurora.Core.UI
         private readonly List<bool> opened = new List<bool>();
         public Action<int>? opening;
 
+        // each page's gap shrink ratio once set, and the lowest bottom a span was fitted to on it, px;
+        // the shrink a span may count on while slackPage has no ratio yet
+        private readonly List<float> ratio = new List<float>();
+        private readonly List<float> fitEnd = new List<float>();
+        public float slack;
+        public int slackPage = -1;
+
         public PageSpace(float separator) => this.separator = separator;
+
+        public float Ratio(int page) => page < ratio.Count ? ratio[page] : 0f;
+
+        public void Shrink(int page, float r)
+        {
+            Grow(page);
+            ratio[page] = r;
+        }
+
+        // How far a page's fitted spans reach past its text area's bottom, px.
+        public float Overflow(PageBands bands, int page) =>
+            page < fitEnd.Count ? fitEnd[page] - (bands.top + page * bands.stride + bands.height - Bottom(page)) : 0f;
+
+        // A kept run moved off a page: what was fitted there now ends at y.
+        public void TakeBack(int page, float y)
+        {
+            if (page < fitEnd.Count) fitEnd[page] = y;
+        }
 
         public float Bottom(int page) => Notes(page) + (page < floatBottom.Count ? floatBottom[page] : 0f);
 
@@ -225,7 +256,7 @@ namespace ArctisAurora.Core.UI
         public bool Placed(string id) => seen.Contains(id);
 
         // A span pushed across page breaks and past pages of floats, each text area short by its page's floats and footnotes and by notes more on the page it lands.
-        public float Push(PageBands bands, float y, float spanHeight, float notesHeight = 0f)
+        public float Push(PageBands bands, float y, float spanHeight, float notesHeight = 0f, float overhang = 0f)
         {
             while (true)
             {
@@ -241,13 +272,15 @@ namespace ArctisAurora.Core.UI
                 float textTop = bandTop + top[page];
                 y = MathF.Max(y, textTop);
                 float need = notesHeight > 0f ? notesHeight + (Notes(page) == 0f ? separator : 0f) : 0f;
-                if (y + spanHeight > bandTop + bands.height - Bottom(page) - need + PageBands.tolerance && y > textTop + PageBands.tolerance)
+                float give = page == slackPage && ratio[page] == 0f ? slack : 0f;
+                if (y + spanHeight - overhang > bandTop + bands.height - Bottom(page) - need + PageBands.tolerance + give && y > textTop + PageBands.tolerance)
                 {
                     y = bandTop + bands.stride;
                     continue;
                 }
 
                 textEnd[page] = MathF.Max(textEnd[page], y + spanHeight);
+                fitEnd[page] = MathF.Max(fitEnd[page], y + spanHeight - overhang);
                 return y;
             }
         }
@@ -286,6 +319,8 @@ namespace ArctisAurora.Core.UI
                 placed[p] = null;
                 bottom[p] = 0f;
                 textEnd[p] = 0f;
+                ratio[p] = 0f;
+                fitEnd[p] = 0f;
             }
         }
 
@@ -300,17 +335,19 @@ namespace ArctisAurora.Core.UI
                 floatBottom.Add(0f);
                 floatPage.Add(false);
                 opened.Add(false);
+                ratio.Add(0f);
+                fitEnd.Add(0f);
             }
         }
 
         // Pushes a line, then sets its anchors' footnotes aside on the page it landed on.
-        public float PushLine(PageBands bands, float y, float lineHeight, List<string>? ids)
+        public float PushLine(PageBands bands, float y, float lineHeight, List<string>? ids, float overhang = 0f)
         {
             float notesHeight = 0f;
             if (ids != null)
                 foreach (string id in ids)
                     if (!seen.Contains(id) && notes.TryGetValue(id, out float height)) notesHeight += height;
-            y = Push(bands, y, lineHeight, notesHeight);
+            y = Push(bands, y, lineHeight, notesHeight, overhang);
             if (notesHeight > 0f) Reserve(bands.PageOf(y), ids!);
             return y;
         }
@@ -375,11 +412,13 @@ namespace ArctisAurora.Core.UI
         private readonly float textFloatSep;
         private readonly float inTextSep;
         private readonly float pageSep;
+        // how far each \intextsep may shrink, px
+        public readonly float inTextShrink;
 
         // the editor's header above the first page's text, px
         private readonly float header;
 
-        public PageFloats(PageSpace space, PageBands bands, bool paged, float floatSep, float textFloatSep, float inTextSep, float pageSep, float header)
+        public PageFloats(PageSpace space, PageBands bands, bool paged, float floatSep, float textFloatSep, float inTextSep, float inTextShrink, float pageSep, float header)
         {
             this.space = space;
             this.bands = bands;
@@ -387,6 +426,7 @@ namespace ArctisAurora.Core.UI
             this.floatSep = floatSep;
             this.textFloatSep = textFloatSep;
             this.inTextSep = inTextSep;
+            this.inTextShrink = inTextShrink;
             this.pageSep = pageSep;
             this.header = header;
             space.opening = Open;
@@ -399,13 +439,14 @@ namespace ArctisAurora.Core.UI
         private float BandTop(int page) => bands.top + page * bands.stride;
 
         // A float met in the text at y: here, at the current page's top or foot, or waiting; returns the text's y after it.
+        // inkEnd is the text's last ink plus \lineskip, which a float set here stands \intextsep below.
         // rewind is the page whose text must be laid out again under a new top float, else -1.
-        public float Arrive(Group g, float y, out int rewind)
+        public float Arrive(Group g, float y, float inkEnd, out int rewind)
         {
             rewind = -1;
-            if (g.where == Where.Here) return Here(g, y);
+            if (g.where == Where.Here) return Here(g, y, inkEnd);
             if (g.where != Where.None) return y;
-            if (!paged || g.Allows('H')) return Here(g, y);
+            if (!paged || g.Allows('H')) return Here(g, y, inkEnd);
 
             int p = bands.PageOf(y);
             space.Open(p);
@@ -420,7 +461,7 @@ namespace ArctisAurora.Core.UI
                 bool force = g.Allows('!');
                 float textTop = BandTop(p) + space.Top(p);
                 float textY = MathF.Max(y, textTop);
-                if (g.Allows('h') && textY + inTextSep + g.height <= BandTop(p) + bands.height - space.Bottom(p) + PageBands.tolerance) return Here(g, y);
+                if (g.Allows('h') && textY + inTextSep + g.height <= BandTop(p) + bands.height - space.Bottom(p) + PageBands.tolerance) return Here(g, y, inkEnd);
                 if (g.Allows('t') && TopFits(g, p, force, textY))
                 {
                     Put(g, Where.Top, p);
@@ -438,12 +479,13 @@ namespace ArctisAurora.Core.UI
             return y;
         }
 
-        private float Here(Group g, float y)
+        private float Here(Group g, float y, float inkEnd)
         {
             g.where = Where.Here;
-            g.y = space.Push(bands, y + inTextSep, g.height);
+            float sep = inTextSep - space.Ratio(bands.PageOf(y)) * inTextShrink;
+            g.y = space.Push(bands, inkEnd + sep, g.height);
             g.page = bands.PageOf(g.y);
-            return g.y + g.height + inTextSep;
+            return g.y + g.height + sep;
         }
 
         // A fresh page takes a page of floats if the waiting ones fill enough of it, else what fits at its top and foot, in order.
@@ -596,6 +638,8 @@ namespace ArctisAurora.Core.UI
         private readonly List<PanelControl> pages = new List<PanelControl>();
         private readonly List<float> blockTops = new List<float>();
         private readonly List<float> blockHeights = new List<float>();
+        // the shrink each block's gap gave the page its first line is on, px
+        private readonly List<float> blockShrinks = new List<float>();
         private readonly List<Control> blockControls = new List<Control>();
         // footnote and float blocks, out of the flow: where the last paginate put each, each page's footnote rule,
         // each footnote's blocks by id, and whether the document has any
@@ -1014,7 +1058,8 @@ namespace ArctisAurora.Core.UI
 
             DocumentFragment fragment = document.CaptureFragment(from, to);
             string text =string.Join(Environment.NewLine, fragment.blocks.Select(block => PlainText(block, session?.path))).Replace(TextMeasurer.SoftHyphen.ToString(), string.Empty)
-                .Replace(TextMeasurer.ZeroWidthSpace.ToString(), string.Empty);
+                .Replace(TextMeasurer.ZeroWidthSpace.ToString(), string.Empty).Replace(TextMeasurer.UrlBreak.ToString(), string.Empty)
+                .Replace(TextMeasurer.UrlBigBreak.ToString(), string.Empty);
 
             copiedText = text;
             copiedFragment = fragment;
@@ -1279,6 +1324,7 @@ namespace ArctisAurora.Core.UI
                     rightIndent = at.note.rightIndent,
                     rightIndentLast = at.note.rightIndentLast,
                     spaceBefore = at.spaceBefore,
+                    shrinkBefore = at.shrinkBefore,
                     insert = at.insert,
                     language = at.language,
                     codeWrap = at.codeWrap,
@@ -1287,6 +1333,8 @@ namespace ArctisAurora.Core.UI
                     listMarker = at.listMarker,
                     listIndent = at.note.listIndent,
                     lineHeight = at.note.lineHeight,
+                    keepWithNext = at.note.keepWithNext,
+                    strut = at.note.strut,
                     text = clean.ToString()
                 };
 
@@ -1314,6 +1362,7 @@ namespace ArctisAurora.Core.UI
                 rightIndent = destination.note.rightIndent,
                 rightIndentLast = destination.note.rightIndentLast,
                 spaceBefore = destination.spaceBefore,
+                shrinkBefore = destination.shrinkBefore,
                 insert = destination.insert,
                 language = destination.language,
                 codeWrap = destination.codeWrap,
@@ -1322,6 +1371,8 @@ namespace ArctisAurora.Core.UI
                 listMarker = destination.listMarker,
                 listIndent = destination.note.listIndent,
                 lineHeight = destination.note.lineHeight,
+                keepWithNext = destination.note.keepWithNext,
+                strut = destination.note.strut,
                 isChecked = destination.isChecked,
                 text = last.text
             };
@@ -3798,6 +3849,32 @@ namespace ArctisAurora.Core.UI
         #endregion
 
         #region ---- pages ----
+        // The shrink the gaps of the blocks before end give a page, px.
+        private float PageShrink(PageBands bands, int page, int end)
+        {
+            float total = 0f;
+            for (int j = end - 1; j >= 0 && bands.PageOf(blockTops[j]) >= page; j--)
+                if (bands.PageOf(blockTops[j]) == page) total += blockShrinks[j];
+            return total;
+        }
+
+        // Sets an overflowing page's gap shrink and returns the first block to lay out again; -1 when the page fits as it is.
+        private int ShrinkFrom(PageSpace space, PageBands bands, int page, int end)
+        {
+            float overflow = space.Overflow(bands, page);
+            if (space.Ratio(page) > 0f || overflow <= PageBands.tolerance) return -1;
+            float total = PageShrink(bands, page, end);
+            if (total <= 0f) return -1;
+
+            float pageTop = bands.top + page * bands.stride;
+            int first = 0;
+            while (first < end && blockTops[first] + blockHeights[first] <= pageTop) first++;
+            space.Rollback(page);
+            space.Shrink(page, MathF.Min(1f, overflow / total));
+            floats.RemoveAll(f => blockControls.IndexOf(f.block) >= first);
+            return first;
+        }
+
         // Places every block down the pages and returns the document's height.
         private float Paginate(Vector2 paper, int from, int to)
         {
@@ -3822,7 +3899,7 @@ namespace ArctisAurora.Core.UI
                 from = 0;
                 to = int.MaxValue;
                 MeasureFootnotes(space);
-                placer = new PageFloats(space, bands, paged, Mm(page.floatSep), Mm(page.textFloatSep), Mm(page.inTextSep), 8f * PxPerPt * zoom, headerHeight);
+                placer = new PageFloats(space, bands, paged, Mm(page.floatSep), Mm(page.textFloatSep), Mm(page.inTextSep), Mm(page.inTextSepShrink), 8f * PxPerPt * zoom, headerHeight);
                 MeasureFloats(placer);
             }
 
@@ -3832,6 +3909,16 @@ namespace ArctisAurora.Core.UI
             int index = 0;
             bool settled = false;
             Entity previous = null;
+            // the first block of the run kept with the block being placed, the run last moved to a new page, and whether it now starts one
+            int keptFrom = -1;
+            int keptBreak = -1;
+            bool atBreak = false;
+            // the block a shrunk page's second layout starts on a new page, at forcedTop
+            int forcedBreak = -1;
+            float forcedTop = 0f;
+            // a float was just set here, and the shrink its two \intextsep gaps give the next block
+            bool afterHere = false;
+            float floatShrink = 0f;
             for (int c = 0; c < children.Count; c++)
             {
                 Entity child = children[c];
@@ -3841,8 +3928,17 @@ namespace ArctisAurora.Core.UI
                 if (block == null && table == null && locked == null) continue;
                 if (IsInsert(child))
                 {
+                    keptFrom = -1;
                     if (placer == null || !placer.starts.TryGetValue(child, out PageFloats.Group? group)) continue;
-                    y = placer.Arrive(group, y, out int rewind);
+                    float inkEnd = previous is BlockControl { Lines: { Count: > 0 } ended } endedBlock && ended[^1].pitch > 0f
+                        ? y - ended[^1].descent + ended[^1].inkDepth + endedBlock.LineSkip : y;
+                    y = placer.Arrive(group, y, inkEnd, out int rewind);
+                    if (group.where == PageFloats.Where.Here)
+                    {
+                        previous = null;
+                        afterHere = true;
+                        floatShrink += 2f * placer.inTextShrink;
+                    }
                     if (rewind < 0) continue;
 
                     // a new top float: lay the page's text out again from the first block that reaches it
@@ -3858,27 +3954,56 @@ namespace ArctisAurora.Core.UI
                     continue;
                 }
                 bool codeRun = block?.stylingType == TextStyleType.Code && previous is BlockControl { stylingType: TextStyleType.Code };
+                BlockControl? above = previous as BlockControl;
                 previous = child;
                 if (index < from)
                 {
+                    afterHere = false;
+                    floatShrink = 0f;
                     index++;
                     continue;
                 }
 
                 float? before = block != null ? block.spaceBefore : table != null ? table.spaceBefore : locked.note.spaceBefore;
                 PageBreak pageBreak = block != null ? block.pageBreak : table != null ? table.pageBreak : locked.note.pageBreak;
+                if (index == forcedBreak)
+                {
+                    y = forcedTop;
+                    atBreak = true;
+                    forcedBreak = -1;
+                }
+                float lastEnd = y;
+                float shrink = 0f;
                 if (index > 0 && paged && pageBreak != PageBreak.None)
                 {
                     if (pageBreak == PageBreak.Clear && placer is { Waiting: true }) y = placer.Flush(bands.PageOf(bands.Break(y)));
                     y = bands.Break(y);
                 }
-                else if (index > 0 && (before.HasValue || !codeRun)) y += (before ?? blockSpacing) * zoom;
+                else if (index > 0 && !atBreak && (before.HasValue || !codeRun))
+                {
+                    shrink = (block?.shrinkBefore ?? table?.shrinkBefore ?? 0f) * zoom;
+                    y += (before ?? blockSpacing) * zoom - (space?.Ratio(bands.PageOf(y)) ?? 0f) * shrink;
+                }
+                if (!atBreak && pageBreak == PageBreak.None && block is { strut: false, Lines: { Count: > 0 } below }
+                    && above is { stylingType: not TextStyleType.Rule, strut: false, Lines: { Count: > 0 } over })
+                    y += TextMeasurer.Interline(over[^1], below[0], block.LineSkip);
+                else if (!atBreak && afterHere && block?.Lines is { Count: > 0 } opening && opening[0].pitch > 0f)
+                    y += (opening[0].pitch >= opening[0].ink ? opening[0].pitch : opening[0].ink + block.LineSkip) - opening[0].ascent;
+                atBreak = afterHere = false;
+                int gapPage = bands.PageOf(y);
+                shrink += floatShrink;
+                floatShrink = 0f;
+                if (space != null)
+                {
+                    space.slackPage = gapPage;
+                    space.slack = PageShrink(bands, gapPage, index) + shrink;
+                }
 
                 Control item = block ?? (Control)child;
                 float blockTop = y;
                 if (table != null) blockTop = space?.Push(bands, y, table.FirstRowHeight) ?? bands.Push(y, table.FirstRowHeight);
                 else if (locked != null) blockTop = space?.Push(bands, y, locked.DesiredSize.Y) ?? bands.Push(y, locked.DesiredSize.Y);
-                else if (block.Lines is { Count: > 0 } lines) blockTop = space?.Push(bands, y, lines[0].height) ?? bands.Push(y, lines[0].height);
+                else if (block.Lines is { Count: > 0 } lines) blockTop = space?.Push(bands, y, lines[0].height, 0f, block.Overhang) ?? bands.Push(y, lines[0].height, block.Overhang);
 
                 if (index > to && blockTops[index] == blockTop && !FloatsBelow(blockTop) && block is not { laidAround: true })
                 {
@@ -3909,18 +4034,89 @@ namespace ArctisAurora.Core.UI
                         height = block.Paginate(blockTop, bands, space);
                     }
                 }
+                float gave = bands.PageOf(blockTop) == gapPage ? shrink : 0f;
                 if (index < blockControls.Count)
                 {
                     blockTops[index] = blockTop;
                     blockHeights[index] = height;
+                    blockShrinks[index] = gave;
                     blockControls[index] = item;
                 }
                 else
                 {
                     blockTops.Add(blockTop);
                     blockHeights.Add(height);
+                    blockShrinks.Add(gave);
                     blockControls.Add(item);
                 }
+                if (space != null) space.slack = 0f;
+
+                if (paged && keptFrom >= 0 && keptFrom != keptBreak)
+                {
+                    // the kept run ends a page this block's first line left: the run starts the next page instead
+                    float firstLine = block?.Lines is { Count: > 0 } placed ? blockTop + placed[0].top : blockTop;
+                    int landed = bands.PageOf(firstLine);
+                    if (landed > bands.PageOf(blockTops[index - 1] + blockHeights[index - 1] - PageBands.tolerance))
+                    {
+                        int first = keptFrom;
+                        if (space != null && first > 0)
+                        {
+                            // the page the run leaves ends at the block before it; overflowing, it shrinks and the run starts the next page
+                            float end = blockTops[first - 1] + blockHeights[first - 1];
+                            int left = bands.PageOf(end - PageBands.tolerance);
+                            if (left < landed)
+                            {
+                                space.TakeBack(left, end - (blockControls[first - 1] is BlockControl last ? last.Overhang : 0f));
+                                int shrunk = ShrinkFrom(space, bands, left, first);
+                                if (shrunk >= 0)
+                                {
+                                    forcedBreak = first;
+                                    forcedTop = bands.top + landed * bands.stride;
+                                    keptBreak = first;
+                                    c = shrunk == 0 ? -1 : children.IndexOf(blockControls[shrunk - 1]);
+                                    y = shrunk == 0 ? top + headerHeight : blockTops[shrunk - 1] + blockHeights[shrunk - 1];
+                                    previous = shrunk == 0 ? null : blockControls[shrunk - 1];
+                                    from = Math.Min(from, shrunk);
+                                    keptFrom = -1;
+                                    index = shrunk;
+                                    continue;
+                                }
+                            }
+                        }
+                        for (int f = floats.Count - 1; f >= 0; f--)
+                        {
+                            int anchor = blockControls.IndexOf(floats[f].block);
+                            if (anchor >= first && anchor <= index) floats.RemoveAt(f);
+                        }
+                        c = children.IndexOf(blockControls[first]) - 1;
+                        y = bands.top + landed * bands.stride;
+                        previous = first == 0 ? null : blockControls[first - 1];
+                        from = Math.Min(from, first);
+                        keptBreak = first;
+                        keptFrom = -1;
+                        atBreak = true;
+                        index = first;
+                        continue;
+                    }
+                }
+
+                // the page the content left reaches past its bottom on its gaps' shrink: it shrinks them and is laid out again
+                int closed = bands.PageOf(lastEnd);
+                if (space != null && paged && bands.PageOf(blockTop + height - PageBands.tolerance) > closed && ShrinkFrom(space, bands, closed, index + 1) is int again and >= 0)
+                {
+                    if (keptBreak >= again && keptBreak <= index)
+                    {
+                        forcedBreak = keptBreak;
+                        forcedTop = bands.top + bands.PageOf(blockTops[keptBreak]) * bands.stride;
+                    }
+                    c = again == 0 ? -1 : children.IndexOf(blockControls[again - 1]);
+                    y = again == 0 ? top + headerHeight : blockTops[again - 1] + blockHeights[again - 1];
+                    previous = again == 0 ? null : blockControls[again - 1];
+                    keptFrom = -1;
+                    index = again;
+                    continue;
+                }
+                keptFrom = block is { keepWithNext: true } ? (keptFrom >= 0 ? keptFrom : index) : -1;
                 y = blockTop + height;
                 index++;
             }
@@ -3935,6 +4131,7 @@ namespace ArctisAurora.Core.UI
             {
                 blockTops.RemoveRange(index, blockTops.Count - index);
                 blockHeights.RemoveRange(index, blockHeights.Count - index);
+                blockShrinks.RemoveRange(index, blockShrinks.Count - index);
                 blockControls.RemoveRange(index, blockControls.Count - index);
             }
             foreach (FloatPicture f in floats)
@@ -4001,6 +4198,8 @@ namespace ArctisAurora.Core.UI
                 }
 
                 float gap = current.items.Count > 0 ? ((block != null ? block.spaceBefore : table!.spaceBefore) ?? 0f) * zoom : 0f;
+                if (block is { strut: true } && current.items.Count > 0 && current.items[^1] is BlockControl { Lines: { Count: > 0 } over } && over[^1].pitch > 0f)
+                    gap -= over[^1].descent - over[^1].inkDepth;
                 float height = block != null ? block.Paginate(0f, unbounded) : table!.Paginate(0f, unbounded);
                 current.offsets.Add(current.height + gap);
                 current.items.Add((Control)child);
@@ -4323,6 +4522,7 @@ namespace ArctisAurora.Core.UI
                         inserts = true;
                         continue;
                     }
+                    if (item is BlockControl { shrinkBefore: > 0f } || TableIn(child) is { shrinkBefore: > 0f }) inserts = true;
                     if (Remeasured(item) || count >= blockControls.Count || blockControls[count] != item)
                     {
                         if (from < 0) from = count;

@@ -124,6 +124,7 @@
       <xs:enumeration value="ListLevel" />
       <xs:enumeration value="DocumentLayout" />
       <xs:enumeration value="PageMode" />
+      <xs:enumeration value="MathRules" />
       <xs:enumeration value="PageSize" />
       <xs:enumeration value="Page" />
       <xs:enumeration value="SlotPlace" />
@@ -208,6 +209,7 @@
       <xs:enumeration value="MathConstants" />
       <xs:enumeration value="Charset" />
       <xs:enumeration value="FontImport" />
+      <xs:enumeration value="FontVariantImport" />
       <xs:enumeration value="IconImport" />
       <xs:enumeration value="ImportSet" />
     </xs:restriction>

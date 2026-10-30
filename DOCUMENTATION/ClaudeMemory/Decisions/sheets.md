@@ -65,7 +65,7 @@ S4/S5 (2026-10-04/05): `SheetPageStripControl`, `SheetLayersControl`, `SheetCsv`
 - **S2b2 Paste link (2026-10-03).** `Copy` keeps `copiedText` + `copiedFrom` (document, path, page, range); `Cut`
   drops them. `PasteLink` writes `=` + prefix + address per cell (none on the same page, `Page!` in the same file,
   `[File]Page!` across files; file = path's base name), one undo step, block selected; a clipboard that no longer
-  matches pastes plainly. `Sheet.PasteLink` on Ctrl+Shift+V falls back to `Text.PasteLink` outside a sheet (S2b3).
+  matches pastes plainly. `Sheet.PasteLink` (Ctrl+V since 2026-10-30) falls back to `Text.PasteLink` outside a sheet (S2b3).
 - **S2b3 sheet links in notes (2026-10-04).** `SheetLinks` (static, `ArctisAurora.Core.UI`): `Parse(reference, out file, out page,
   out top, out left, out bottom, out right)`, `Reference(path, page, top, left, bottom, right)`, `IsLink(target)`,
   `Layout(reference, in TextMeasurer.Run, LineMetrics, zoom) → SheetBox`, `Plain(reference)`, `Renamed(oldPath, newPath, notes)`,
@@ -169,8 +169,15 @@ Spreadsheet users expect Excel, not maths.
 non-finite result and `#REF!` past Excel's grid (16,384 × 1,048,576) were added during the build — the agreed list
 did not cover overflow or a grid bound.
 
-**Copy writes values; Ctrl+V pastes values; Paste link is Ctrl+Shift+V (S2b).** (user, 2026-10-03) The OS clipboard
-wants values, and paste does not adjust relative references, so a pasted formula would point at the old cells.
+**Copy writes values; Ctrl+V pastes links first; Ctrl+Shift+V pastes values.** (user, 2026-10-30; until then Ctrl+V
+pasted values and Ctrl+Shift+V linked, S2b) The OS clipboard wants values, and paste does not adjust relative
+references, so a pasted formula would point at the old cells. Ctrl+V is `Sheet.PasteLink`: a reference or live link
+whenever the clipboard is the last sheet copy, a plain paste otherwise — so copying inside one sheet now pastes `=A1`,
+unlike Excel. Cut drops the copy record, so a cut always pastes values and never links to the cells it emptied.
+Ctrl+Shift+V is `Text.Paste`, which is "paste plain" in most other apps. The menus' "Paste" follows Ctrl+V; the
+sheet menu's "Paste values" is `Text.Paste`. `SheetActions.PasteLink` falls back to `Text.PasteLink` whenever the
+sheet refuses (a cell being edited), else Ctrl+V would be dead in a cell editor; an empty clipboard returns false so
+a copied picture reaches `Text.Paste`'s image branch.
 
 ### S2b1/S2b2 — across files, Paste link (2026-10-03)
 
@@ -192,9 +199,10 @@ that held a reference are written. A loaded sheet with no open tab is saved at o
 **Thorium's own saves are the freshness boundary.** (user, 2026-10-03) A sheet is loaded once per vault session;
 an edit made outside Thorium is seen on the next launch or vault switch. No file watcher.
 
-**Paste link falls back to `Text.PasteLink` outside a sheet (a plain paste when no link applies), and its bind precedes Ctrl+V's.** A Ctrl+Shift+V bind
+**Paste link falls back to `Text.PasteLink` outside a sheet (a plain paste when no link applies), and the Ctrl+Shift+V bind precedes Ctrl+V's.** A Ctrl+Shift+V bind
 shadows Ctrl+V only when it comes first in `InputMap.inputs.axml` (the matcher consumes triggers in file order, as
-`Math.InsertDisplay` before `Math.Insert`). Shadowing would otherwise end Ctrl+Shift+V pasting in notes.
+`Math.InsertDisplay` before `Math.Insert`). One action per chord: a second `Text.PasteLink` bind on the same chord
+ran after `Sheet.PasteLink`'s own fallback and pasted every link twice.
 
 **A test may not share an input action's name.** `Sheet.PasteLink` as a test name crashed boot: the keybind
 loader bound the `Test`-category method by name. The test is `Sheet.PasteLinks`.
@@ -253,7 +261,7 @@ One format (`file#Page!A1`), and the rename rewrite reuses `SheetLinks`. Rejecte
 A number becomes `{value}` (math digits), text becomes `\text{value}` with `{`, `}`, `\` stripped, a range becomes `\text{#VALUE!}`, a missing file/page/address `\text{#REF!}`.
 Rejected for a range: a matrix, which needs math environments — `\begin` fails today. A changed value is a new cache key, so the cache never goes stale; `MathParser` stays a pure string → tree function.
 
-**Ctrl+Shift+V in the formula popup inserts `\sheet{ref}` at the field caret when the clipboard is the sheet's last copy.** (user, 2026-10-04)
+**Paste link (Ctrl+V since 2026-10-30) in the formula popup inserts `\sheet{ref}` at the field caret when the clipboard is the sheet's last copy.** (user, 2026-10-04)
 Otherwise the field pastes plainly.
 
 ### S3 — formatting and resize (2026-10-04)

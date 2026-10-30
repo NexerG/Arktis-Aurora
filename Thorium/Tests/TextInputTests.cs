@@ -609,6 +609,27 @@ namespace Thorium.Tests
             t.Check(p.StyleAt(6).highlightHex == null, "undo takes the highlight off");
         }
 
+        [A_XSDActionDependency("TextInput.FontVariant", "Test")]
+        private static IEnumerator<int> FontVariant(TestContext t)
+        {
+            DocumentEditorControl editor = ShowParagraphs(t, "light text");
+            DocumentControl content = Content(editor);
+            BlockControl p = Paragraphs(editor)[0];
+            yield return 2;
+
+            content.SetCaret(p, 0);
+            content.SetCaret(p, 5, true);
+            editor.ApplyStyle(new StyleDelta(variant: "Light"));
+            t.Check(p.StyleAt(2).variant == "Light" && p.StyleAt(7).variant == null, "a variant lands on the selection only");
+
+            XElement xml = DocumentXml.ToXml(editor.session.document);
+            t.Check(xml.ToString().Contains("Variant=\"Light\""), "the variant saves to XML");
+            t.Check(DocumentXml.ToXml(DocumentXml.Parse(xml)).ToString().Contains("Variant=\"Light\""), "and loads back");
+
+            yield return t.Key(Keys.Z, Keys.LeftControl);
+            t.Check(p.StyleAt(2).variant == null, "undo takes the variant off");
+        }
+
         [A_XSDActionDependency("TextInput.DecorationsDraw", "Test")]
         private static IEnumerator<int> DecorationsDraw(TestContext t)
         {
