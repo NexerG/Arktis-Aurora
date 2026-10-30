@@ -1,5 +1,10 @@
 using ArctisAurora.Core.Security;
 using ArctisAurora.Core.UI;
+using ArctisAurora.Core.UI.Containers;
+using ArctisAurora.Core.UI.Containers.Tabs;
+using ArctisAurora.Core.UI.Containers.Workspace;
+using ArctisAurora.Core.UI.Controls;
+using ArctisAurora.Core.UI.Text;
 using ArctisAurora.EngineWork;
 
 namespace Thorium.Editor.CustomControls

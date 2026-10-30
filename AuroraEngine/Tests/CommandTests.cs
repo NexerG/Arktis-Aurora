@@ -2,6 +2,7 @@ using ArctisAurora.Core.Commands;
 using ArctisAurora.Core.Registry;
 using ArctisAurora.Core.Testing;
 using ArctisAurora.Core.UI;
+using ArctisAurora.Core.UI.Containers;
 
 namespace ArctisAurora.Tests
 {

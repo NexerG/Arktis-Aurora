@@ -23,7 +23,7 @@ Attributes:
   - A_XSDElementProperty
   - A_Animatable
 Namespace: ArctisAurora.Core.UI
-SourceFile: AuroraEngine/Core/UI/ExpanderControl.cs
+SourceFile: AuroraEngine/Core/UI/Containers/ExpanderControl.cs
 VerifiedAgainst: 2026-09-27
 ---
 ## Description

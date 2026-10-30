@@ -19,7 +19,7 @@ Type:
   - Static
 Attributes:
 Namespace: ArctisAurora.Core.UI
-SourceFile: AuroraEngine/Core/UI/MathParser.cs
+SourceFile: AuroraEngine/Core/UI/Tex/MathParser.cs
 VerifiedAgainst: 2026-10-01
 ---
 ## Description

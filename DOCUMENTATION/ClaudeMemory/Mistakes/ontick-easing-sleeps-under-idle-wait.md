@@ -4,7 +4,7 @@
 
 ## What happened
 - The calendar's scroll settle and all-day-lane height easing "jumped" in the real app (Thorium, `<Idle Wait>` on) but looked fine in tests.
-- Both eases advance in `ArctisAurora.Core.UI.CalendarControl.OnTick` (plain fields `slide` / `shownLanes`) and call `InvalidateLayout`.
+- Both eases advance in `ArctisAurora.Core.UI.Planner.CalendarControl.OnTick` (plain fields `slide` / `shownLanes`) and call `InvalidateLayout`.
 - They only advanced when something else woke a frame (touchpad reports, cursor motion, the minute redraw), so each step was large.
 
 ## Cause

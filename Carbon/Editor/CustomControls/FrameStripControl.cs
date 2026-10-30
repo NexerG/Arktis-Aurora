@@ -2,6 +2,8 @@ using ArctisAurora.Core.Diagnostics;
 using ArctisAurora.Core.ECS.EngineEntity;
 using ArctisAurora.Core.Registry;
 using ArctisAurora.Core.UI;
+using ArctisAurora.Core.UI.Containers;
+using ArctisAurora.Core.UI.Text;
 using System.Numerics;
 
 namespace Carbon.Editor.CustomControls

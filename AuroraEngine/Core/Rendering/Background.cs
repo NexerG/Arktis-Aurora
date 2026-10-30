@@ -2,6 +2,10 @@ using ArctisAurora.Core.Diagnostics;
 using ArctisAurora.Core.Registry;
 using ArctisAurora.Core.Testing;
 using ArctisAurora.Core.UI;
+using ArctisAurora.Core.UI.Containers.Workspace;
+using ArctisAurora.Core.UI.Menus;
+using ArctisAurora.Core.UI.Notes;
+using ArctisAurora.Core.UI.Windows;
 using System.Reflection;
 using System.Runtime.InteropServices;
 

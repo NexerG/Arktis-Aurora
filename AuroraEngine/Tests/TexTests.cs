@@ -6,6 +6,11 @@ using ArctisAurora.Core.Registry.Assets;
 using ArctisAurora.Core.Testing;
 using ArctisAurora.Core.Tex;
 using ArctisAurora.Core.UI;
+using ArctisAurora.Core.UI.Containers;
+using ArctisAurora.Core.UI.Document;
+using ArctisAurora.Core.UI.Notes;
+using ArctisAurora.Core.UI.Tex;
+using ArctisAurora.Core.UI.Text;
 using ArctisAurora.EngineWork.Registry;
 using System.Numerics;
 using System.Text;
@@ -793,7 +798,7 @@ namespace ArctisAurora.Tests
         private static IEnumerator<int> AdvanceGrid(TestContext t)
         {
             XElement layout = TexLowering.Compile("\\documentclass{article}\\begin{document}x\\end{document}", out _).Element("DocumentLayout")!;
-            t.Check((string?)layout.Attribute("AdvanceGrid") == "1000", $"a TeX document keeps glyph widths in thousandths of an em: {layout.Attribute("AdvanceGrid")?.Value}");
+            t.Check((string?)layout.Attribute("AdvanceGrid") == "0", $"a TeX document keeps exact glyph widths: {layout.Attribute("AdvanceGrid")?.Value}");
 
             AtlasMetaData atlas = AssetRegistries.GetRegistryByValueType<string, FontAsset>(typeof(FontAsset))[TexLowering.TermesFont].atlasMetaData;
             float em = atlas.TableAdvance('a', 0);

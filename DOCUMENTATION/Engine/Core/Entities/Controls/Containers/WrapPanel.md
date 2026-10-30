@@ -22,7 +22,7 @@ Attributes:
   - A_XSDType
   - A_XSDElementProperty
 Namespace: ArctisAurora.Core.UI
-SourceFile: AuroraEngine/Core/UI/WrapPanelControl.cs
+SourceFile: AuroraEngine/Core/UI/Containers/WrapPanelControl.cs
 VerifiedAgainst: 2026-10-09
 ---
 ## Description

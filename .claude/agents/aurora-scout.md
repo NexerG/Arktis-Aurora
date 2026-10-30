@@ -46,7 +46,7 @@ Lead with the answer in one or two sentences. Then pointers, one per line:
 
 ```
 AuroraEngine/Core/UI/Control.cs:434   Arrange — writes the arranged rect
-AuroraEngine/Core/UI/StackPanelControl.cs:171   clamps children here
+AuroraEngine/Core/UI/Containers/StackPanelControl.cs:171   clamps children here
 ```
 
 Rules for the report:

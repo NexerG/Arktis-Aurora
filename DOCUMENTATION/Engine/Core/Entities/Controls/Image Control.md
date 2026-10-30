@@ -18,7 +18,7 @@ Type:
 Attributes:
   - A_XSDType("Image", "UI")
 Namespace: ArctisAurora.Core.UI
-SourceFile: AuroraEngine/Core/UI/ImageControl.cs
+SourceFile: AuroraEngine/Core/UI/Controls/ImageControl.cs
 VerifiedAgainst: 2026-09-29
 ---
 ## Description

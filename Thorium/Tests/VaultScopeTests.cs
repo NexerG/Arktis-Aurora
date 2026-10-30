@@ -1,6 +1,7 @@
 using ArctisAurora.Core.Registry;
 using ArctisAurora.Core.Testing;
 using ArctisAurora.Core.UI;
+using ArctisAurora.Core.UI.Sheets;
 using Thorium.Editor.CustomControls;
 
 namespace Thorium.Tests

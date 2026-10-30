@@ -1,7 +1,7 @@
 # Decision — link graph between files and vaults, built on a vault id and manifest
 
 **Date:** 2026-10-25
-**Scope:** `Thorium.Editor.VaultManifest`, `Thorium.KnownVault`, `Thorium.KnownVaults`, `Thorium.Editor.CustomControls.VaultBrowserControl`, `Thorium.Tests.VaultManifestTests`, `ArctisAurora.Core.UI.LinkIndex`, `ArctisAurora.Core.UI.LinkKind`, `ArctisAurora.Core.UI.LinkEdge`, `ArctisAurora.Core.UI.SheetFormula`, `ArctisAurora.Core.UI.SheetLinks`, `ArctisAurora.Core.UI.NotePropertiesControl`, `Thorium.Tests.LinkIndexTests`, `Thorium/Data/Notes/.aurora/Vault.manifest.axml`, `Thorium/Data/XML/Documents/Tests/LinkIndex.tests.axml`, `Thorium.Editor.VaultWindows`, `ArctisAurora.Core.UI.SheetBook`, `ArctisAurora.Core.UI.SheetEditorControl`, `Thorium.Tests.CrossVaultTests`, `Thorium/Data/XML/Documents/Menus/Vault.menu.axml`, `Thorium/Data/XML/Documents/Tests/CrossVault.tests.axml`, `ArctisAurora.Core.UI.LinksPanelControl`, `ArctisAurora.Core.UI.InspectorControl`, `ArctisAurora.Core.UI.GraphDocument`, `ArctisAurora.Core.UI.GraphLayout`, `ArctisAurora.Core.UI.GraphEditorControl`, `ArctisAurora.Core.Filing.FileKind`, `Thorium.Tests.LinkGraphTests`, `Thorium/Data/XML/Documents/Tests/LinkGraph.tests.axml`
+**Scope:** `Thorium.Editor.VaultManifest`, `Thorium.KnownVault`, `Thorium.KnownVaults`, `Thorium.Editor.CustomControls.VaultBrowserControl`, `Thorium.Tests.VaultManifestTests`, `ArctisAurora.Core.UI.Notes.LinkIndex`, `ArctisAurora.Core.UI.Notes.LinkKind`, `ArctisAurora.Core.UI.Notes.LinkEdge`, `ArctisAurora.Core.UI.Sheets.SheetFormula`, `ArctisAurora.Core.UI.Sheets.SheetLinks`, `ArctisAurora.Core.UI.Notes.NotePropertiesControl`, `Thorium.Tests.LinkIndexTests`, `Thorium/Data/Notes/.aurora/Vault.manifest.axml`, `Thorium/Data/XML/Documents/Tests/LinkIndex.tests.axml`, `Thorium.Editor.VaultWindows`, `ArctisAurora.Core.UI.Sheets.SheetBook`, `ArctisAurora.Core.UI.Sheets.SheetEditorControl`, `Thorium.Tests.CrossVaultTests`, `Thorium/Data/XML/Documents/Menus/Vault.menu.axml`, `Thorium/Data/XML/Documents/Tests/CrossVault.tests.axml`, `ArctisAurora.Core.UI.Notes.LinksPanelControl`, `ArctisAurora.Core.UI.Containers.Workspace.InspectorControl`, `ArctisAurora.Core.UI.Graph.GraphDocument`, `ArctisAurora.Core.UI.Graph.GraphLayout`, `ArctisAurora.Core.UI.Graph.GraphEditorControl`, `ArctisAurora.Core.Filing.FileKind`, `Thorium.Tests.LinkGraphTests`, `Thorium/Data/XML/Documents/Tests/LinkGraph.tests.axml`
 
 ## What changed
 Stages 1, 2, 3 (3a, 3b) and 4 of the five-stage plan in [[link-graph-plan]] landed (design user-confirmed 2026-10-25; stages 2, 3a and 3b landed 2026-10-25, stage 4 landed 2026-10-26). Stage 3 was split (J1) and is complete with 3b; stage 4 was built as one stage (D1); stage 5 is designed, not built.
@@ -20,7 +20,7 @@ Stages 1, 2, 3 (3a, 3b) and 4 of the five-stage plan in [[link-graph-plan]] land
 
 ### Stage 2 — link index, data only
 Stage 4 is the first caller: the inspector's Links section and the graph view read the index (see Stage 4 below).
-- New `ArctisAurora.Core.UI.LinkIndex` (sealed class), log channel "Links".
+- New `ArctisAurora.Core.UI.Notes.LinkIndex` (sealed class), log channel "Links".
   - `enum LinkKind { Embed, Math, Formula, Property, Link }`; `readonly record struct LinkEdge(string source, string target, LinkKind kind, string? resolved)` - target as written, resolved = full path or null.
   - Host-set statics: `Func<string?, string, string?>? findNote` (home, name -> path) and `string? cacheFolder`. `Thorium.Thorium` wires `findNote = VaultBrowserControl.FindNote` and `cacheFolder = %LOCALAPPDATA%\Arktis\Thorium\Links`.
   - `static LinkIndex For(string vault, string id)` (one instance per vault, loads the cache); `static void Close(string vault)` drops the in-memory index, the cache stays on disk.
@@ -43,8 +43,8 @@ Stage 4 is the first caller: the inspector's Links section and the graph view re
   - New private `ReferencedVault(home, name, out rest)` -> `(bool aliased, string? id, string? vault)`.
   - New `public static bool VaultMissing(string? home, string file)`: true when the alias IS listed in the home vault's manifest but its vault isn't on this machine. An unlisted alias is not "missing", just unresolved.
 - Errors:
-  - `ArctisAurora.Core.UI.SheetBook`: new `public static Func<string?, string, bool>? vaultMissing`, host-set; wired in `Thorium.cs` to `VaultBrowserControl.VaultMissing`.
-  - `ArctisAurora.Core.UI.SheetFormula`: new `public const string vault = "#VAULT!"`.
+  - `ArctisAurora.Core.UI.Sheets.SheetBook`: new `public static Func<string?, string, bool>? vaultMissing`, host-set; wired in `Thorium.cs` to `VaultBrowserControl.VaultMissing`.
+  - `ArctisAurora.Core.UI.Sheets.SheetFormula`: new `public const string vault = "#VAULT!"`.
   - `SheetLinks.Missing(home, file)` (private): `#VAULT!` when `vaultMissing` says so, else `#LOCKED!` / `#REF!` as before. Formulas into a missing vault stay `#REF!` (`SheetBook.Resolve` returns null, unchanged path).
 - Sidebar, `Thorium.Editor.VaultWindows`:
   - New `private const string referencedName = "Referenced"` (name of a referenced group's StackPanel) and `private static readonly Dictionary<RenderWindow, List<string>> referenced` (vaults each window shows by reference).
@@ -59,7 +59,7 @@ Stage 4 is the first caller: the inspector's Links section and the graph view re
 - Tests: new `Thorium.Tests.CrossVaultTests` (`CrossVault.Resolve`, `Formulas`, `Index`, `Sidebar`), suite `CrossVault.tests.axml`.
 
 ### Stage 3b — cross-vault rewrites and Paste link (landed 2026-10-25)
-- `ArctisAurora.Core.UI.SheetBook`, new host callbacks (wired in `Thorium.cs`):
+- `ArctisAurora.Core.UI.Sheets.SheetBook`, new host callbacks (wired in `Thorium.cs`):
   - `Func<string?, string, string, string?>? vaultPart` (home, file part, target) -> the file part without its `@Alias/` when the reference written in home points into target's vault, else null.
   - `Func<string?, IEnumerable<string>>? referencingVaults` (home) -> homes inside open vaults whose manifests reference home's vault.
   - `Func<string?, string, string?>? filePrefix` (destination, source) -> `"@Alias/"` across vaults, null within one.
@@ -68,8 +68,8 @@ Stage 4 is the first caller: the inspector's Links section and the graph view re
   - `public static IEnumerable<string> Linked(string? home, Func<string?, IEnumerable<string>>? list)`: home's vault's files from `list`, then each referencing vault's.
   - `public static string FilePart(string? destination, string source)`: `filePrefix` + `FileName(source)`.
 - `SheetBook.PageRenamed`, `Shifted`, `Renamed`: the per-document rename / shift closures take the owner's path and match with `Points` instead of `Names`; on-disk sheets come from `Linked(home, vaultSheets)`, notes from `Linked(home, vaultNotes)` (`PageRenamed`, `Shifted`).
-- `ArctisAurora.Core.UI.SheetLinks`: private `RewriteNotes(notes, Func<string, string, string?>)` (was `Func<string, string?>`) binds each note's path; the `Renamed` / `PageRenamed` / `Shifted` closures take `(note, reference)` and match with `SheetBook.Points`.
-- `ArctisAurora.Core.UI.SheetEditorControl`: `PasteLink` writes the file part through `SheetBook.FilePart(path, sourcePath)`; `CopiedReference(string clipboardText)` -> `CopiedReference(string clipboardText, string? home)`, prefixing `filePrefix(home, source)`. Callers: `DocumentControl.PasteLink` passes `session?.path`; `FormulaPopup.PasteLink` passes `open.editor.path`.
+- `ArctisAurora.Core.UI.Sheets.SheetLinks`: private `RewriteNotes(notes, Func<string, string, string?>)` (was `Func<string, string?>`) binds each note's path; the `Renamed` / `PageRenamed` / `Shifted` closures take `(note, reference)` and match with `SheetBook.Points`.
+- `ArctisAurora.Core.UI.Sheets.SheetEditorControl`: `PasteLink` writes the file part through `SheetBook.FilePart(path, sourcePath)`; `CopiedReference(string clipboardText)` -> `CopiedReference(string clipboardText, string? home)`, prefixing `filePrefix(home, source)`. Callers: `DocumentControl.PasteLink` passes `session?.path`; `FormulaPopup.PasteLink` passes `open.editor.path`.
 - `Thorium.Editor.CustomControls.VaultBrowserControl`:
   - New `public static string? VaultPart(home, file, target)`.
   - New `public static IEnumerable<string> ReferencingVaults(string? home)`: known vaults other than home's that `VaultWindows.IsOpen` and whose manifest `Depends` on home's vault id.
@@ -78,21 +78,21 @@ Stage 4 is the first caller: the inspector's Links section and the graph view re
 - Tests: `Thorium.Tests.CrossVaultTests` gains `CrossVault.Rename`, `CrossVault.PageAndShift`, `CrossVault.PasteLink`; suite `CrossVault.tests.axml` now 7 tests.
 
 ### Stage 4 — graph view and backlinks UI (landed 2026-10-26)
-- `ArctisAurora.Core.UI.LinkIndex`: new host-set statics `Func<string, LinkIndex?>? indexOf` (file path -> index of its open vault) and `Action<string>? openFile`; new `public IEnumerable<string> Files()` (the files the index knows: notes and sheets); field `vault` changed private -> `public readonly string vault`.
-- New `ArctisAurora.Core.UI.LinksPanelControl` (StackPanelControl):
+- `ArctisAurora.Core.UI.Notes.LinkIndex`: new host-set statics `Func<string, LinkIndex?>? indexOf` (file path -> index of its open vault) and `Action<string>? openFile`; new `public IEnumerable<string> Files()` (the files the index knows: notes and sheets); field `vault` changed private -> `public readonly string vault`.
+- New `ArctisAurora.Core.UI.Notes.LinksPanelControl` (StackPanelControl):
   - `Show(string? path)` refreshes the file's own index plus the index of each vault from `SheetBook.referencingVaults(path)`, then rebuilds two lists: "Backlinks (n)" (incoming from all those indexes) and "Outgoing (n)".
   - Each row is a `TabToolsControl` text button (file base name) plus a muted kind caption (embed / math / formula / property / link); a click calls `LinkIndex.openFile`.
   - Unresolved targets and `LinkKind.Link` edges use MutedInk (H3 "desaturated").
   - New `public static string NameOf(string path)` = file name minus its `FileTypes` suffix.
-- `ArctisAurora.Core.UI.InspectorControl`: new third child after docs / sheets, `Header("Links")` + `LinksPanelControl links`; fields `linksFor`, `linksDirty`; new private `ReflectLinks(IFileEditor?)` called from `OnTick` with `RibbonControl.Target(page) as IFileEditor`; rebuilds when the target path changes or its `isDirty` goes true -> false (a save).
+- `ArctisAurora.Core.UI.Containers.Workspace.InspectorControl`: new third child after docs / sheets, `Header("Links")` + `LinksPanelControl links`; fields `linksFor`, `linksDirty`; new private `ReflectLinks(IFileEditor?)` called from `OnTick` with `RibbonControl.Target(page) as IFileEditor`; rebuilds when the target path changes or its `isDirty` goes true -> false (a save).
 - `ArctisAurora.Core.Filing.FileKind`: new `Graph`; `FileTypes.filetypes.axml` gains `<FileType Suffix=".graph.axml" Kind="Graph" Description="Aurora graph"/>`.
-- New `ArctisAurora.Core.UI.GraphDocument`: `extension = ".graph.axml"`, `name`, `showOrphans`, `showUnresolved`, `pins` (Dictionary: vault-relative path or "?target" -> Vector2), `unsaved`, `IsGraph`, `Blank`, `Load` (`EncryptedFile.LoadXml`), `Save` (`VaultFiles.SaveXml`). Format `<Graph Version="1" Name Orphans Unresolved><Pin Path X Y/></Graph>`.
-- New `ArctisAurora.Core.UI.GraphLayout` (pure data):
+- New `ArctisAurora.Core.UI.Graph.GraphDocument`: `extension = ".graph.axml"`, `name`, `showOrphans`, `showUnresolved`, `pins` (Dictionary: vault-relative path or "?target" -> Vector2), `unsaved`, `IsGraph`, `Blank`, `Load` (`EncryptedFile.LoadXml`), `Save` (`VaultFiles.SaveXml`). Format `<Graph Version="1" Name Orphans Unresolved><Pin Path X Y/></Graph>`.
+- New `ArctisAurora.Core.UI.Graph.GraphLayout` (pure data):
   - Ctor `(int count, IReadOnlyList<(int a,int b)> edges)` with deterministic phyllotaxis start positions; `position`, `pinned`, `Pin(node, at)`, `Unpin`, `Reheat()`, `Step()`, `settled`.
   - Barnes-Hut repulsion over a pooled quadtree array (theta 0.9, max depth 24), springs along edges, pull to the origin.
   - d3-style cooling: alpha decays 0.0228 per step, settled below 0.001 (about 300 steps), `Reheat` to 0.3.
   - Preallocated arrays; `Step` allocates nothing after the first.
-- New `ArctisAurora.Core.UI.GraphEditorControl` (ContainerControl, `IFileEditor`):
+- New `ArctisAurora.Core.UI.Graph.GraphEditorControl` (ContainerControl, `IFileEditor`):
   - `LoadPath`; `Rebuild()` refreshes the index and builds nodes from `Files()`; sealed files get a MutedInk lock tint; resolved targets outside the vault become Boundary nodes (MutedInk); unresolved targets become Ghost nodes (Line role) keyed "?target"; edges are deduped, strong = kind != Link; orphans dropped when `showOrphans` is off; pins applied.
   - `layout`, `nodeCount`, `KeyOf(int)`, `Screen(int)`, `NodeAt(point)`; `tools` = a `TabToolsControl` with "Orphans" and "Unresolved" toggles.
   - Drawing: nodes are round pooled `PanelControl`s (Doc / Sheet / Planner role, size grows with degree); edges are hairline `PanelControl`s rotated with `Control.rotation`; labels only at zoom >= 0.8 or for the hovered node and its neighbours.

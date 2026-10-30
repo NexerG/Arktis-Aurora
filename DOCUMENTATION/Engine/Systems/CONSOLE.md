@@ -17,7 +17,7 @@ Dependencies:
 Implementors:
   - "[[CONSOLE]]"
 Namespace: ArctisAurora.Core.Commands
-SourceFiles: AuroraEngine/Core/Commands/*.cs, AuroraEngine/Core/UI/ConsoleControl.cs
+SourceFiles: AuroraEngine/Core/Commands/*.cs, AuroraEngine/Core/UI/Controls/ConsoleControl.cs
 VerifiedAgainst: 2026-09-27
 ---
 ## Overview

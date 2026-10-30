@@ -22,7 +22,10 @@ Additional top-level items not in the table:
 - `Core/ECS/` — entities + components (`EngineEntity/`, `RenderingComponents/`).
 - `Core/Registry/` — `AssetRegistries.cs`, `EntityRegistry.cs`, `XSDGenerator.cs`, `Assets/`.
 - `Core/Rendering/` — Vulkan renderer, modules, pipelines, mesh subcomponents.
-- `Core/UI/` — the control tree, layout, input dispatch, documents, actions, gradients.
+- `Core/UI/` — the control tree, layout, input dispatch, actions, gradients. Namespace follows folder
+  (`ArctisAurora.Core.UI.<Folder>`): `Containers/` (+ `Tabs/`, `Workspace/`), `Controls/` (small
+  controls), `Menus/`, `Windows/` (dialogs), `Text/`, `Document/`, `Tex/`, `Sheets/`, `Planner/`,
+  `Graph/`, `Notes/`, `Files/`.
 - `Core/Filing/` — `AuroraFont`, `Glyph`, `Bezier`, `IconSet`.
 - `Core/Filing/Serialization/` — `Serializer`, `AssetImporter`, `Paths`, `VirtualFileSystem`.
 

@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-08
 **Status:** LANDED. Guard and DEBUG warning test-verified. **NOT GUI-verified.**
-**Scope:** `ArctisAurora.Core.ECS.EngineEntity.Entity` (`AddChild`, `WarnIfDestroyed`), `ArctisAurora.Core.UI.ContainerControl` (`AddChild`), `Thorium.Editor.CustomControls.VaultBrowserControl` (`OnWorkspaceChanged`), `WorkspaceControl.changed`
+**Scope:** `ArctisAurora.Core.ECS.EngineEntity.Entity` (`AddChild`, `WarnIfDestroyed`), `ArctisAurora.Core.UI.Containers.ContainerControl` (`AddChild`), `Thorium.Editor.CustomControls.VaultBrowserControl` (`OnWorkspaceChanged`), `WorkspaceControl.changed`
 
 ## What changed
 - `Entity`: NEW channel `LogChannel.For("Entity")`; NEW `[Conditional("DEBUG")] protected WarnIfDestroyed(Entity)`, called from `Entity.AddChild` and `ContainerControl.AddChild`. Warns "'x' added under destroyed 'y'; it will outlive it".

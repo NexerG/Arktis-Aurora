@@ -18,7 +18,7 @@ Type:
   - Static
 Attributes:
 Namespace: ArctisAurora.Core.UI
-SourceFile: AuroraEngine/Core/UI/MathLayout.cs
+SourceFile: AuroraEngine/Core/UI/Tex/MathLayout.cs
 VerifiedAgainst: 2026-10-01
 ---
 ## Description

@@ -22,7 +22,7 @@ Type:
   - Public
 Attributes:
 Namespace: ArctisAurora.Core.UI
-SourceFile: AuroraEngine/Core/UI/SheetEditorControl.cs
+SourceFile: AuroraEngine/Core/UI/Sheets/SheetEditorControl.cs
 VerifiedAgainst: 2026-10-05
 ---
 ## Description

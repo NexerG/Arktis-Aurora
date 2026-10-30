@@ -1,4 +1,7 @@
 using ArctisAurora.Core.Registry;
+using ArctisAurora.Core.UI.Containers;
+using ArctisAurora.Core.UI.Containers.Tabs;
+using ArctisAurora.Core.UI.Menus;
 
 namespace ArctisAurora.Core.UI
 {

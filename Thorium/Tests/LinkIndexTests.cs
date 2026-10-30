@@ -2,6 +2,9 @@ using ArctisAurora.Core.Registry;
 using ArctisAurora.Core.Security;
 using ArctisAurora.Core.Testing;
 using ArctisAurora.Core.UI;
+using ArctisAurora.Core.UI.Document;
+using ArctisAurora.Core.UI.Notes;
+using ArctisAurora.Core.UI.Sheets;
 using System.Xml.Linq;
 using Thorium.Editor;
 

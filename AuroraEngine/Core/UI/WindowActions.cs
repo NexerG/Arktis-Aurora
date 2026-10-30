@@ -1,5 +1,7 @@
 using ArctisAurora.Core.ECS.EngineEntity;
 using ArctisAurora.Core.Registry;
+using ArctisAurora.Core.UI.Menus;
+using ArctisAurora.Core.UI.Notes;
 using ArctisAurora.EngineWork;
 using ArctisAurora.EngineWork.Rendering;
 using Silk.NET.GLFW;

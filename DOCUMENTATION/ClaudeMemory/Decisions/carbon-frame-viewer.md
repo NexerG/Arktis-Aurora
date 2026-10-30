@@ -279,7 +279,7 @@ The user found §14 "not understandable at all" and specified the shape; the for
 - **Scale** 0–1: a lower lane's heights divide by `own + (counterpart − own) × t`, both that thread's
   longest frame. Bars clamp at the lane height. The upper strip is always 0.
 - `Carbon.Editor.Comparison` (static) owns loaded, baseline, swap, offset, scale and what the charts show;
-  `Carbon.Wire` only hands it the views. The picker is the engine's new `ArctisAurora.Core.UI.SliderControl`
+  `Carbon.Wire` only hands it the views. The picker is the engine's new `ArctisAurora.Core.UI.Controls.SliderControl`
   (fork 3c). `offset +3` and `0.49` are labels in the row, not part of the slider (fork 4).
 
 **Lanes and columns are shared between the two strips, or the picture lies.**

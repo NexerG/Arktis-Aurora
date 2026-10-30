@@ -21,7 +21,7 @@ Type:
   - Public
 Attributes:
 Namespace: ArctisAurora.Core.UI
-SourceFile: AuroraEngine/Core/UI/PlannerEditorControl.cs
+SourceFile: AuroraEngine/Core/UI/Planner/PlannerEditorControl.cs
 VerifiedAgainst: 2026-10-07
 ---
 ## Description

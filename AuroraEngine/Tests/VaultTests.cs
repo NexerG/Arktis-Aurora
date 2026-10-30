@@ -3,6 +3,7 @@ using ArctisAurora.Core.Registry;
 using ArctisAurora.Core.Security;
 using ArctisAurora.Core.Testing;
 using ArctisAurora.Core.UI;
+using ArctisAurora.Core.UI.Document;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using System.Xml.Linq;

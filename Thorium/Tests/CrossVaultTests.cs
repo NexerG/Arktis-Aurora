@@ -1,6 +1,12 @@
 using ArctisAurora.Core.Registry;
 using ArctisAurora.Core.Testing;
 using ArctisAurora.Core.UI;
+using ArctisAurora.Core.UI.Containers;
+using ArctisAurora.Core.UI.Containers.Tabs;
+using ArctisAurora.Core.UI.Containers.Workspace;
+using ArctisAurora.Core.UI.Notes;
+using ArctisAurora.Core.UI.Sheets;
+using ArctisAurora.Core.UI.Text;
 using ArctisAurora.EngineWork;
 using ArctisAurora.EngineWork.Rendering;
 using Thorium.Editor;

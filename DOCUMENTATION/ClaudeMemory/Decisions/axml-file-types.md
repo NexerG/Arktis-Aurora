@@ -44,7 +44,7 @@ Data and config are XML in this repo, and the schema is generated. Matching is b
 
 ## Part B — OS registration and command-line open (2026-10-18)
 
-**Scope:** `ArctisAurora.Core.Filing` — `FileAssociations`, `RegistryEntry`, `FileType.mime`; `ArctisAurora.EngineWork.Rendering.Background`; `ArctisAurora.Core.UI.SettingsWindow`; `Thorium.Thorium` (`Main`, `OpenStandalone`); `Thorium.Editor.CustomControls.VaultBrowserControl.BuildTab`; tests `FileAssociationTests` (suite `FileTypes.tests.axml`), `Workspace.StandaloneFile`
+**Scope:** `ArctisAurora.Core.Filing` — `FileAssociations`, `RegistryEntry`, `FileType.mime`; `ArctisAurora.EngineWork.Rendering.Background`; `ArctisAurora.Core.UI.Windows.SettingsWindow`; `Thorium.Thorium` (`Main`, `OpenStandalone`); `Thorium.Editor.CustomControls.VaultBrowserControl.BuildTab`; tests `FileAssociationTests` (suite `FileTypes.tests.axml`), `Workspace.StandaloneFile`
 
 ### What changed
 - New `FileAssociations` (static): `enabled` (set by a host that offers its types in Settings), `Registered` (`FileTypes.all` where `register`), `Claim(FileType)`, `ClaimAll()`, `ProgId(app, type)` → `"<App>.<suffix without dot>"`, pure builders `WindowsEntries(app, exe, claimed)` → `List<RegistryEntry>`, `DesktopEntry(app, exe)` → string, `MimePackage()` → `XElement`; private `ApplyWindows`, `ApplyLinux`, `ChosenElsewhere`, `Run`.

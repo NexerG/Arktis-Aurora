@@ -15,7 +15,7 @@
 - `AVulkanHelper.GetSwapchainSurfaceFormat` takes `R8G8B8A8Unorm`, else `B8G8R8A8Unorm` (both sRGB-nonlinear), before falling back to `formats[0]`.
 - Minimize-to-tray gating, found on the way: [[tray-availability-gate]].
 - Multi-target (2026-10-17): `AuroraEngine.csproj` and `Thorium.csproj` build `net10.0-windows10.0.22621.0;net10.0`, so a Linux build carries no WinRT assemblies. `ArctisAurora.Core.Security.WindowsHello` is wholly under `#if WINDOWS` with a `#else` stub (`IsAvailable()` false, `Sign(...)` null, `Delete(...)` completed task). `DisplayNames` keeps `using Windows.Devices.Display` and the `DisplayMonitor` lookup in `PanelName` under `#if WINDOWS` (off Windows it falls back to the device-id split). `AVulkanHelper`'s unused `using Windows.Foundation.Metadata` is gone. `_Build.csproj`'s `PostBuild` (`GenerateNamespaces.cmd`) is conditioned on `$(OS) == 'Windows_NT'`. Reasoning and measurements: [[arx-archives]].
-- Regression fixed 2026-10-28: `ArctisAurora.Core.UI.IconControl.Emit` returns when `sampler == null` — an icon with nothing bound draws nothing. Before it, every `--test` run segfaulted inside lavapipe (see Why).
+- Regression fixed 2026-10-28: `ArctisAurora.Core.UI.Controls.IconControl.Emit` returns when `sampler == null` — an icon with nothing bound draws nothing. Before it, every `--test` run segfaulted inside lavapipe (see Why).
 - New `LINUX.md` at the repo root: what to install (dotnet-sdk-10.0, mesa-vulkan-drivers, libvulkan1, vulkan-validationlayers, libglfw3, xvfb, xauth, libminizip1t64; optional glslc, vulkan-tools, gdb, pypdf/pdfplumber), how to build, test and export headless, the expected failures, and the GPU-assisted-validation recipe for driver crashes.
 
 ## Why these choices

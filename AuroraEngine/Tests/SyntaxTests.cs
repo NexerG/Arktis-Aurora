@@ -1,6 +1,9 @@
 using ArctisAurora.Core.Registry;
 using ArctisAurora.Core.Testing;
 using ArctisAurora.Core.UI;
+using ArctisAurora.Core.UI.Document;
+using ArctisAurora.Core.UI.Notes;
+using ArctisAurora.Core.UI.Text;
 using System.Text;
 
 namespace ArctisAurora.Tests

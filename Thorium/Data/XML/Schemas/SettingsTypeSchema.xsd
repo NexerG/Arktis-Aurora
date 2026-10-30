@@ -54,13 +54,13 @@
       <xs:element name="WeekStart" type="types:WeekStart" />
       <xs:element name="TimeFormat" type="types:TimeFormat" />
       <xs:element name="DateFormat" type="types:DateFormat" />
-      <xs:element name="LanguagePacks" type="types:LanguagePacks" />
-      <xs:element name="SheetGrow" type="types:SheetGrow" />
       <xs:element name="DragGhost" type="types:DragGhost" />
       <xs:element name="Palette" type="types:Palette" />
       <xs:element name="Zoom" type="types:Zoom" />
       <xs:element name="DocumentZoom" type="types:DocumentZoom" />
       <xs:element name="SortedTasks" type="types:SortedTasks" />
+      <xs:element name="LanguagePacks" type="types:LanguagePacks" />
+      <xs:element name="SheetGrow" type="types:SheetGrow" />
       <xs:element name="Threads" type="types:Threads" />
       <xs:element name="FrameCap" type="types:FrameCap" />
       <xs:element name="Idle" type="types:Idle" />
@@ -282,6 +282,57 @@
       <xs:group minOccurs="0" maxOccurs="unbounded" ref="types:Setting.Children" />
     </xs:sequence>
   </xs:complexType>
+  <xs:attributeGroup name="DragGhost.Attributes">
+    <xs:attributeGroup ref="types:Setting.Attributes" />
+    <xs:attribute name="Opacity" type="xs:float" />
+  </xs:attributeGroup>
+  <xs:element name="DragGhost" type="types:DragGhost" />
+  <xs:complexType name="DragGhost">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:DragGhost.Attributes" />
+  </xs:complexType>
+  <xs:attributeGroup name="Palette.Attributes">
+    <xs:attributeGroup ref="types:Setting.Attributes" />
+    <xs:attribute name="Name" type="xs:string" />
+  </xs:attributeGroup>
+  <xs:element name="Palette" type="types:Palette" />
+  <xs:complexType name="Palette">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:Palette.Attributes" />
+  </xs:complexType>
+  <xs:attributeGroup name="Zoom.Attributes">
+    <xs:attributeGroup ref="types:Setting.Attributes" />
+    <xs:attribute name="Percent" type="xs:float" />
+  </xs:attributeGroup>
+  <xs:element name="Zoom" type="types:Zoom" />
+  <xs:complexType name="Zoom">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:Zoom.Attributes" />
+  </xs:complexType>
+  <xs:attributeGroup name="DocumentZoom.Attributes">
+    <xs:attributeGroup ref="types:Setting.Attributes" />
+    <xs:attribute name="Percent" type="xs:float" />
+  </xs:attributeGroup>
+  <xs:element name="DocumentZoom" type="types:DocumentZoom" />
+  <xs:complexType name="DocumentZoom">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:DocumentZoom.Attributes" />
+  </xs:complexType>
+  <xs:attributeGroup name="SortedTasks.Attributes">
+    <xs:attributeGroup ref="types:Setting.Attributes" />
+    <xs:attribute name="Checked" type="types:CheckedEnd" />
+  </xs:attributeGroup>
+  <xs:element name="SortedTasks" type="types:SortedTasks" />
+  <xs:complexType name="SortedTasks">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:SortedTasks.Attributes" />
+  </xs:complexType>
+  <xs:element name="UI" type="types:UI" />
+  <xs:complexType name="UI">
+    <xs:sequence>
+      <xs:group minOccurs="0" maxOccurs="unbounded" ref="types:Setting.Children" />
+    </xs:sequence>
+  </xs:complexType>
   <xs:attributeGroup name="LanguagePacks.Attributes">
     <xs:attributeGroup ref="types:Setting.Attributes" />
     <xs:attribute name="Packs" type="xs:string" />
@@ -293,6 +344,21 @@
   </xs:complexType>
   <xs:element name="Fonts" type="types:Fonts" />
   <xs:complexType name="Fonts">
+    <xs:sequence>
+      <xs:group minOccurs="0" maxOccurs="unbounded" ref="types:Setting.Children" />
+    </xs:sequence>
+  </xs:complexType>
+  <xs:attributeGroup name="SheetGrow.Attributes">
+    <xs:attributeGroup ref="types:Setting.Attributes" />
+    <xs:attribute name="Step" type="xs:int" />
+  </xs:attributeGroup>
+  <xs:element name="SheetGrow" type="types:SheetGrow" />
+  <xs:complexType name="SheetGrow">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:SheetGrow.Attributes" />
+  </xs:complexType>
+  <xs:element name="Sheets" type="types:Sheets" />
+  <xs:complexType name="Sheets">
     <xs:sequence>
       <xs:group minOccurs="0" maxOccurs="unbounded" ref="types:Setting.Children" />
     </xs:sequence>
@@ -424,72 +490,6 @@
       <xs:group minOccurs="0" maxOccurs="unbounded" ref="types:SessionScope.Children" />
     </xs:sequence>
   </xs:complexType>
-  <xs:attributeGroup name="SheetGrow.Attributes">
-    <xs:attributeGroup ref="types:Setting.Attributes" />
-    <xs:attribute name="Step" type="xs:int" />
-  </xs:attributeGroup>
-  <xs:element name="SheetGrow" type="types:SheetGrow" />
-  <xs:complexType name="SheetGrow">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:SheetGrow.Attributes" />
-  </xs:complexType>
-  <xs:element name="Sheets" type="types:Sheets" />
-  <xs:complexType name="Sheets">
-    <xs:sequence>
-      <xs:group minOccurs="0" maxOccurs="unbounded" ref="types:Setting.Children" />
-    </xs:sequence>
-  </xs:complexType>
-  <xs:attributeGroup name="DragGhost.Attributes">
-    <xs:attributeGroup ref="types:Setting.Attributes" />
-    <xs:attribute name="Opacity" type="xs:float" />
-  </xs:attributeGroup>
-  <xs:element name="DragGhost" type="types:DragGhost" />
-  <xs:complexType name="DragGhost">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:DragGhost.Attributes" />
-  </xs:complexType>
-  <xs:attributeGroup name="Palette.Attributes">
-    <xs:attributeGroup ref="types:Setting.Attributes" />
-    <xs:attribute name="Name" type="xs:string" />
-  </xs:attributeGroup>
-  <xs:element name="Palette" type="types:Palette" />
-  <xs:complexType name="Palette">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:Palette.Attributes" />
-  </xs:complexType>
-  <xs:attributeGroup name="Zoom.Attributes">
-    <xs:attributeGroup ref="types:Setting.Attributes" />
-    <xs:attribute name="Percent" type="xs:float" />
-  </xs:attributeGroup>
-  <xs:element name="Zoom" type="types:Zoom" />
-  <xs:complexType name="Zoom">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:Zoom.Attributes" />
-  </xs:complexType>
-  <xs:attributeGroup name="DocumentZoom.Attributes">
-    <xs:attributeGroup ref="types:Setting.Attributes" />
-    <xs:attribute name="Percent" type="xs:float" />
-  </xs:attributeGroup>
-  <xs:element name="DocumentZoom" type="types:DocumentZoom" />
-  <xs:complexType name="DocumentZoom">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:DocumentZoom.Attributes" />
-  </xs:complexType>
-  <xs:attributeGroup name="SortedTasks.Attributes">
-    <xs:attributeGroup ref="types:Setting.Attributes" />
-    <xs:attribute name="Checked" type="types:CheckedEnd" />
-  </xs:attributeGroup>
-  <xs:element name="SortedTasks" type="types:SortedTasks" />
-  <xs:complexType name="SortedTasks">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:SortedTasks.Attributes" />
-  </xs:complexType>
-  <xs:element name="UI" type="types:UI" />
-  <xs:complexType name="UI">
-    <xs:sequence>
-      <xs:group minOccurs="0" maxOccurs="unbounded" ref="types:Setting.Children" />
-    </xs:sequence>
-  </xs:complexType>
   <xs:attributeGroup name="Threads.Attributes">
     <xs:attributeGroup ref="types:Setting.Attributes" />
     <xs:attribute name="Count" type="xs:int" />
@@ -542,11 +542,11 @@
       <xs:element name="Input" type="types:Input" />
       <xs:element name="Graphics" type="types:Graphics" />
       <xs:element name="DateTime" type="types:DateTime" />
+      <xs:element name="UI" type="types:UI" />
       <xs:element name="Fonts" type="types:Fonts" />
+      <xs:element name="Sheets" type="types:Sheets" />
       <xs:element name="DocumentSettings" type="types:DocumentSettings" />
       <xs:element name="Session" type="types:Session" />
-      <xs:element name="Sheets" type="types:Sheets" />
-      <xs:element name="UI" type="types:UI" />
       <xs:element name="Threading" type="types:Threading" />
       <xs:element name="Logging" type="types:Logging" />
       <xs:element name="Profiling" type="types:Profiling" />

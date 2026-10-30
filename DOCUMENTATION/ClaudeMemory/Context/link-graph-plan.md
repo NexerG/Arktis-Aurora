@@ -16,7 +16,7 @@
 | 5 | Server vaults | design only until a server exists |
 
 ## Stage 2 — link index, data only (landed 2026-10-25)
-- `ArctisAurora.Core.UI.LinkIndex`: edges (source, target as written, `LinkKind` Embed / Math / Formula / Property / Link, resolved path or null).
+- `ArctisAurora.Core.UI.Notes.LinkIndex`: edges (source, target as written, `LinkKind` Embed / Math / Formula / Property / Link, resolved path or null).
 - API: `For(vault, id)`, `Close(vault)`, `Refresh()`, `Outgoing(path)`, `Incoming(path)`, `Unresolved()`, `IsSealed(path)`.
 - Extraction through the editor's own parsers, `SheetFormula.FileParts(raw)` and `SheetLinks.MathReferences(source)`.
 - Cache at `%LOCALAPPDATA%\Arktis\Thorium\Links\<id>.links.axml` (outside the vault, keyed per file by size + mtime); `Refresh` rescans changed files by itself, there are no save hooks.

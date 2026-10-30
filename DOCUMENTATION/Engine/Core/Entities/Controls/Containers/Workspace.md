@@ -22,7 +22,7 @@ Type:
 Attributes:
   - A_XSDType("Workspace", "UI")
 Namespace: ArctisAurora.Core.UI
-SourceFile: AuroraEngine/Core/UI/WorkspaceControl.cs
+SourceFile: AuroraEngine/Core/UI/Containers/Workspace/WorkspaceControl.cs
 VerifiedAgainst: 2026-08-31
 ---
 ## Description

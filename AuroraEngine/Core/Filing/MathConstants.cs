@@ -1,6 +1,7 @@
 using ArctisAurora.Core.Filing.Serialization;
 using ArctisAurora.Core.Registry;
 using ArctisAurora.Core.UI;
+using ArctisAurora.Core.UI.Tex;
 using System.Globalization;
 using System.Reflection;
 using System.Text;

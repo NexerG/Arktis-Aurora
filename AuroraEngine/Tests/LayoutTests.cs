@@ -3,6 +3,8 @@ using ArctisAurora.Core.Registry;
 using ArctisAurora.Core.Registry.Assets;
 using ArctisAurora.Core.Testing;
 using ArctisAurora.Core.UI;
+using ArctisAurora.Core.UI.Containers;
+using ArctisAurora.Core.UI.Text;
 using ArctisAurora.EngineWork.Registry;
 using System.Numerics;
 

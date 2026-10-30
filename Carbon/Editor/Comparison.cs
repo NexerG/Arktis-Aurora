@@ -1,5 +1,7 @@
 using ArctisAurora.Core.Diagnostics;
 using ArctisAurora.Core.UI;
+using ArctisAurora.Core.UI.Controls;
+using ArctisAurora.Core.UI.Text;
 using Carbon.Editor.CustomControls;
 
 namespace Carbon.Editor

@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-23
 **Found by:** a golden of `Startup.ToggleSwitch` (the Accent layer never drew) and the DEBUG `UIEngine` log
-**Scope:** `ArctisAurora.Core.UI.ToggleSwitchControl`
+**Scope:** `ArctisAurora.Core.UI.Controls.ToggleSwitchControl`
 
 ## The trap
 - A code-built control that arranges its children by hand measured its track with `track.Measure(availableSize)`.

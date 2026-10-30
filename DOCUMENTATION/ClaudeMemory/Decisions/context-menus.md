@@ -198,7 +198,7 @@ Gaps: a window hidden by `os.Hide()` without `RenderWindow.hidden` keeps the sta
 
 ## A drop button's second press closes its menu — 2026-10-23
 
-Scope: `ArctisAurora.Core.UI.ContextMenus`, `TabToolsControl`, `DocumentToolbarControl`, `MenuButtonControl`, `DropdownControl`.
+Scope: `ArctisAurora.Core.UI.Menus.ContextMenus`, `TabToolsControl`, `DocumentToolbarControl`, `MenuButtonControl`, `DropdownControl`.
 
 - `ContextMenus._closedOn` (private static `Control?`): `DismissUnlessInside` clears it on every press and, when that press closes the menu, records `target` (the control the menu was opened on) before `Close()`.
 - `ContextMenus.ClosedOn(Control on)` (public static bool): true once when the current press just closed a menu opened on `on`, then clears.

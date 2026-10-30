@@ -2,6 +2,11 @@ using ArctisAurora.Core.Editing;
 using ArctisAurora.Core.Registry;
 using ArctisAurora.Core.Testing;
 using ArctisAurora.Core.UI;
+using ArctisAurora.Core.UI.Containers;
+using ArctisAurora.Core.UI.Containers.Tabs;
+using ArctisAurora.Core.UI.Controls;
+using ArctisAurora.Core.UI.Menus;
+using ArctisAurora.Core.UI.Text;
 using ArctisAurora.EngineWork;
 using System.Numerics;
 

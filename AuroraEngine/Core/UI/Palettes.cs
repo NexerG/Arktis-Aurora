@@ -2,6 +2,7 @@ using ArctisAurora.Core.Animation;
 using ArctisAurora.Core.Data;
 using ArctisAurora.Core.Filing.Serialization;
 using ArctisAurora.Core.Registry;
+using ArctisAurora.Core.UI.Text;
 using ArctisAurora.EngineWork;
 using ArctisAurora.EngineWork.Rendering;
 using System.Globalization;

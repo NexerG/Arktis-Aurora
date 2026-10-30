@@ -3,6 +3,7 @@ using ArctisAurora.Core.Filing.Serialization;
 using ArctisAurora.Core.Registry;
 using ArctisAurora.Core.Testing;
 using ArctisAurora.Core.UI;
+using ArctisAurora.Core.UI.Tex;
 
 namespace ArctisAurora.Tests
 {

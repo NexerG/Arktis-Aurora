@@ -19,7 +19,7 @@ Type:
   - Sealed
 Attributes:
 Namespace: ArctisAurora.Core.UI
-SourceFile: AuroraEngine/Core/UI/FormulaPopup.cs
+SourceFile: AuroraEngine/Core/UI/Tex/FormulaPopup.cs
 VerifiedAgainst: 2026-10-02
 ---
 ## Description

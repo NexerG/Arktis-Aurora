@@ -148,7 +148,7 @@ not as four orphan rows.
 
 ### 5. `LogViewControl`
 
-New `Core/UI/LogViewControl.cs`, `[A_XSDType("LogView", "UI")]`,
+New `Core/UI/Controls/LogViewControl.cs`, `[A_XSDType("LogView", "UI")]`,
 `: ScrollableControl`.
 
 - one horizontal row per entry, one `LabelControl` per column with its own `controlColorHex`

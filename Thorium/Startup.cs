@@ -1,5 +1,9 @@
 using ArctisAurora.Core.Registry;
 using ArctisAurora.Core.UI;
+using ArctisAurora.Core.UI.Containers.Tabs;
+using ArctisAurora.Core.UI.Document;
+using ArctisAurora.Core.UI.Menus;
+using ArctisAurora.Core.UI.Notes;
 using ArctisAurora.EngineWork;
 using ArctisAurora.EngineWork.Rendering;
 using Thorium.Editor.CustomControls;

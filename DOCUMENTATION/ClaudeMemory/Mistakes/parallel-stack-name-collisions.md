@@ -1,6 +1,6 @@
 # Mistake — a new type in `Core.UI` may not reuse a `Core.UISystem` type's simple name
 
-**What I did wrong (2026-09-06):** landing 4 added `ArctisAurora.Core.UI.CaretControl` beside the outgoing
+**What I did wrong (2026-09-06):** landing 4 added `ArctisAurora.Core.UI.Controls.CaretControl` beside the outgoing
 `ArctisAurora.Core.UISystem.Controls.Text.Document.CaretControl`. Different namespaces, so it compiled. It
 killed the boot:
 
