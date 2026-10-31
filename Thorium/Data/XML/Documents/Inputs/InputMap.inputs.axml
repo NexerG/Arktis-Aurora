@@ -12,6 +12,8 @@
 	<NamedModifier Modifier="Zoom" Key="RightControl" />
 	<NamedModifier Modifier="AppZoom" Key="LeftShift" />
 	<NamedModifier Modifier="AppZoom" Key="RightShift" />
+	<NamedModifier Modifier="Follow" Key="LeftControl" />
+	<NamedModifier Modifier="Follow" Key="RightControl" />
 
 	<Keybind Trigger="AnySymbol" Action="Text.Write">
 		<Continuous />

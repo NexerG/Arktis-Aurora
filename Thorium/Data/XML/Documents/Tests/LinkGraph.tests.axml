@@ -5,4 +5,7 @@
 	<Test Action="LinkGraph.Backlinks"/>
 	<Test Action="LinkGraph.Layout"/>
 	<Test Action="LinkGraph.View"/>
+	<Test Action="LinkGraph.LinkRuns"/>
+	<Test Action="LinkGraph.RenameRewritesLinks"/>
+	<Test Action="Perf.Graph.Simulate"/>
 </TestSuite>

@@ -271,6 +271,12 @@ namespace ArctisAurora.Core.UI.Document
                 return;
             }
 
+            if (c == ']' && TypeLinkClose(block, at.block, at.offset + 1))
+            {
+                pending = armed;
+                return;
+            }
+
             if (TypeInlineMarkdown(block, at.block, at.offset + 1, c, out StyleDelta closed))
             {
                 pending = armed.With(closed);

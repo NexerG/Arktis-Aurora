@@ -527,6 +527,42 @@ namespace ArctisAurora.Core.UI.Document
             return any;
         }
 
+        // Rewrites note link targets the rename answers for, and a link's text where it showed its target; true when any changed.
+        public bool RenameNoteLinks(Func<string, string?> rename)
+        {
+            bool any = false;
+            List<NoteBlock> flat = Blocks();
+            for (int b = 0; b < flat.Count; b++)
+            {
+                TextRunData run = flat[b].run;
+                Span<StyleSpan> spans = CollectionsMarshal.AsSpan(run.spans);
+                bool changed = false, retexted = false;
+                int start = 0;
+                for (int i = 0; i < spans.Length; i++)
+                {
+                    string text = run.text ?? string.Empty;
+                    int count = i == spans.Length - 1 ? text.Length - start : spans[i].count;
+                    if (spans[i].link != null && rename(spans[i].link) is string renamed)
+                    {
+                        if (count == spans[i].link.Length && string.CompareOrdinal(text, start, spans[i].link, 0, count) == 0)
+                        {
+                            run.text = text.Remove(start, count).Insert(start, renamed);
+                            count = renamed.Length;
+                            spans[i].count = count;
+                            retexted = true;
+                        }
+                        spans[i].link = renamed;
+                        changed = true;
+                    }
+                    start += count;
+                }
+                if (!changed) continue;
+                Raise(retexted ? NoteChangeKind.Text : NoteChangeKind.Spans, b);
+                any = true;
+            }
+            return any;
+        }
+
         // Takes the table at a note-level index out when present, and puts one built from xml there.
         public NoteTable? PutTable(int index, bool present, XElement? xml, DocumentAddress? caret = null)
         {
@@ -712,6 +748,9 @@ namespace ArctisAurora.Core.UI.Document
             session.views++;
             return session;
         }
+
+        // The session holding a path open; null when none does.
+        public static DocumentEditSession? Find(string path) => open.TryGetValue(path, out DocumentEditSession? session) ? session : null;
 
         public static void Close(DocumentEditSession session)
         {

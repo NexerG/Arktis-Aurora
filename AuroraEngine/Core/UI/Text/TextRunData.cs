@@ -21,9 +21,29 @@ namespace ArctisAurora.Core.UI.Text
             int index = SpanForInsert(offset);
             if (!Typable(spans[index])) index = TextSpanBeside(index, offset);
 
+            if (spans[index].link != null && IsAtSpanEdge(index, offset))
+            {
+                StyleSpan plain = spans[index];
+                plain.link = null;
+                plain.count = insert.Length;
+                spans.Insert(SplitSpanAt(offset), plain);
+                text = (text ?? string.Empty).Insert(offset, insert);
+                MergeSpans();
+                return;
+            }
+
             CollectionsMarshal.AsSpan(spans)[index].count += insert.Length;
 
             text = (text ?? string.Empty).Insert(offset, insert);
+        }
+
+        // Whether an offset sits on either end of a span; typing there stays outside a link.
+        private bool IsAtSpanEdge(int index, int offset)
+        {
+            int start = 0;
+            for (int i = 0; i < index; i++) start += spans[i].count;
+            int end = index == spans.Count - 1 ? Length : start + spans[index].count;
+            return offset == start || offset == end;
         }
 
         public void RemoveText(int offset, int count)
@@ -78,6 +98,34 @@ namespace ArctisAurora.Core.UI.Text
                 start = spanEnd;
             }
             return spans[^1].AsText();
+        }
+
+        // The link the character at an index belongs to; null for none.
+        public string? LinkOf(int index) => index < 0 || index >= Length ? null : spans[SpanOf(index)].link;
+
+        // Inserts text as one link span, styled as the character before it.
+        public void InsertLink(int offset, string insert, string link)
+        {
+            StyleSpan span = spans[offset > 0 ? SpanOf(offset - 1) : 0].AsText();
+            span.link = link;
+            span.count = insert.Length;
+
+            spans.Insert(SplitSpanAt(offset), span);
+            text = (text ?? string.Empty).Insert(offset, insert);
+            DropEmptySpans();
+            MergeSpans();
+        }
+
+        // The span holding the character at an index; the last one past the end.
+        private int SpanOf(int index)
+        {
+            int end = 0;
+            for (int i = 0; i < spans.Count; i++)
+            {
+                end += spans[i].count;
+                if (index < end) return i;
+            }
+            return spans.Count - 1;
         }
 
         // Whether every span over a character range passes a test.
@@ -259,6 +307,7 @@ namespace ArctisAurora.Core.UI.Text
             && a.fill == b.fill
             && a.leader == b.leader && a.leaderWidth == b.leaderWidth && a.leaderInset == b.leaderInset
             && a.note == b.note
+            && a.link == b.link
             && a.urlStretch == b.urlStretch && a.urlBreakPenalty == b.urlBreakPenalty && a.urlBigBreakPenalty == b.urlBigBreakPenalty
             && a.urlWidth == b.urlWidth && a.urlShrink == b.urlShrink
             && a.urlNumPenalty == b.urlNumPenalty && a.urlNumWidth == b.urlNumWidth && a.urlNumStretch == b.urlNumStretch && a.urlNumShrink == b.urlNumShrink
@@ -295,6 +344,7 @@ namespace ArctisAurora.Core.UI.Text
                     leaderWidth = span.leaderWidth,
                     leaderInset = span.leaderInset,
                     note = span.note,
+                    link = span.link,
                     urlStretch = span.urlStretch,
                     urlWidth = span.urlWidth,
                     urlShrink = span.urlShrink,

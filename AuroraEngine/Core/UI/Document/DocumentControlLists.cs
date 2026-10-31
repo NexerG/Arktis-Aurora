@@ -201,6 +201,44 @@ namespace ArctisAurora.Core.UI.Document
             return true;
         }
 
+        // A closing "]]" typed after "[[target]]" or "[[target|text]]" makes the brackets one link.
+        private bool TypeLinkClose(BlockControl block, int index, int typedEnd)
+        {
+            if (plainText || block.stylingType is TextStyleType.Code or TextStyleType.Rule) return false;
+
+            string s = block.text ?? string.Empty;
+            if (typedEnd < 5 || s[typedEnd - 2] != ']') return false;
+
+            int open = s.LastIndexOf("[[", typedEnd - 3, StringComparison.Ordinal);
+            if (open < 0) return false;
+
+            string inner = s[(open + 2)..(typedEnd - 2)];
+            if (inner.IndexOfAny(linkBreakers) >= 0) return false;
+
+            int bar = inner.IndexOf('|');
+            string target = (bar < 0 ? inner : inner[..bar]).Trim();
+            string shown = bar < 0 ? target : inner[(bar + 1)..].Trim();
+            if (target.Length == 0) return false;
+
+            ReplaceWithLink(block, index, open, typedEnd, shown.Length > 0 ? shown : target, target);
+            return true;
+        }
+
+        private static readonly char[] linkBreakers = { '[', ']', '\n', BlockControl.PictureChar[0] };
+
+        // Turns a block's characters from..to into one link, as one block-state record.
+        internal void ReplaceWithLink(BlockControl block, int index, int from, int to, string shown, string target)
+        {
+            List<BlockSnapshot> before = SnapshotBlocks(index, index);
+            document.ChangeBlocks(index, index, b =>
+            {
+                b.run.RemoveText(from, to - from);
+                b.run.InsertLink(from, shown, target);
+            });
+            undo?.Push(new BlockStateEdit(document, index, before, SnapshotBlocks(index, index)));
+            SetCaret(block, from + shown.Length);
+        }
+
         // Where the opener a closing marker ending at end pairs with starts; -1 when there is none.
         // Content may not start or end with a space, and a single "*" or "`" never touches its twin.
         private static int InlineOpener(string s, int end, string marker)

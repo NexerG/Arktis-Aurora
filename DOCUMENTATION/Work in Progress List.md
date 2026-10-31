@@ -247,6 +247,9 @@ This file holds **open work**. A landed entry moves to [[Changelog]]; one that s
 - [ ] **install-time file-type registration (2026-10-18)** — registration happens only on a Settings press (and registers the running exe's path); nothing at install, no unregister → axml-file-types
 - [ ] **macOS document types (2026-10-18)** — waits for a mac ship target; GLFW does not deliver Finder open-document events → axml-file-types
 - [ ] **rename ThoriumNotes vault files to .axml (2026-10-18)** — the vault (`D:\Repositories\ThoriumNotes`, not on this machine) still has `.planner.xml` / `.xml` files; one-off rename where it lives → axml-file-types
+- [ ] **port the docs vault to Thorium .axml (2026-10-31)** — stages 1 (pipe tables) and 2 (note links, autocomplete, rename rewrites) landed 2026-11-01, test-verified, NOT GUI-verified; open: 3 live `<Toc/>`, 4 vault "Convert to .axml", 5 run on Engine + Extras, arxtis.dev `.axml` reader, aurora-docs/scribe write `.axml` → docs-port-plan, note-links
+	- [ ] undoing a heading edit does not undo the link rewrites; folder moves don't rewrite path-qualified links; `[[x#^block]]` only opens the note
+	- [ ] `[text](note.md)` writes back as `[[note.md|text]]`; column spans don't survive Markdown; `Follow` bound only in Thorium's input map
 - [ ] **CJK font support missing (2026-10-21)** — tens of thousands of glyphs don't fit one atlas; needs on-demand glyph paging, a separate system; no CJK language pack → font-picker
 - [ ] **language pack change needs a restart (2026-10-21)** — `Fonts.Rebake` re-bakes user fonts but the new atlases load next start (reloading a live `FontAsset` leaks its texture slot, leaves measure caches stale) → font-picker
 - [ ] **GUI-verify the font picker (2026-10-21)** — toolbar button click, list scroll, wait window over a real window, applying a font by mouse, Settings LanguagePacks re-bake; Linux and macOS unchecked → font-picker

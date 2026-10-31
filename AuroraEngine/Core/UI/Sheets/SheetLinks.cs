@@ -290,37 +290,44 @@ namespace ArctisAurora.Core.UI.Sheets
                 Func<string, string?> inNote = reference => rename(note, reference);
                 if (TabViewControl.FindOpenDocument(note, out _) is TabItemControl item)
                     TabViewControl.EditorOf(item)?.RenameSheetLinks(inNote);
-                RewriteFile(note, inNote);
+                RewriteFile(note, "Update sheet links in", (text, markdown) => RenamedText(text, markdown, inNote));
             }
         }
 
-        // Changes only the link text; every other byte, the BOM included, is written back as read.
-        private static void RewriteFile(string path, Func<string, string?> rename)
+        // Changes only what the rewrite changes; every other byte, the BOM included, is written back as read.
+        internal static void RewriteFile(string path, string prompt, Func<string, bool, string?> rewrite)
         {
             if (!File.Exists(path)) return;
             if (EncryptedFile.IsEncrypted(path))
             {
                 if (TabViewControl.FindOpenDocument(path, out _) is not TabItemControl open || TabViewControl.EditorOf(open) == null)
-                    UnlockPrompts.Ask(path, "Update sheet links in", key =>
+                    UnlockPrompts.Ask(path, prompt, key =>
                     {
-                        if (EncryptedFile.TryRead(path, key, out byte[] plain) && Rewritten(plain, false, rename) is byte[] changed)
+                        if (EncryptedFile.TryRead(path, key, out byte[] plain) && Rewritten(plain, false, rewrite) is byte[] changed)
                             EncryptedFile.Write(path, key, changed);
                     });
                 return;
             }
 
             byte[] bytes = VaultFiles.ReadBytes(path);
-            if (Rewritten(bytes, FileTypes.KindOf(path) == FileKind.Markdown, rename) is not byte[] rewrittenBytes) return;
+            if (Rewritten(bytes, FileTypes.KindOf(path) == FileKind.Markdown, rewrite) is not byte[] rewrittenBytes) return;
             VaultFiles.WriteBytes(path, rewrittenBytes);
         }
 
-        // The file's bytes with its links renamed, BOM kept; null when nothing changed.
-        private static byte[]? Rewritten(byte[] bytes, bool markdown, Func<string, string?> rename)
+        // The file's bytes with the rewrite applied, BOM kept; null when nothing changed.
+        private static byte[]? Rewritten(byte[] bytes, bool markdown, Func<string, bool, string?> rewrite)
         {
             bool bom = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
             int skip = bom ? 3 : 0;
-            string text = Encoding.UTF8.GetString(bytes, skip, bytes.Length - skip);
+            if (rewrite(Encoding.UTF8.GetString(bytes, skip, bytes.Length - skip), markdown) is not string rewritten) return null;
 
+            byte[] body = Encoding.UTF8.GetBytes(rewritten);
+            return bom ? [.. bytes.AsSpan(0, 3), .. body] : body;
+        }
+
+        // A note's text with its sheet links and \sheet{} formulas renamed; null when nothing changed.
+        private static string? RenamedText(string text, bool markdown, Func<string, string?> rename)
+        {
             bool any = false;
             string rewritten = (markdown ? mdLink : xmlLink).Replace(text, match =>
             {
@@ -351,14 +358,11 @@ namespace ArctisAurora.Core.UI.Sheets
                     any = true;
                     return match.Groups[1].Value + Escaped(renamed) + match.Groups[3].Value;
                 });
-            if (!any) return null;
-
-            byte[] body = Encoding.UTF8.GetBytes(rewritten);
-            return bom ? [.. bytes.AsSpan(0, 3), .. body] : body;
+            return any ? rewritten : null;
         }
 
         // An attribute value as XML writes it, line breaks included.
-        private static string Escaped(string value) => new XAttribute("v", value).ToString()[3..^1];
+        internal static string Escaped(string value) => new XAttribute("v", value).ToString()[3..^1];
         #endregion
     }
 }

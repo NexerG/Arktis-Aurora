@@ -306,7 +306,16 @@ namespace ArctisAurora.Core.UI.Document
         {
             if (block == null) return;
 
-            if (block != caretBlock) caretIndex = -1;
+            if (block != caretBlock)
+            {
+                caretIndex = -1;
+                LeftHeading();
+                if (NoteHeadings.IsHeading(block.stylingType))
+                {
+                    headingBlock = block.note;
+                    headingText = block.text ?? string.Empty;
+                }
+            }
             caretBlock = block;
             caretOffset = Math.Clamp(offset, 0, block.Length);
             if (!extend) anchor = Focus;
@@ -320,11 +329,48 @@ namespace ArctisAurora.Core.UI.Document
             caret.Focus();
 
             InvalidateArrange();
+            LinkSuggest.CaretMoved(this);
         }
 
         public void CollapseSelection() => anchor = Focus;
 
-        internal void Blur() => caret?.Blur();
+        internal void Blur()
+        {
+            caret?.Blur();
+            LeftHeading();
+        }
+
+        // the heading the caret is in, and its text when the caret entered it
+        private NoteBlock? headingBlock;
+        private string? headingText;
+
+        // A heading the caret leaves with other text, still in the note and the only one that read the old
+        // text, takes the links to it along.
+        internal void LeftHeading()
+        {
+            NoteBlock? left = headingBlock;
+            string before = (headingText ?? string.Empty).Trim();
+            headingBlock = null;
+            headingText = null;
+            if (left == null || session?.path == null || !NoteHeadings.IsHeading(left.stylingType)) return;
+
+            string now = (left.run.text ?? string.Empty).Trim();
+            if (before.Length == 0 || now.Length == 0 || now == before) return;
+
+            bool present = false;
+            List<NoteBlock> blocks = document.Blocks();
+            for (int i = 0; i < blocks.Count; i++)
+            {
+                NoteBlock block = blocks[i];
+                if (block == left) present = true;
+                else if (NoteHeadings.IsHeading(block.stylingType)
+                         && string.Equals((block.run.text ?? string.Empty).Trim(), before, StringComparison.OrdinalIgnoreCase)) return;
+            }
+            if (!present) return;
+
+            document.RenameNoteLinks(target => target.StartsWith('#') && target[1..].Trim().Equals(before, StringComparison.OrdinalIgnoreCase) ? "#" + now : null);
+            NoteLinks.HeadingRenamed(session.path, before, now);
+        }
 
         internal void FocusCaret() => caret?.Focus();
 
@@ -332,9 +378,14 @@ namespace ArctisAurora.Core.UI.Document
         public void GlyphPressed(TextRunControl run, int index)
         {
             if (run is not BlockControl block) return;
+            if (Following && block.LinkAt(index) is string link && FollowLink(link)) return;
 
             PressAt(block, index);
         }
+
+        // Opens a link through the host: a note as [[target]], a web address as it is.
+        public bool FollowLink(string link) =>
+            NotePropertiesControl.openLink?.Invoke(Editor?.path, MarkdownFormat.IsWebAddress(link) ? link : "[[" + link + "]]") == true;
 
         // A press on a picture selects it; on the selected inline one it picks it up. Any other button
         // only selects it.
@@ -394,6 +445,8 @@ namespace ArctisAurora.Core.UI.Document
         private DocumentEditorControl Editor => parent as DocumentEditorControl;
 
         internal static bool Extending => InputHandler.instance.IsModifierDown(InputModifier.Extend);
+
+        internal static bool Following => InputHandler.instance.IsModifierDown(InputModifier.Follow);
         #endregion
 
         #region ---- caret navigation ----

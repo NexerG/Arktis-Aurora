@@ -22,13 +22,20 @@ namespace ArctisAurora.Core.UI.Notes
         private const string fence = "```";
         private const string quote = "> ";
 
-        private const string escapable = "\\`*_~#>-+[]=<.)$";
+        private const string escapable = "\\`*_~#>-+[]=<.)$|";
+
+        // pipe tables: a separator cell, a line break inside a cell, and the width the columns share, an A4 text width
+        private static readonly Regex tableSeparator = new Regex(@"^:?-+:?$");
+        private static readonly Regex cellBreak = new Regex(@"<br\s*/?>", RegexOptions.IgnoreCase);
+        private static readonly float tableWidth = TextWidth(new PageLayout { size = PageSize.A4 });
 
         // inline HTML Obsidian renders, read and written for what Markdown has no syntax for
         private static readonly Regex htmlTag = new Regex(@"\G<(/?)(u|mark|span)((?:\s+style=""[^""]*"")?)\s*>", RegexOptions.IgnoreCase);
         private static readonly Regex cssColor = new Regex(@"(?<![-\w])color\s*:\s*(#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?)");
         private static readonly Regex picture = new Regex(@"\G!\[[^\]|]*(?:\|(\d+)(?:x(\d+))?)?\]\((?:<([^>]*)>|([^)\s]+))\)");
         private static readonly Regex embed = new Regex(@"\G!\[\[(.*?)\]\]");
+        private static readonly Regex wikiLink = new Regex(@"\G\[\[([^\[\]|]+)(?:\|([^\[\]]*))?\]\]");
+        private static readonly Regex webLink = new Regex(@"\G\[([^\[\]]+)\]\(<?([^)\s>]+)>?\)");
         private static readonly Regex htmlPicture =new Regex(@"\G<img\s([^>]*?)/?>", RegexOptions.IgnoreCase);
         private static readonly Regex htmlAttribute = new Regex(@"([\w-]+)\s*=\s*""([^""]*)""");
         private static readonly Regex cssBackground =new Regex(@"(?<![-\w])background(?:-color)?\s*:\s*(#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?)");
@@ -84,9 +91,10 @@ namespace ArctisAurora.Core.UI.Notes
             string? language = null;
             List<string>? openMath = null;
 
-            foreach (string raw in text.Split('\n'))
+            string[] lines = text.Split('\n');
+            for (int n = 0; n < lines.Length; n++)
             {
-                string line = raw.TrimEnd('\r');
+                string line = lines[n].TrimEnd('\r');
 
                 if (openFence != null && ClosesFence(line, openFence))
                 {
@@ -126,6 +134,18 @@ namespace ArctisAurora.Core.UI.Notes
                 {
                     listWidths.Clear();
                     openMath = new List<string>();
+                    continue;
+                }
+
+                if (line.StartsWith('|') && n + 1 < lines.Length
+                    && TableAlignments(lines[n + 1].TrimEnd('\r')) is TextAlignment[] alignments
+                    && TableCells(line).Count == alignments.Length)
+                {
+                    listWidths.Clear();
+                    int end = n + 2;
+                    while (end < lines.Length && lines[end].StartsWith('|')) end++;
+                    root.Add(ReadTable(lines, n, end, alignments));
+                    n = end - 1;
                     continue;
                 }
 
@@ -215,6 +235,91 @@ namespace ArctisAurora.Core.UI.Notes
                 counters[^1] = (start.Value, counters[^1].marker);
             }
         }
+
+        // Header row, separator, body rows; every row gets the header's column count.
+        private static XElement ReadTable(string[] lines, int header, int end, TextAlignment[] alignments)
+        {
+            int columns = alignments.Length;
+            XElement table = new XElement("Table");
+            float width = MathF.Floor(tableWidth / columns);
+            for (int c = 0; c < columns; c++) table.Add(new XElement("Column", new XAttribute("Width", width)));
+
+            for (int n = header; n < end; n++)
+            {
+                if (n == header + 1) continue;
+
+                List<string> cells = TableCells(lines[n].TrimEnd('\r'));
+                XElement row = new XElement("Row");
+                for (int c = 0; c < columns; c++)
+                {
+                    XElement cell = new XElement("Cell");
+                    foreach (string part in cellBreak.Split(c < cells.Count ? cells[c] : string.Empty))
+                    {
+                        XElement block = Block(null, ParseInline(part.Trim()));
+                        if (alignments[c] != TextAlignment.Left) block.SetAttributeValue("Align", alignments[c].ToString());
+                        cell.Add(block);
+                    }
+                    row.Add(cell);
+                }
+                table.Add(row);
+            }
+            return table;
+        }
+
+        // The separator row's alignment per column, or null when the line is not one.
+        private static TextAlignment[]? TableAlignments(string line)
+        {
+            if (!line.StartsWith('|')) return null;
+
+            List<string> cells = TableCells(line);
+            if (cells.Count == 0) return null;
+
+            TextAlignment[] alignments = new TextAlignment[cells.Count];
+            for (int c = 0; c < alignments.Length; c++)
+            {
+                string cell = cells[c];
+                if (!tableSeparator.IsMatch(cell)) return null;
+
+                bool left = cell[0] == ':';
+                bool right = cell[^1] == ':';
+                alignments[c] = left && right ? TextAlignment.Center : right ? TextAlignment.Right : TextAlignment.Left;
+            }
+            return alignments;
+        }
+
+        // A row's cells, trimmed, split on unescaped pipes; \| becomes | before the inline parse, as GFM does.
+        private static List<string> TableCells(string row)
+        {
+            List<string> cells = new List<string>(4);
+            StringBuilder cell = new StringBuilder();
+            string trimmed = row.Trim();
+
+            for (int i = 1; i < trimmed.Length; i++)
+            {
+                char c = trimmed[i];
+                if (c == '\\' && i + 1 < trimmed.Length && trimmed[i + 1] == '|')
+                {
+                    cell.Append('|');
+                    i++;
+                    continue;
+                }
+                if (c != '|')
+                {
+                    cell.Append(c);
+                    continue;
+                }
+
+                cells.Add(cell.ToString().Trim());
+                cell.Clear();
+            }
+
+            string last = cell.ToString().Trim();
+            if (last.Length > 0) cells.Add(last);
+            return cells;
+        }
+
+        private static float TextWidth(PageLayout page) =>
+            page.SizePx().X - (page.marginLeft + page.marginRight) * PageLayout.PxPerMm;
 
         private static void ReadProperties(XElement root, string block)
         {
@@ -352,7 +457,7 @@ namespace ArctisAurora.Core.UI.Notes
             List<XElement> runs = new List<XElement>();
             StringBuilder pending = new StringBuilder();
             bool bold = false, italic = false, strike = false, marked = false;
-            string? color = null, highlight = null;
+            string? color = null, highlight = null, linkTarget = null;
 
             // open HTML tags, each with the colours it replaced
             Stack<(string tag, string? color, string? highlight)> tags = new Stack<(string, string?, string?)>();
@@ -362,6 +467,7 @@ namespace ArctisAurora.Core.UI.Notes
                 if (pending.Length == 0) return;
 
                 XElement run = PlainRun(pending.ToString());
+                if (linkTarget != null) run.SetAttributeValue("Link", linkTarget);
                 if (bold) run.SetAttributeValue("Bold", "true");
                 if (italic) run.SetAttributeValue("Italic", "true");
                 if (strike) run.SetAttributeValue("Strikethrough", "true");
@@ -417,6 +523,18 @@ namespace ArctisAurora.Core.UI.Notes
                     Flush(false);
                     runs.Add(new XElement("Run", new XAttribute("Sheet", link.Groups[1].Value)));
                     i += link.Length - 1;
+                    continue;
+                }
+
+                if (c == '[' && (i == 0 || s[i - 1] != '!') && LinkAt(s, i) is Match linked)
+                {
+                    bool wiki = linked.Value[1] == '[';
+                    Flush(false);
+                    linkTarget = wiki ? linked.Groups[1].Value : linked.Groups[2].Value;
+                    pending.Append(wiki ? (linked.Groups[2].Success ? linked.Groups[2].Value : linkTarget) : linked.Groups[1].Value);
+                    Flush(false);
+                    linkTarget = null;
+                    i += linked.Length - 1;
                     continue;
                 }
 
@@ -495,6 +613,15 @@ namespace ArctisAurora.Core.UI.Notes
 
             Flush(false);
             return runs;
+        }
+
+        // A [[target|alias]] or [text](url) starting at i; null when neither does.
+        private static Match? LinkAt(string s, int i)
+        {
+            Match wiki = wikiLink.Match(s, i);
+            if (wiki.Success) return wiki;
+            Match web = webLink.Match(s, i);
+            return web.Success ? web : null;
         }
 
         // <img src width height data-wrap data-x data-y data-rotate data-collision> as a picture run; null without a src.
@@ -585,6 +712,14 @@ namespace ArctisAurora.Core.UI.Notes
 
             foreach (XElement block in document.Elements())
             {
+                if (block.Name.LocalName == "Table")
+                {
+                    if (fenceAt >= 0) CloseFence();
+                    counters.Clear();
+                    afterList = false;
+                    TableLines(block, lines);
+                    continue;
+                }
                 if (block.Name.LocalName != "Block") continue;
 
                 string styling = (string?)block.Attribute("StylingType") ?? "Text";
@@ -710,11 +845,62 @@ namespace ArctisAurora.Core.UI.Notes
             }
 
             bool structural = heading.IsMatch(content) || bullet.IsMatch(content) || rule.IsMatch(content)
-                              || content.StartsWith(quote) || content.StartsWith(fence) || content.StartsWith("~~~");
+                              || content.StartsWith(quote) || content.StartsWith(fence) || content.StartsWith("~~~")
+                              || content.TrimStart(' ', '\t').StartsWith('|');
             if (!structural) return content;
 
             int at = content.Length - content.TrimStart(' ', '\t').Length;
             return content.Insert(at, "\\");
+        }
+
+        // A pipe table: row 0 is the header, a cell's blocks join with <br>, alignment from the header's blocks.
+        private static void TableLines(XElement table, List<string> lines)
+        {
+            bool header = true;
+            List<XElement> runs = new List<XElement>();
+            StringBuilder line = new StringBuilder();
+            StringBuilder separator = new StringBuilder();
+
+            foreach (XElement row in table.Elements())
+            {
+                if (row.Name.LocalName != "Row") continue;
+
+                line.Clear().Append('|');
+                separator.Clear().Append('|');
+                foreach (XElement cell in row.Elements())
+                {
+                    if (cell.Name.LocalName != "Cell") continue;
+
+                    string? align = null;
+                    bool first = true;
+                    line.Append(' ');
+                    foreach (XElement block in cell.Elements())
+                    {
+                        if (block.Name.LocalName != "Block") continue;
+
+                        if (first) align = (string?)block.Attribute("Align");
+                        else line.Append("<br>");
+                        first = false;
+
+                        runs.Clear();
+                        foreach (XElement run in block.Elements()) runs.Add(run);
+                        line.Append(WriteInline(runs).Replace("|", "\\|"));
+                    }
+                    line.Append(" |");
+                    separator.Append(align == "Center" ? " :---: |" : align == "Right" ? " ---: |" : " --- |");
+
+                    int span = Math.Max(1, (int?)cell.Attribute("ColumnSpan") ?? 1);
+                    for (int s = 1; s < span; s++)
+                    {
+                        line.Append("  |");
+                        separator.Append(" --- |");
+                    }
+                }
+
+                lines.Add(line.ToString());
+                if (header) lines.Add(separator.ToString());
+                header = false;
+            }
         }
 
         // Unescaped when it reads back as the same runs, escaped when it would not.
@@ -786,7 +972,9 @@ namespace ArctisAurora.Core.UI.Notes
                         open.Add(marker);
                     }
 
-                if ((string?)run.Attribute("StylingType") == "Code")
+                if ((string?)run.Attribute("Link") is string link)
+                    line.Append(LinkMarkdown(link, text));
+                else if ((string?)run.Attribute("StylingType") == "Code")
                     line.Append('`').Append(text).Append('`');
                 else if (escape)
                     for (int i = 0; i < text.Length; i++)
@@ -805,6 +993,13 @@ namespace ArctisAurora.Core.UI.Notes
             for (int i = open.Count - 1; i >= 0; i--) line.Append(Closing(open[i]));
             return line.ToString();
         }
+
+        // [text](url) for a web address; [[target]], or [[target|text]] when the text is not the target.
+        private static string LinkMarkdown(string target, string text) =>
+            IsWebAddress(target) ? $"[{text}]({target})" : text == target ? $"[[{target}]]" : $"[[{target}|{text}]]";
+
+        public static bool IsWebAddress(string target) =>
+            target.Contains("://") || target.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase);
 
         // ![|W](path), or ![|WxH](path) once a height is set.
         private static string PictureMarkdown(string source, string? width, string? height)
@@ -875,7 +1070,7 @@ namespace ArctisAurora.Core.UI.Notes
                          | ((bool?)run.Attribute("Strikethrough") == true ? 4 : 0)
                          | ((string?)run.Attribute("StylingType") == "Code" ? 8 : 0)
                          | ((bool?)run.Attribute("Underline") == true ? 16 : 0);
-                string key = $"{mask}|{((string?)run.Attribute("ColorHex"))?.ToUpperInvariant()}|{((string?)run.Attribute("HighlightHex"))?.ToUpperInvariant()}";
+                string key = $"{mask}|{((string?)run.Attribute("ColorHex"))?.ToUpperInvariant()}|{((string?)run.Attribute("HighlightHex"))?.ToUpperInvariant()}|{(string?)run.Attribute("Link")}";
 
                 text.Append(slice);
                 for (int i = 0; i < slice.Length; i++) styles.Add(key);

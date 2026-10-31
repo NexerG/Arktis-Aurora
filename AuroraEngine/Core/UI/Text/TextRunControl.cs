@@ -93,6 +93,9 @@ namespace ArctisAurora.Core.UI.Text
         // a footnote anchor: the id of the footnote its page makes room for
         public string note;
 
+        // a link: the target as written, note#heading or a URL; text that draws in the accent, underlined
+        public string link;
+
         // a URL: \Urlmuskip's stretch, width and shrink between its characters, px, and the penalties at its two break markers
         public float urlStretch;
         public float urlWidth;
@@ -172,6 +175,7 @@ namespace ArctisAurora.Core.UI.Text
             public uint highlight;
             public bool underline;
             public bool strike;
+            public bool link;
         }
 
         // a picture, sheet or formula run's object
@@ -419,8 +423,9 @@ namespace ArctisAurora.Core.UI.Text
                     gradient = spans[i].gradient == null ? gradientId : Gradients.IndexOf(spans[i].gradient),
                     effect = spans[i].effect == null ? visual.effect : Effects.IndexOf(spans[i].effect),
                     highlight = spans[i].highlightHex == null ? 0u : Palettes.Inline(spans[i].highlightHex),
-                    underline = spans[i].underline,
-                    strike = spans[i].strikethrough
+                    underline = spans[i].underline || spans[i].link != null,
+                    strike = spans[i].strikethrough,
+                    link = spans[i].link != null && spans[i].colorHex == null
                 };
                 start += count;
             }
@@ -784,7 +789,7 @@ namespace ArctisAurora.Core.UI.Text
                     ref readonly RunStyle runStyle = ref runStyles[segment.runIndex];
                     uint paint = runStyle.gradient != 0
                         ? Gradients.Word(runStyle.gradient, palette ?? Palettes.Default)
-                        : runStyle.paint;
+                        : runStyle.link ? Palettes.Surface(palette ?? Palettes.Default, PaletteRole.Accent) : runStyle.paint;
                     TextMeasurer.Run run = _runs[segment.runIndex];
                     FontAsset font = runStyle.font;
                     uint effect = runStyle.effect;

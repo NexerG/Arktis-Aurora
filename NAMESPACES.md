@@ -216,10 +216,13 @@ ArctisAurora.Core.UI.Menus -> AuroraEngine/Core/UI/Menus/ContextMenus.cs
 ArctisAurora.Core.UI.Menus -> AuroraEngine/Core/UI/Menus/MenuButtonControl.cs
 ArctisAurora.Core.UI.Notes -> AuroraEngine/Core/UI/Notes/LinkIndex.cs
 ArctisAurora.Core.UI.Notes -> AuroraEngine/Core/UI/Notes/LinksPanelControl.cs
+ArctisAurora.Core.UI.Notes -> AuroraEngine/Core/UI/Notes/LinkSuggest.cs
 ArctisAurora.Core.UI.Notes -> AuroraEngine/Core/UI/Notes/LockedFileControl.cs
 ArctisAurora.Core.UI.Notes -> AuroraEngine/Core/UI/Notes/NoteActions.cs
 ArctisAurora.Core.UI.Notes -> AuroraEngine/Core/UI/Notes/NoteFileSync.cs
 ArctisAurora.Core.UI.Notes -> AuroraEngine/Core/UI/Notes/NoteFormats.cs
+ArctisAurora.Core.UI.Notes -> AuroraEngine/Core/UI/Notes/NoteHeadings.cs
+ArctisAurora.Core.UI.Notes -> AuroraEngine/Core/UI/Notes/NoteLinks.cs
 ArctisAurora.Core.UI.Notes -> AuroraEngine/Core/UI/Notes/NoteModel.cs
 ArctisAurora.Core.UI.Notes -> AuroraEngine/Core/UI/Notes/NotePropertiesControl.cs
 ArctisAurora.Core.UI.Notes -> AuroraEngine/Core/UI/Notes/NoteSeals.cs

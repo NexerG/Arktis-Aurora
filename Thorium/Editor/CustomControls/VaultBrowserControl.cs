@@ -703,7 +703,7 @@ namespace Thorium.Editor.CustomControls
 
         private void CreateGraph(string folder, string name)
         {
-            string path = FreePath(folder, name, GraphDocument.extension);
+            string path = FreePath(folder, name, GraphDocument.Extension);
             GraphDocument.Blank(BaseName(path)).Save(path);
 
             Expand(folder);
@@ -798,6 +798,7 @@ namespace Thorium.Editor.CustomControls
                 SheetBook.Renamed(path, target, SheetBook.Linked(target, VaultSheets));
                 SheetLinks.Renamed(path, target, SheetBook.Linked(target, VaultNotes));
             }
+            else NoteLinks.Renamed(path, target, VaultNotes(target));
             if (PlannerDocument.IsPlanner(target)) PlannerBook.Renamed(Path.GetFullPath(path), target);
 
             VaultBrowserControl? browser = Browser();
@@ -952,6 +953,19 @@ namespace Thorium.Editor.CustomControls
         private static string? AliasOf(string vault, string id) =>
             VaultManifest.Depends(vault).FirstOrDefault(d => d.id == id).alias is { Length: > 0 } alias ? alias : null;
 
+        // The note names a [[ in a note at home can complete to, each once.
+        public static string[] NoteNames(string? home)
+        {
+            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            List<string> names = new List<string>(256);
+            foreach (string path in VaultNotes(home))
+            {
+                string name = Path.GetFileNameWithoutExtension(path);
+                if (seen.Add(name)) names.Add(name);
+            }
+            return names.ToArray();
+        }
+
         // Notes that can hold a sheet link: .md and .axml, sheets and planners left out.
         internal static IEnumerable<string> VaultNotes(string? home)
         {
@@ -980,11 +994,22 @@ namespace Thorium.Editor.CustomControls
 
             if (!link.StartsWith("[[") || !link.EndsWith("]]")) return false;
 
-            string? note = FindNote(home, link[2..^2].Split('|', '#')[0]);
+            string target = link[2..^2].Split('|')[0];
+            int hash = target.IndexOf('#');
+            string name = hash < 0 ? target : target[..hash];
+            string? note = name.Trim().Length == 0 ? home : FindNote(home, name);
             if (note == null) return false;
 
             Open(note);
+            if (hash >= 0 && !target[(hash + 1)..].StartsWith('^')) ShowHeading(note, target[(hash + 1)..]);
             return true;
+        }
+
+        // Shows a heading in the note's open document view.
+        private static void ShowHeading(string note, string heading)
+        {
+            foreach ((TabItemControl item, TabViewControl _) in TabViewControl.FindOpenDocuments(note))
+                if (TabViewControl.FileEditorOf(item) is DocumentEditorControl editor && editor.ShowHeading(heading)) return;
         }
 
         // The link index of the open vault holding a file; null for a file in none.
@@ -1165,7 +1190,7 @@ namespace Thorium.Editor.CustomControls
         private static string Extension(string path) =>
             SheetDocument.IsSheet(path) ? SheetDocument.extension
             : PlannerDocument.IsPlanner(path) ? PlannerDocument.extension
-            : GraphDocument.IsGraph(path) ? GraphDocument.extension
+            : GraphDocument.IsGraph(path) ? GraphDocument.Extension
             : Path.GetExtension(path);
 
         // "Name", then "Name 2", "Name 3" — a name already taken is never written over.

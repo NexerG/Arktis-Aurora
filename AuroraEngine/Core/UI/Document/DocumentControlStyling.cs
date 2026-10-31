@@ -123,6 +123,8 @@ namespace ArctisAurora.Core.UI.Document
 
         // Rewrites links the rename answers for; true when any changed.
         internal bool RenameSheetLinks(Func<string, string?> rename) => document.RenameSheetLinks(rename);
+
+        internal bool RenameNoteLinks(Func<string, string?> rename) => document.RenameNoteLinks(rename);
         #endregion
 
         #region ---- styling ----

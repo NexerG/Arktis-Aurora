@@ -6,19 +6,19 @@ namespace ArctisAurora.Core.UI.Graph
     public sealed class GraphLayout
     {
         // forces
-        private const float repulsion = 900f;
-        private const float spring = 0.08f;
-        private const float springLength = 40f;
-        private const float centring = 0.02f;
-        private const float theta = 0.9f;
-        private const float minDistance = 1f;
+        private const float Repulsion = 900f;
+        private const float Spring = 0.08f;
+        private const float SpringLength = 40f;
+        private const float Centring = 0.02f;
+        private const float Theta = 0.9f;
+        private const float MinDistance = 1f;
 
         // cooling
-        private const float damping = 0.6f;
-        private const float alphaDecay = 0.0228f;
-        private const float alphaMin = 0.001f;
-        private const float reheatAlpha = 0.3f;
-        private const int maxDepth = 24;
+        private const float Damping = 0.6f;
+        private const float AlphaDecay = 0.0228f;
+        private const float AlphaMin = 0.001f;
+        private const float ReheatAlpha = 0.3f;
+        private const int MaxDepth = 24;
 
         private struct Quad
         {
@@ -42,16 +42,16 @@ namespace ArctisAurora.Core.UI.Graph
         private int[] stack;
 
         private float alpha = 1f;
-        public bool settled => alpha < alphaMin;
+        public bool settled => alpha < AlphaMin;
 
-        public GraphLayout(int count, IReadOnlyList<(int a, int b)> edges)
+        public GraphLayout(int count, (int a, int b)[] edges)
         {
             this.count = count;
             position = new Vector2[count];
             velocity = new Vector2[count];
             force = new Vector2[count];
             pinned = new bool[count];
-            this.edges = edges.ToArray();
+            this.edges = edges;
             quads = new Quad[Math.Max(16, count * 8)];
             stack = new int[quads.Length];
 
@@ -64,7 +64,7 @@ namespace ArctisAurora.Core.UI.Graph
         }
 
         // Places a node where it stays until unpinned.
-        public void Pin(int node, Vector2 at)
+        public void Pin(int node, in Vector2 at)
         {
             position[node] = at;
             velocity[node] = Vector2.Zero;
@@ -73,50 +73,58 @@ namespace ArctisAurora.Core.UI.Graph
 
         public void Unpin(int node) => pinned[node] = false;
 
-        public void Reheat() => alpha = MathF.Max(alpha, reheatAlpha);
+        public void Reheat() => alpha = MathF.Max(alpha, ReheatAlpha);
 
         // One tick of the simulation.
         public void Step()
         {
             if (count == 0) { alpha = 0f; return; }
 
+            Vector2[] position = this.position;
+            Vector2[] velocity = this.velocity;
+            Vector2[] force = this.force;
+            bool[] pinned = this.pinned;
+            (int a, int b)[] edges = this.edges;
+
             BuildTree();
-            for (int i = 0; i < count; i++)
-                force[i] = Repel(i) - position[i] * centring;
+            for (int i = 0; i < position.Length; i++)
+                force[i] = Repel(i) - position[i] * Centring;
 
             for (int e = 0; e < edges.Length; e++)
             {
                 (int a, int b) = edges[e];
                 Vector2 d = position[b] - position[a];
-                float length = MathF.Max(d.Length(), minDistance);
-                Vector2 pull = d * (spring * (length - springLength) / length);
+                float length = MathF.Max(d.Length(), MinDistance);
+                Vector2 pull = d * (Spring * (length - SpringLength) / length);
                 force[a] += pull;
                 force[b] -= pull;
             }
 
-            for (int i = 0; i < count; i++)
+            float heat = alpha;
+            for (int i = 0; i < position.Length; i++)
             {
                 if (pinned[i]) { velocity[i] = Vector2.Zero; continue; }
-                velocity[i] = (velocity[i] + force[i] * alpha) * damping;
+                velocity[i] = (velocity[i] + force[i] * heat) * Damping;
                 position[i] += velocity[i];
             }
-            alpha -= alpha * alphaDecay;
+            alpha = heat - heat * AlphaDecay;
         }
 
         #region ---- Barnes–Hut ----
         private void BuildTree()
         {
+            Vector2[] position = this.position;
             Vector2 min = position[0], max = position[0];
-            for (int i = 1; i < count; i++)
+            for (int i = 1; i < position.Length; i++)
             {
                 min = Vector2.Min(min, position[i]);
                 max = Vector2.Max(max, position[i]);
             }
             Vector2 size = max - min;
             quadCount = 0;
-            NewQuad((min + max) * 0.5f, MathF.Max(MathF.Max(size.X, size.Y) * 0.5f, minDistance) + minDistance);
+            NewQuad((min + max) * 0.5f, MathF.Max(MathF.Max(size.X, size.Y) * 0.5f, MinDistance) + MinDistance);
 
-            for (int i = 0; i < count; i++)
+            for (int i = 0; i < position.Length; i++)
                 Insert(i);
         }
 
@@ -143,7 +151,7 @@ namespace ArctisAurora.Core.UI.Graph
                 if (quad.mass == 1) { quad.body = body; return; }
                 if (quad.child < 0)
                 {
-                    if (depth >= maxDepth) { quad.body = -2; return; }
+                    if (depth >= MaxDepth) { quad.body = -2; return; }
                     int held = quad.body;
                     Vector2 centre = quad.centre;
                     float half = quad.half * 0.5f;
@@ -154,16 +162,16 @@ namespace ArctisAurora.Core.UI.Graph
                     quads[q].child = first;
                     quads[q].body = -1;
 
-                    ref Quad moved = ref quads[ChildFor(q, position[held])];
+                    ref Quad moved = ref quads[ChildFor(q, in position[held])];
                     moved.sum = position[held];
                     moved.mass = 1;
                     moved.body = held;
                 }
-                q = ChildFor(q, p);
+                q = ChildFor(q, in p);
             }
         }
 
-        private int ChildFor(int q, Vector2 p) =>
+        private int ChildFor(int q, in Vector2 p) =>
             quads[q].child + (p.X >= quads[q].centre.X ? 1 : 0) + (p.Y >= quads[q].centre.Y ? 2 : 0);
 
         private Vector2 Repel(int body)
@@ -180,14 +188,14 @@ namespace ArctisAurora.Core.UI.Graph
                 Vector2 d = p - quad.sum / quad.mass;
                 float distance2 = d.LengthSquared();
                 float width = quad.half * 2f;
-                if (quad.child >= 0 && width * width >= theta * theta * distance2)
+                if (quad.child >= 0 && width * width >= Theta * Theta * distance2)
                 {
                     for (int c = 0; c < 4; c++)
                         stack[top++] = quad.child + c;
                     continue;
                 }
-                if (distance2 < minDistance) d = new Vector2(body % 2 == 0 ? minDistance : -minDistance, 0f);
-                total += d * (repulsion * quad.mass / MathF.Max(distance2, minDistance));
+                if (distance2 < MinDistance) d = new Vector2(body % 2 == 0 ? MinDistance : -MinDistance, 0f);
+                total += d * (Repulsion * quad.mass / MathF.Max(distance2, MinDistance));
             }
             return total;
         }

@@ -716,6 +716,236 @@ namespace Thorium.Tests
 
             yield return 0;
         }
+
+        [A_XSDActionDependency("TextInput.MarkdownTableRoundTrip", "Test")]
+        private static IEnumerator<int> MarkdownTableRoundTrip(TestContext t)
+        {
+            string table = "| A | B \\| c |\n| --- | ---: |\n| `x\\|y` | **b**<br>two |";
+            string md = "before\n" + table + "\nafter\n\\|not a table";
+            XElement root = MarkdownFormat.Read(md, "n");
+
+            List<XElement> top = new List<XElement>(root.Elements());
+            t.Check(top.Count == 4 && top[1].Name.LocalName == "Table" && top[2].Name.LocalName == "Block"
+                && top[3].Name.LocalName == "Block", $"a table between two paragraphs, the rows end at the first line without a pipe: {root}");
+
+            XElement read = top[1];
+            List<XElement> columns = new List<XElement>(read.Elements("Column"));
+            List<XElement> rows = new List<XElement>(read.Elements("Row"));
+            t.Check(columns.Count == 2 && (float?)columns[0].Attribute("Width") == 300f && rows.Count == 2,
+                $"two columns splitting an A4 text width, a header and one body row: {read}");
+
+            List<XElement> header = new List<XElement>(rows[0].Elements("Cell"));
+            List<XElement> body = new List<XElement>(rows[1].Elements("Cell"));
+            XElement code = body[0].Element("Block")!.Element("Run")!;
+            List<XElement> split = new List<XElement>(body[1].Elements("Block"));
+            t.Check((string?)header[1].Element("Block")!.Element("Run")!.Attribute("Text") == "B | c"
+                && (string?)code.Attribute("Text") == "x|y" && (string?)code.Attribute("StylingType") == "Code"
+                && split.Count == 2 && (string?)split[0].Attribute("Align") == "Right"
+                && (string?)split[0].Element("Run")!.Attribute("Bold") == "true",
+                $"escaped pipes, code spans, <br> blocks and the column's alignment read: {read}");
+
+            string written = MarkdownFormat.Write(root);
+            t.Check(written == md, $"and write back byte-identical: {written}");
+
+            yield return 0;
+        }
+        #endregion
+
+        #region ---- links ----
+        [A_XSDActionDependency("TextInput.MarkdownLinkRoundTrip", "Test")]
+        private static IEnumerator<int> MarkdownLinkRoundTrip(TestContext t)
+        {
+            string md = "see [[Bootstrapper]], [[Input#Keys|keys]], [site](https://arxtis.dev) and [[#Top]]";
+            XElement block = MarkdownFormat.Read(md, "n").Element("Block")!;
+            List<string> links = new List<string>();
+            foreach (XElement run in block.Elements("Run"))
+                if ((string?)run.Attribute("Link") is string link) links.Add(link + "=" + (string?)run.Attribute("Text"));
+            t.Check(string.Join(";", links) == "Bootstrapper=Bootstrapper;Input#Keys=keys;https://arxtis.dev=site;#Top=#Top",
+                $"wiki, aliased, heading, web and same-note links read as link runs: {block}");
+
+            string written = MarkdownFormat.Write(MarkdownFormat.Read(md, "n"));
+            t.Check(written == md, $"and write back byte-identical: {written}");
+
+            yield return 0;
+        }
+
+        [A_XSDActionDependency("TextInput.LinkRunXml", "Test")]
+        private static IEnumerator<int> LinkRunXml(TestContext t)
+        {
+            RichTextDocument note = DocumentXml.Parse(new XElement("Document", new XElement("Block",
+                new XElement("Run", new XAttribute("Text", "a ")),
+                new XElement("Run", new XAttribute("Text", "go"), new XAttribute("Link", "b#h")))));
+            XElement? saved = null;
+            foreach (XElement run in DocumentXml.ToXml(note).Descendants())
+                if (run.Attribute("Link") != null) saved = run;
+            t.Check(saved != null && (string?)saved.Attribute("Link") == "b#h" && (string?)saved.Attribute("Text") == "go",
+                $"a link run survives a save: {saved}");
+
+            DocumentEditorControl editor = ShowFixture(t, note);
+            DocumentControl content = Content(editor);
+            BlockControl p = Paragraphs(editor)[0];
+            yield return 2;
+
+            content.SetCaret(p, 3);
+            yield return t.Type("o");
+            t.Check(p.text == "a goo" && p.data.LinkOf(3) == "b#h" && p.data.LinkOf(4) == "b#h", $"typing inside a link extends it: {p.text}");
+
+            content.SetCaret(p, 5);
+            yield return t.Type("x");
+            t.Check(p.text == "a goox" && p.data.LinkOf(5) == null && p.data.LinkOf(4) == "b#h", $"typing at its end stays outside it: {p.text}");
+        }
+
+        [A_XSDActionDependency("TextInput.TypedLinkConverts", "Test")]
+        private static IEnumerator<int> TypedLinkConverts(TestContext t)
+        {
+            DocumentEditorControl editor = ShowParagraphs(t, "a ");
+            DocumentControl content = Content(editor);
+            BlockControl p = Paragraphs(editor)[0];
+            yield return 2;
+
+            content.SetCaret(p, 2);
+            yield return t.Type("[[x|y]]");
+            t.Check(p.text == "a y" && p.data.LinkOf(2) == "x" && content.caretOffset == 3, $"the closing ]] makes one link run: {p.text}");
+
+            yield return t.Key(Keys.Z, Keys.LeftControl);
+            t.Check(p.text == "a [[x|y]" && p.data.LinkOf(2) == null, $"one undo gives the brackets back: {p.text}");
+        }
+
+        [A_XSDActionDependency("TextInput.LinkSuggest", "Test")]
+        private static IEnumerator<int> LinkSuggestNames(TestContext t)
+        {
+            Func<string?, string[]>? names = LinkSuggest.linkNames;
+            LinkSuggest.linkNames = _ => new[] { "Bootstrapper", "Bones", "Input" };
+
+            DocumentEditorControl editor = ShowParagraphs(t, "");
+            DocumentControl content = Content(editor);
+            BlockControl p = Paragraphs(editor)[0];
+            yield return 2;
+
+            yield return t.Type("[[Bo");
+            t.Check(LinkSuggest.IsOpen && LinkSuggest.ShownCount == 2 && LinkSuggest.ShownAt(0) == "Bootstrapper" && LinkSuggest.ShownAt(1) == "Bones",
+                "a [[ lists the names its text starts");
+
+            yield return t.Key(Keys.Down);
+            yield return t.Key(Keys.Enter);
+            t.Check(!LinkSuggest.IsOpen && p.text == "Bones" && p.data.LinkOf(0) == "Bones", $"Down and Enter take the second name as a link: {p.text}");
+
+            yield return t.Key(Keys.Z, Keys.LeftControl);
+            t.Check(p.text == "[[Bo" && p.data.LinkOf(0) == null, $"one undo restores what was typed: {p.text}");
+
+            content.SetCaret(p, p.text.Length);
+            yield return t.Type("o");
+            yield return t.Key(Keys.Escape);
+            t.Check(!LinkSuggest.IsOpen && p.text == "[[Boo", $"Escape closes the list and keeps the text: {p.text}");
+
+            LinkSuggest.linkNames = names;
+        }
+
+        [A_XSDActionDependency("TextInput.LinkSuggestHeadings", "Test")]
+        private static IEnumerator<int> LinkSuggestHeadings(TestContext t)
+        {
+            string target = Path.Combine(Path.GetTempPath(), $"aurora-headings-{Guid.NewGuid():N}.md");
+            File.WriteAllText(target, "# Phases\ntext\n## Stages\n");
+            Func<string?, string[]>? names = LinkSuggest.linkNames;
+            Func<string?, string, string?>? find = LinkIndex.findNote;
+            LinkSuggest.linkNames = _ => new[] { "Bootstrapper" };
+            LinkIndex.findNote = (home, name) => name == "Boot" ? target : null;
+
+            DocumentEditorControl editor = ShowParagraphs(t, "");
+            BlockControl p = Paragraphs(editor)[0];
+            yield return 2;
+
+            yield return t.Type("[[Boot");
+            int before = LinkSuggest.headingLoads;
+            yield return t.Type("#");
+            t.Check(LinkSuggest.ShownCount == 2 && LinkSuggest.ShownAt(0) == "Phases", "a # lists the target's headings");
+
+            yield return t.Type("Ph");
+            t.Check(LinkSuggest.headingLoads == before + 1 && LinkSuggest.ShownCount == 1 && LinkSuggest.ShownAt(0) == "Phases",
+                $"typing on filters without reading the note again: {LinkSuggest.headingLoads - before} reads");
+
+            yield return t.Key(Keys.Enter);
+            t.Check(p.text == "Boot#Phases" && p.data.LinkOf(0) == "Boot#Phases", $"Enter takes the heading link: {p.text}");
+
+            LinkSuggest.linkNames = names;
+            LinkIndex.findNote = find;
+            File.Delete(target);
+        }
+
+        [A_XSDActionDependency("TextInput.FollowLink", "Test")]
+        private static IEnumerator<int> FollowLink(TestContext t)
+        {
+            Func<string?, string, bool>? open = NotePropertiesControl.openLink;
+            string? asked = null;
+            NotePropertiesControl.openLink = (home, link) =>
+            {
+                asked = link;
+                return true;
+            };
+
+            RichTextDocument note = DocumentXml.Parse(new XElement("Document",
+                new XElement("Block", new XAttribute("StylingType", "Heading2"), new XElement("Run", new XAttribute("Text", "Phases"))),
+                new XElement("Block",
+                    new XElement("Run", new XAttribute("Text", "see"), new XAttribute("Link", "b#Phases")),
+                    new XElement("Run", new XAttribute("Text", " ")),
+                    new XElement("Run", new XAttribute("Text", "web"), new XAttribute("Link", "https://arxtis.dev")))));
+            DocumentEditorControl editor = ShowFixture(t, note);
+            DocumentControl content = Content(editor);
+            List<BlockControl> p = Paragraphs(editor);
+            yield return 2;
+
+            string? link = p[1].LinkAt(1);
+            t.Check(link == "b#Phases" && p[1].LinkAt(3) == "b#Phases" && p[1].LinkAt(5) == "https://arxtis.dev", "a slot reads the link it touches");
+            t.Check(link != null && content.FollowLink(link) && asked == "[[b#Phases]]", $"a note link goes to the host as [[target]]: {asked}");
+            t.Check(content.FollowLink("https://arxtis.dev") && asked == "https://arxtis.dev", $"a web address goes as it is: {asked}");
+
+            content.SetCaret(p[1], 0);
+            t.Check(editor.ShowHeading("phases") && content.caretBlock == p[0] && content.caretOffset == 0, "ShowHeading puts the caret on the heading");
+
+            NotePropertiesControl.openLink = open;
+        }
+
+        [A_XSDActionDependency("TextInput.HeadingRenameRewrites", "Test")]
+        private static IEnumerator<int> HeadingRenameRewrites(TestContext t)
+        {
+            RichTextDocument note = DocumentXml.Parse(new XElement("Document",
+                new XElement("Block", new XAttribute("StylingType", "Heading1"), new XElement("Run", new XAttribute("Text", "Phases"))),
+                new XElement("Block", new XElement("Run", new XAttribute("Text", "jump"), new XAttribute("Link", "#Phases"))),
+                new XElement("Block", new XAttribute("StylingType", "Heading1"), new XElement("Run", new XAttribute("Text", "Dup"))),
+                new XElement("Block", new XAttribute("StylingType", "Heading1"), new XElement("Run", new XAttribute("Text", "Dup")))));
+            DocumentEditorControl editor = ShowFixture(t, note);
+            DocumentControl content = Content(editor);
+            List<BlockControl> p = Paragraphs(editor);
+            yield return 2;
+
+            string name = Path.GetFileNameWithoutExtension(editor.path!);
+            string other = Path.Combine(Path.GetTempPath(), $"aurora-heading-{Guid.NewGuid():N}.axml");
+            string otherMd = Path.ChangeExtension(other, ".md");
+            File.WriteAllText(other, $"<Document><Block><Run Text=\"p\" Link=\"{name}#Phases\"/></Block></Document>\n");
+            File.WriteAllText(otherMd, $"[[{name}#Phases|p]] [[{name}#Other]] [[{name}#Dup]]\n");
+            Func<string?, IEnumerable<string>>? notes = NoteLinks.vaultNotes;
+            NoteLinks.vaultNotes = _ => new[] { other, otherMd };
+
+            content.SetCaret(p[0], 6);
+            for (int i = 0; i < 6; i++) yield return t.Key(Keys.Backspace);
+            yield return t.Type("Stages");
+            t.Check(File.ReadAllText(otherMd).Contains("#Phases|p"), "nothing is rewritten while the caret is in the heading");
+
+            content.SetCaret(p[1], 0);
+            t.Check(File.ReadAllText(other).Contains($"Text=\"p\" Link=\"{name}#Stages\""), $"an axml link follows the heading: {File.ReadAllText(other)}");
+            t.Check(File.ReadAllText(otherMd) == $"[[{name}#Stages|p]] [[{name}#Other]] [[{name}#Dup]]\n", $"and a markdown one: {File.ReadAllText(otherMd)}");
+            t.Check(p[1].data.LinkOf(0) == "#Stages" && p[1].text == "jump", "a link in the note itself follows too");
+
+            content.SetCaret(p[2], 3);
+            for (int i = 0; i < 3; i++) yield return t.Key(Keys.Backspace);
+            yield return t.Type("New");
+            content.SetCaret(p[1], 0);
+            t.Check(File.ReadAllText(otherMd).Contains($"[[{name}#Dup]]"), "a heading whose old text another heading still has rewrites nothing");
+
+            NoteLinks.vaultNotes = notes;
+            File.Delete(other);
+            File.Delete(otherMd);
+        }
         #endregion
 
         #region ---- lists ----

@@ -54,6 +54,9 @@
           <xs:enumeration value="LinkGraph.Backlinks" />
           <xs:enumeration value="LinkGraph.Layout" />
           <xs:enumeration value="LinkGraph.View" />
+          <xs:enumeration value="Perf.Graph.Simulate" />
+          <xs:enumeration value="LinkGraph.LinkRuns" />
+          <xs:enumeration value="LinkGraph.RenameRewritesLinks" />
           <xs:enumeration value="LinkIndex.Extract" />
           <xs:enumeration value="LinkIndex.Resolve" />
           <xs:enumeration value="LinkIndex.Incremental" />
@@ -180,6 +183,14 @@
           <xs:enumeration value="TextInput.DecorationsDraw" />
           <xs:enumeration value="TextInput.ColorPickerPicks" />
           <xs:enumeration value="TextInput.MarkdownColourRoundTrip" />
+          <xs:enumeration value="TextInput.MarkdownTableRoundTrip" />
+          <xs:enumeration value="TextInput.MarkdownLinkRoundTrip" />
+          <xs:enumeration value="TextInput.LinkRunXml" />
+          <xs:enumeration value="TextInput.TypedLinkConverts" />
+          <xs:enumeration value="TextInput.LinkSuggest" />
+          <xs:enumeration value="TextInput.LinkSuggestHeadings" />
+          <xs:enumeration value="TextInput.FollowLink" />
+          <xs:enumeration value="TextInput.HeadingRenameRewrites" />
           <xs:enumeration value="TextInput.ListMarkersPerList" />
           <xs:enumeration value="TextInput.EmptyItemEnterOutdents" />
           <xs:enumeration value="TextInput.ListMarkersDraw" />

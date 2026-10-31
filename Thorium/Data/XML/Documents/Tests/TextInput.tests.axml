@@ -26,6 +26,14 @@
 	<Test Action="TextInput.DecorationsDraw"/>
 	<Test Action="TextInput.ColorPickerPicks"/>
 	<Test Action="TextInput.MarkdownColourRoundTrip"/>
+	<Test Action="TextInput.MarkdownTableRoundTrip"/>
+	<Test Action="TextInput.MarkdownLinkRoundTrip"/>
+	<Test Action="TextInput.LinkRunXml"/>
+	<Test Action="TextInput.TypedLinkConverts"/>
+	<Test Action="TextInput.LinkSuggest"/>
+	<Test Action="TextInput.LinkSuggestHeadings"/>
+	<Test Action="TextInput.FollowLink"/>
+	<Test Action="TextInput.HeadingRenameRewrites"/>
 	<Test Action="TextInput.ListMarkersPerList"/>
 	<Test Action="TextInput.EmptyItemEnterOutdents"/>
 	<Test Action="TextInput.ListMarkersDraw"/>

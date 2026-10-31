@@ -48,7 +48,18 @@ Supersedes the "Note format: engine XML (not markdown, not JSON)" line in
 | `- ` / `- [ ] ` / `- [x] ` (indent → level) | `List=Bullet/Task`, `Level`, `Checked` |
 | `**b**` `*i*` `_i_` `~~s~~` `` `c` `` | `Bold` / `Italic` / `Strikethrough` runs, `StylingType=Code` run |
 | `---`/`+++` block at line 0 (since 2026-09-27) | `Frontmatter` attribute + owned keys — see [[note-properties]] |
-| everything else (numbered lists, links, tables, HTML) | literal text |
+| `1.` / `a.` / `i.` numbered, lettered and roman lists | `List` with marker — see [[list-markers]] |
+| pipe tables (header row, `---` separator with `:` alignment) (since 2026-11-01) | `<Table>`; see "Pipe tables" below |
+| `[[t]]`, `[[t\|alias]]`, `[text](url)` (since 2026-11-01; not after `!`) | link runs, `Link` attribute — see [[note-links]] |
+| everything else (HTML, `![[note]]`) | literal text |
+
+## Pipe tables
+
+- Reading: `MarkdownFormat.Read` is an indexed loop so `ReadTable` can look ahead for the separator row (`tableSeparator`). Cells via `TableCells`, alignment via `TableAlignments` (separator colons → each cell block's `Align`). `<br>` (`cellBreak`) splits a cell into blocks; `\|` is unescaped before the inline parse, as GFM does.
+- Writing: `TableLines`; row 0 is the header, alignment is written from row 0's blocks; a multi-block cell is joined by `<br>`. `escapable` gained `|`; `BlockLine` escapes a line starting with `|`.
+- Column widths split an A4 page's text width evenly (`tableWidth` = (210 − 2×25.4 mm) × `PageLayout.PxPerMm`, via `TextWidth(PageLayout)`). Rejected: `DocumentXml`'s 150 px default (long prose columns wrap heavily); a fit-to-content estimate.
+- The header row stays plain text. Rejected: bold header runs — the writer would strip deliberate bold.
+- Column spans do not survive Markdown (written as the cell plus empty cells).
 
 ## Why these choices
 

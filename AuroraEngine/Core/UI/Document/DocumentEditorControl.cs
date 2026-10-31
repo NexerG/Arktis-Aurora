@@ -170,6 +170,7 @@ namespace ArctisAurora.Core.UI.Document
         private void ReleaseSession()
         {
             if (session == null) return;
+            content?.LeftHeading();
             if (session.lead == content) session.lead = null;
             NoteSessions.Close(session);
             session = null;
@@ -482,6 +483,26 @@ namespace ArctisAurora.Core.UI.Document
             using (BeginStep("Horizontal line"))
                 if (content.InsertRule()) MarkDirty();
             RequestScrollToCaret();
+        }
+
+        // Puts the caret at the start of the first heading reading as the text, and scrolls to it.
+        public bool ShowHeading(string heading)
+        {
+            if (content == null) return false;
+
+            string wanted = heading.Trim();
+            List<BlockControl> blocks = content.Blocks();
+            for (int i = 0; i < blocks.Count; i++)
+            {
+                BlockControl block = blocks[i];
+                if (!NoteHeadings.IsHeading(block.stylingType)
+                    || !string.Equals(block.text.Trim(), wanted, StringComparison.OrdinalIgnoreCase)) continue;
+
+                content.SetCaret(block, 0);
+                RequestScrollToCaret();
+                return true;
+            }
+            return false;
         }
 
         private FileKind? Kind => FileTypes.KindOf(session?.path);
@@ -929,6 +950,7 @@ namespace ArctisAurora.Core.UI.Document
             if (!Writable) return;
 
             content.TypeChar(c);
+            LinkSuggest.Typed(content);
             RequestScrollToCaret();
         }
         #endregion
@@ -992,6 +1014,8 @@ namespace ArctisAurora.Core.UI.Document
         }
 
         public void RenameSheetLinks(Func<string, string?> rename) => content?.RenameSheetLinks(rename);
+
+        public void RenameNoteLinks(Func<string, string?> rename) => content?.RenameNoteLinks(rename);
 
         // Saves the picture beside the note under attachments/ and puts it in at the caret.
         public bool PasteImage(Image<Rgba32> image)

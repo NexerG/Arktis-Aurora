@@ -592,7 +592,8 @@ namespace ArctisAurora.EngineWork
         Word,
         Copy,
         Zoom,
-        AppZoom
+        AppZoom,
+        Follow
     }
 
     [A_XSDType("NamedModifier", "Input", description: "Binds a key to a modifier role the engine queries by name")]

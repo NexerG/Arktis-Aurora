@@ -5,6 +5,7 @@ using ArctisAurora.Core.Filing;
 using ArctisAurora.Core.UI.Controls;
 using ArctisAurora.Core.UI.Notes;
 using ArctisAurora.Core.UI.Text;
+using Silk.NET.GLFW;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -200,6 +201,9 @@ namespace ArctisAurora.Core.UI.Document
         [A_XSDElementProperty("Note", "UI", "The id of the footnote this run anchors; its page reserves room for it.")]
         public string? note { get; set; }
 
+        [A_XSDElementProperty("Link", "UI", "Where the run's text links to: a note by name with an optional #heading, or a web address.")]
+        public string? link { get; set; }
+
         [A_XSDElementProperty("UrlStretch", "UI", "A biblatex URL's \\Urlmuskip: stretch between its characters in pixels; absent is none.")]
         public float urlStretch { get; set; }
 
@@ -269,6 +273,33 @@ namespace ArctisAurora.Core.UI.Document
         public BlockControl(NoteBlock note) : base(note.run)
         {
             this.note = note;
+        }
+
+        // showing the pointing hand over a link
+        private bool overLink;
+
+        // The link at a character slot: the character after it, else the one before.
+        public string? LinkAt(int slot) => data.LinkOf(slot) ?? data.LinkOf(slot - 1);
+
+        public override bool OnPointerMove(PointerEvent e)
+        {
+            bool over = DocumentControl.Following && LinkAt(IndexAt(e.point)) != null;
+            if (over != overLink)
+            {
+                overLink = over;
+                UIEngine.WindowOf(this)?.os.ChangeCursor(over ? CursorShape.Hand : CursorShape.Arrow);
+            }
+            return base.OnPointerMove(e);
+        }
+
+        public override bool OnPointerExit(PointerEvent e)
+        {
+            if (overLink)
+            {
+                overLink = false;
+                UIEngine.WindowOf(this)?.os.ChangeCursor(CursorShape.Arrow);
+            }
+            return base.OnPointerExit(e);
         }
 
         public TextStyleType stylingType { get => note.stylingType; set => note.stylingType = value; }

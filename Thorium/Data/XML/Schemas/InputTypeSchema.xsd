@@ -20,6 +20,7 @@
       <xs:enumeration value="Copy" />
       <xs:enumeration value="Zoom" />
       <xs:enumeration value="AppZoom" />
+      <xs:enumeration value="Follow" />
     </xs:restriction>
   </xs:simpleType>
   <xs:attributeGroup name="NamedModifier.Attributes">

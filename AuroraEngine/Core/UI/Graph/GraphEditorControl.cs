@@ -7,11 +7,12 @@ using ArctisAurora.Core.UI.Notes;
 using ArctisAurora.Core.UI.Sheets;
 using ArctisAurora.Core.UI.Text;
 using System.Numerics;
+using System.Runtime.InteropServices;
 
 namespace ArctisAurora.Core.UI.Graph
 {
     // A vault's link graph: its files as nodes and their links as edges, laid out by force, panned and zoomed by pointer.
-    public class GraphEditorControl : ContainerControl, IFileEditor
+    public sealed class GraphEditorControl : ContainerControl, IFileEditor
     {
         // Parts its owner lays out one by one.
         private sealed class GraphParts : ContainerControl
@@ -40,22 +41,22 @@ namespace ArctisAurora.Core.UI.Graph
         private readonly record struct Node(string key, string label, NodeKind kind, PaletteRole role);
 
         // geometry, design pixels
-        private const float nodeSize = 8f;
-        private const float nodeGrowth = 1.5f;
-        private const float maxNodeSize = 24f;
-        private const float minShownSize = 3f;
-        private const float edgeWidth = 1f;
-        private const float labelGap = 2f;
-        private const float grabSlop = 4f;
-        private const float dragSlop = 3f;
-        private const int fontSize = 12;
+        private const float NodeSize = 8f;
+        private const float NodeGrowth = 1.5f;
+        private const float MaxNodeSize = 24f;
+        private const float MinShownSize = 3f;
+        private const float EdgeWidth = 1f;
+        private const float LabelGap = 2f;
+        private const float GrabSlop = 4f;
+        private const float DragSlop = 3f;
+        private const int FontSize = 12;
 
         // view
-        private const float labelZoom = 0.8f;
-        private const float minZoom = 0.1f;
-        private const float maxZoom = 4f;
-        private const float zoomStep = 1.1f;
-        private const float dimAlpha = 0.2f;
+        private const float LabelZoom = 0.8f;
+        private const float MinZoom = 0.1f;
+        private const float MaxZoom = 4f;
+        private const float ZoomStep = 1.1f;
+        private const float DimAlpha = 0.2f;
 
         private static readonly Vector2 unbounded = new Vector2(float.MaxValue, float.MaxValue);
 
@@ -90,9 +91,9 @@ namespace ArctisAurora.Core.UI.Graph
         private readonly GraphParts edgeLayer = new GraphParts();
         private readonly GraphParts nodeLayer = new GraphParts();
         private readonly GraphParts labelLayer = new GraphParts();
-        private readonly List<PanelControl> edgeParts = new List<PanelControl>();
-        private readonly List<PanelControl> nodeParts = new List<PanelControl>();
-        private readonly List<LabelControl> labelParts = new List<LabelControl>();
+        private PanelControl[] edgeParts = Array.Empty<PanelControl>();
+        private PanelControl[] nodeParts = Array.Empty<PanelControl>();
+        private LabelControl[] labelParts = Array.Empty<LabelControl>();
 
         public int nodeCount => nodes.Count;
 
@@ -151,31 +152,32 @@ namespace ArctisAurora.Core.UI.Graph
 
             if (index != null)
             {
-                Dictionary<string, int> at = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                nodes.EnsureCapacity(index.fileCount);
+                edges.EnsureCapacity(index.fileCount);
+                Dictionary<string, int> nodeOfKey = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
                 Dictionary<(int, int), int> edgeAt = new Dictionary<(int, int), int>();
                 int NodeFor(string key, string label, NodeKind kind, PaletteRole role)
                 {
-                    if (at.TryGetValue(key, out int found)) return found;
-                    at[key] = nodes.Count;
+                    if (nodeOfKey.TryGetValue(key, out int found)) return found;
+                    nodeOfKey[key] = nodes.Count;
                     nodes.Add(new Node(key, label, kind, role));
                     return nodes.Count - 1;
                 }
 
-                List<string> files = index.Files().ToList();
-                foreach (string file in files)
+                foreach (string file in index.Files())
                     NodeFor(file, LinksPanelControl.NameOf(file), index.IsSealed(file) ? NodeKind.Sealed : NodeKind.File, RoleOf(file));
 
-                foreach (string file in files)
+                foreach (string file in index.Files())
                     foreach (LinkEdge edge in index.Outgoing(file))
                     {
                         int to;
                         if (edge.resolved is string target)
-                            to = NodeFor(target, LinksPanelControl.NameOf(target), Inside(target) ? NodeKind.File : NodeKind.Boundary, RoleOf(target));
+                            to = NodeFor(target, LinksPanelControl.NameOf(target), IsInsideVault(target) ? NodeKind.File : NodeKind.Boundary, RoleOf(target));
                         else if (document.showUnresolved)
                             to = NodeFor("?" + edge.target, edge.target, NodeKind.Ghost, PaletteRole.Line);
                         else continue;
 
-                        int from = at[file];
+                        int from = nodeOfKey[file];
                         if (to == from) continue;
                         (int, int) pair = (Math.Min(from, to), Math.Max(from, to));
                         bool strong = edge.kind != LinkKind.Link;
@@ -196,12 +198,16 @@ namespace ArctisAurora.Core.UI.Graph
             }
             if (!document.showOrphans) DropOrphans();
 
-            layout = new GraphLayout(nodes.Count, edges.Select(edge => (edge.a, edge.b)).ToList());
+            (int a, int b)[] links = new (int, int)[edges.Count];
+            for (int e = 0; e < links.Length; e++)
+                links[e] = (edges[e].a, edges[e].b);
+            layout = new GraphLayout(nodes.Count, links);
             for (int i = 0; i < nodes.Count; i++)
                 if (document.pins.TryGetValue(PinKey(nodes[i].key), out Vector2 pin)) layout.Pin(i, pin);
             near = new bool[nodes.Count];
             hovered = -1;
             dragged = -1;
+            EnsureParts();
             SetTicking(true);
             InvalidateLayout();
         }
@@ -226,7 +232,35 @@ namespace ArctisAurora.Core.UI.Graph
                 edges[e] = (remap[edges[e].a], remap[edges[e].b], edges[e].strong);
         }
 
-        private bool Inside(string file) =>
+        // Grows the part arrays to the graph's counts; labels never outnumber nodes.
+        private void EnsureParts()
+        {
+            int had = edgeParts.Length;
+            if (edges.Count > had)
+            {
+                Array.Resize(ref edgeParts, edges.Count);
+                for (int i = had; i < edgeParts.Length; i++)
+                    Adopt(edgeLayer, edgeParts[i] = new PanelControl { hitTestable = false });
+            }
+
+            had = nodeParts.Length;
+            if (nodes.Count > had)
+            {
+                Array.Resize(ref nodeParts, nodes.Count);
+                for (int i = had; i < nodeParts.Length; i++)
+                    Adopt(nodeLayer, nodeParts[i] = new PanelControl { hitTestable = false });
+            }
+
+            had = labelParts.Length;
+            if (nodes.Count > had)
+            {
+                Array.Resize(ref labelParts, nodes.Count);
+                for (int i = had; i < labelParts.Length; i++)
+                    Adopt(labelLayer, labelParts[i] = new LabelControl { hitTestable = false, fontSize = FontSize });
+            }
+        }
+
+        private bool IsInsideVault(string file) =>
             index != null && file.StartsWith(Path.TrimEndingDirectorySeparator(index.vault) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
 
         private string PinKey(string key) => index != null && !key.StartsWith('?') ? Path.GetRelativePath(index.vault, key) : key;
@@ -267,52 +301,66 @@ namespace ArctisAurora.Core.UI.Graph
             nodeLayer.Arrange(finalRect);
             labelLayer.Arrange(finalRect);
 
-            float hairline = UIScaling.Hairline(this, edgeWidth);
-            for (int e = 0; e < edges.Count; e++)
+            Vector2 centre = Centre;
+            Vector2 pan = this.pan;
+            float zoom = this.zoom;
+            int hovered = this.hovered;
+            bool[] near = this.near;
+            Vector2[] position = layout.position;
+            LayoutRect hidden = Hidden;
+            PanelControl[] edgeParts = this.edgeParts;
+            PanelControl[] nodeParts = this.nodeParts;
+            LabelControl[] labelParts = this.labelParts;
+            ReadOnlySpan<(int a, int b, bool strong)> edgeSpan = CollectionsMarshal.AsSpan(edges);
+            ReadOnlySpan<Node> nodeSpan = CollectionsMarshal.AsSpan(nodes);
+
+            float hairline = UIScaling.Hairline(this, EdgeWidth);
+            for (int e = 0; e < edgeSpan.Length; e++)
             {
-                (int a, int b, bool strong) = edges[e];
-                PanelControl part = Pooled(edgeParts, edgeLayer, e);
-                Vector2 from = Screen(a);
-                Vector2 d = Screen(b) - from;
+                (int a, int b, bool strong) = edgeSpan[e];
+                PanelControl part = edgeParts[e];
+                Vector2 from = centre + (position[a] - pan) * zoom;
+                Vector2 d = (position[b] - position[a]) * zoom;
                 float length = d.Length();
                 part.role = strong ? PaletteRole.MutedInk : PaletteRole.Line;
-                part.alpha = hovered >= 0 && a != hovered && b != hovered ? dimAlpha : 1f;
+                part.alpha = hovered >= 0 && a != hovered && b != hovered ? DimAlpha : 1f;
                 part.rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.Atan2(d.Y, d.X));
                 Vector2 mid = from + d * 0.5f;
                 part.Arrange(new LayoutRect(mid.X - length * 0.5f, mid.Y - hairline * 0.5f, length, hairline));
             }
-            for (int e = edges.Count; e < edgeParts.Count; e++)
-                edgeParts[e].Arrange(Hidden);
+            for (int e = edgeSpan.Length; e < edgeParts.Length; e++)
+                edgeParts[e].Arrange(hidden);
 
             int label = 0;
-            for (int i = 0; i < nodes.Count; i++)
+            for (int i = 0; i < nodeSpan.Length; i++)
             {
-                PanelControl part = Pooled(nodeParts, nodeLayer, i);
+                ref readonly Node node = ref nodeSpan[i];
+                PanelControl part = nodeParts[i];
                 float size = Size(i);
-                Vector2 at = Screen(i);
-                part.role = nodes[i].kind switch
+                Vector2 at = centre + (position[i] - pan) * zoom;
+                part.role = node.kind switch
                 {
                     NodeKind.Boundary or NodeKind.Sealed => PaletteRole.MutedInk,
                     NodeKind.Ghost => PaletteRole.Line,
-                    _ => nodes[i].role
+                    _ => node.role
                 };
-                part.alpha = hovered >= 0 && !near[i] ? dimAlpha : 1f;
+                part.alpha = hovered >= 0 && !near[i] ? DimAlpha : 1f;
                 part.cornerRadius = new CornerRadii(size * 0.5f);
                 part.Arrange(new LayoutRect(at.X - size * 0.5f, at.Y - size * 0.5f, size, size));
 
-                if (zoom < labelZoom && !(hovered >= 0 && near[i])) continue;
-                LabelControl text = Label(label++);
-                text.text = nodes[i].label;
-                text.role = nodes[i].kind is NodeKind.File ? PaletteRole.Ink : PaletteRole.MutedInk;
+                if (zoom < LabelZoom && !(hovered >= 0 && near[i])) continue;
+                LabelControl text = labelParts[label++];
+                text.text = node.label;
+                text.role = node.kind is NodeKind.File ? PaletteRole.Ink : PaletteRole.MutedInk;
                 text.alpha = part.alpha;
                 text.Measure(unbounded);
                 Vector2 extent = text.DesiredSize;
-                text.Arrange(new LayoutRect(at.X - extent.X * 0.5f, at.Y + size * 0.5f + labelGap, extent.X, extent.Y));
+                text.Arrange(new LayoutRect(at.X - extent.X * 0.5f, at.Y + size * 0.5f + LabelGap, extent.X, extent.Y));
             }
-            for (int i = nodes.Count; i < nodeParts.Count; i++)
-                nodeParts[i].Arrange(Hidden);
-            for (int i = label; i < labelParts.Count; i++)
-                labelParts[i].Arrange(Hidden);
+            for (int i = nodeSpan.Length; i < nodeParts.Length; i++)
+                nodeParts[i].Arrange(hidden);
+            for (int i = label; i < labelParts.Length; i++)
+                labelParts[i].Arrange(hidden);
 
             edgeLayer.Settle(finalRect);
             nodeLayer.Settle(finalRect);
@@ -323,34 +371,12 @@ namespace ArctisAurora.Core.UI.Graph
 
         private Vector2 Centre => new Vector2(arrangedRect.x + arrangedRect.width * 0.5f, arrangedRect.y + arrangedRect.height * 0.5f);
 
-        private float Size(int node) => MathF.Max(minShownSize, MathF.Min(maxNodeSize, nodeSize + nodeGrowth * degree[node]) * zoom);
+        private float Size(int node) => MathF.Max(MinShownSize, MathF.Min(MaxNodeSize, NodeSize + NodeGrowth * degree[node]) * zoom);
 
         // A node's position on screen, and a screen point's in the layout.
         public Vector2 Screen(int node) => Centre + (layout.position[node] - pan) * zoom;
 
-        private Vector2 ToLayout(Vector2 point) => pan + (point - Centre) / zoom;
-
-        private PanelControl Pooled(List<PanelControl> pool, GraphParts layer, int index)
-        {
-            while (pool.Count <= index)
-            {
-                PanelControl part = new PanelControl { hitTestable = false };
-                Adopt(layer, part);
-                pool.Add(part);
-            }
-            return pool[index];
-        }
-
-        private LabelControl Label(int index)
-        {
-            while (labelParts.Count <= index)
-            {
-                LabelControl label = new LabelControl { hitTestable = false, fontSize = fontSize };
-                Adopt(labelLayer, label);
-                labelParts.Add(label);
-            }
-            return labelParts[index];
-        }
+        private Vector2 ToLayout(in Vector2 point) => pan + (point - Centre) / zoom;
 
         private void Adopt(GraphParts layer, Control part)
         {
@@ -363,10 +389,13 @@ namespace ArctisAurora.Core.UI.Graph
 
         #region ---- pointer ----
         // The topmost node under a point; -1 for none.
-        public int NodeAt(Vector2 point)
+        public int NodeAt(in Vector2 point)
         {
-            for (int i = nodes.Count - 1; i >= 0; i--)
-                if (Vector2.Distance(point, Screen(i)) <= Size(i) * 0.5f + grabSlop) return i;
+            Vector2 at = ToLayout(in point);
+            float toLayout = 1f / zoom;
+            Vector2[] position = layout.position;
+            for (int i = position.Length - 1; i >= 0; i--)
+                if (Vector2.Distance(at, position[i]) <= (Size(i) * 0.5f + GrabSlop) * toLayout) return i;
             return -1;
         }
 
@@ -388,7 +417,7 @@ namespace ArctisAurora.Core.UI.Graph
         public override void OnDrag(PointerEvent e)
         {
             base.OnDrag(e);
-            moved |= Vector2.Distance(e.point, pressPoint) > dragSlop;
+            moved |= Vector2.Distance(e.point, pressPoint) > DragSlop;
             if (!moved) return;
 
             if (dragged >= 0)
@@ -416,9 +445,9 @@ namespace ArctisAurora.Core.UI.Graph
         // A click on a node opens its file.
         public override bool OnPointerRelease(PointerEvent e)
         {
+            if (e.button != PointerEvent.leftButton || moved) return base.OnPointerRelease(e);
             int node = NodeAt(e.point);
-            if (e.button != PointerEvent.leftButton || moved || node < 0 || nodes[node].kind == NodeKind.Ghost)
-                return base.OnPointerRelease(e);
+            if (node < 0 || nodes[node].kind == NodeKind.Ghost) return base.OnPointerRelease(e);
 
             LinkIndex.openFile?.Invoke(nodes[node].key);
             return true;
@@ -443,7 +472,7 @@ namespace ArctisAurora.Core.UI.Graph
             if (e.delta.Y == 0f) return base.OnPointerScroll(e);
 
             Vector2 anchor = ToLayout(e.point);
-            zoom = Math.Clamp(zoom * MathF.Pow(zoomStep, e.delta.Y), minZoom, maxZoom);
+            zoom = Math.Clamp(zoom * MathF.Pow(ZoomStep, e.delta.Y), MinZoom, MaxZoom);
             pan = anchor - (e.point - Centre) / zoom;
             InvalidateArrange();
             return true;
@@ -453,12 +482,15 @@ namespace ArctisAurora.Core.UI.Graph
         {
             if (node == hovered) return;
             hovered = node;
+            bool[] near = this.near;
             Array.Clear(near);
             if (node >= 0)
             {
                 near[node] = true;
-                foreach ((int a, int b, _) in edges)
+                ReadOnlySpan<(int a, int b, bool strong)> edgeSpan = CollectionsMarshal.AsSpan(edges);
+                for (int e = 0; e < edgeSpan.Length; e++)
                 {
+                    (int a, int b, _) = edgeSpan[e];
                     if (a == node) near[b] = true;
                     else if (b == node) near[a] = true;
                 }

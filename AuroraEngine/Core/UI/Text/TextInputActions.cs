@@ -1,6 +1,7 @@
 using ArctisAurora.Core.Filing;
 using ArctisAurora.Core.Registry;
 using ArctisAurora.Core.UI.Document;
+using ArctisAurora.Core.UI.Notes;
 using ArctisAurora.Core.UI.Tex;
 using ArctisAurora.EngineWork;
 using SixLabors.ImageSharp;
@@ -144,6 +145,8 @@ namespace ArctisAurora.Core.UI.Text
         [A_XSDActionDependency("Text.NewBlock", "Input", "Splits the caret's block in two, or commits a standalone field")]
         public static void NewBlock()
         {
+            if (LinkSuggest.Accept()) return;
+
             DocumentEditorControl next = Editor();
             if (next != null)
             {
@@ -394,7 +397,11 @@ namespace ArctisAurora.Core.UI.Text
         #endregion
 
         [A_XSDActionDependency("Text.Indent", "Input", "Nests the list items under the caret one level deeper")]
-        public static void Indent() => Editor()?.ShiftListLevel(1);
+        public static void Indent()
+        {
+            if (LinkSuggest.Accept()) return;
+            Editor()?.ShiftListLevel(1);
+        }
 
         [A_XSDActionDependency("Text.Outdent", "Input", "Moves the list items under the caret one level out")]
         public static void Outdent() => Editor()?.ShiftListLevel(-1);
@@ -429,7 +436,11 @@ namespace ArctisAurora.Core.UI.Text
         }
 
         [A_XSDActionDependency("Text.Cancel", "Input", "Abandons the edit in a standalone field and restores what it held")]
-        public static void Cancel() => Box()?.Cancel();
+        public static void Cancel()
+        {
+            if (LinkSuggest.Dismiss()) return;
+            Box()?.Cancel();
+        }
 
         [A_XSDActionDependency("Text.Save", "Input", "Writes the focused note back to the file it was loaded from")]
         public static void Save() => Editor()?.Save();
@@ -455,10 +466,16 @@ namespace ArctisAurora.Core.UI.Text
         public static void CaretRight() => Move(CaretMove.Right);
 
         [A_XSDActionDependency("Text.CaretUp", "Input")]
-        public static void CaretUp() => Move(CaretMove.Up);
+        public static void CaretUp()
+        {
+            if (!LinkSuggest.Move(-1)) Move(CaretMove.Up);
+        }
 
         [A_XSDActionDependency("Text.CaretDown", "Input")]
-        public static void CaretDown() => Move(CaretMove.Down);
+        public static void CaretDown()
+        {
+            if (!LinkSuggest.Move(1)) Move(CaretMove.Down);
+        }
 
         [A_XSDActionDependency("Text.CaretLineStart", "Input")]
         public static void CaretLineStart() => Move(CaretMove.LineStart);

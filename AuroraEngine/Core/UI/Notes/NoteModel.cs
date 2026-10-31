@@ -136,6 +136,7 @@ namespace ArctisAurora.Core.UI.Notes
                 leaderWidth = appended.fill ? appended.leaderWidth : 0f,
                 leaderInset = appended.fill ? appended.leaderInset : 0f,
                 note = appended.note,
+                link = appended.image == null && appended.math == null && appended.sheet == null ? appended.link : null,
                 urlStretch = appended.urlStretch,
                 urlWidth = appended.urlWidth,
                 urlShrink = appended.urlShrink,

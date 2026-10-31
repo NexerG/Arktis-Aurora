@@ -41,6 +41,8 @@ namespace Thorium
             bool migrated = VaultWindows.Migrate();
             SessionLayout.tabFactory = VaultBrowserControl.BuildTab;
             NotePropertiesControl.openLink = VaultBrowserControl.OpenLink;
+            LinkSuggest.linkNames = VaultBrowserControl.NoteNames;
+            NoteLinks.vaultNotes = VaultBrowserControl.VaultNotes;
             SheetBook.findSheet = VaultBrowserControl.FindSheet;
             SheetBook.vaultSheets = VaultBrowserControl.VaultSheets;
             SheetBook.vaultNotes = VaultBrowserControl.VaultNotes;

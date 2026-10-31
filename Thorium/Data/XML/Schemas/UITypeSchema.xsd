@@ -364,6 +364,7 @@
     <xs:attribute name="LeaderWidth" type="xs:float" />
     <xs:attribute name="LeaderInset" type="xs:float" />
     <xs:attribute name="Note" type="xs:string" />
+    <xs:attribute name="Link" type="xs:string" />
     <xs:attribute name="UrlStretch" type="xs:float" />
     <xs:attribute name="UrlWidth" type="xs:float" />
     <xs:attribute name="UrlShrink" type="xs:float" />

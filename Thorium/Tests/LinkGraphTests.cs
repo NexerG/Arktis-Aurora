@@ -4,6 +4,7 @@ using ArctisAurora.Core.UI;
 using ArctisAurora.Core.UI.Containers;
 using ArctisAurora.Core.UI.Containers.Tabs;
 using ArctisAurora.Core.UI.Containers.Workspace;
+using ArctisAurora.Core.UI.Document;
 using ArctisAurora.Core.UI.Graph;
 using ArctisAurora.Core.UI.Notes;
 using ArctisAurora.Core.UI.Sheets;
@@ -11,6 +12,7 @@ using ArctisAurora.Core.UI.Text;
 using ArctisAurora.EngineWork;
 using ArctisAurora.EngineWork.Rendering;
 using System.Numerics;
+using System.Xml.Linq;
 using Thorium.Editor;
 
 namespace Thorium.Tests
@@ -109,7 +111,7 @@ namespace Thorium.Tests
             File.WriteAllText(y, "plain\n");
             File.WriteAllText(Path.Combine(a, "lone.md"), "nothing\n");
             File.WriteAllText(Path.Combine(a, "cross.md"), "![[@B/Budget.sheet.axml#Data!A1]]\n");
-            string graph = Path.Combine(a, "View" + GraphDocument.extension);
+            string graph = Path.Combine(a, "View" + GraphDocument.Extension);
             GraphDocument.Blank("View").Save(graph);
 
             string? folder = LinkIndex.cacheFolder;
@@ -168,6 +170,52 @@ namespace Thorium.Tests
             Forget(b);
         }
 
+        // A thousand linked notes settling, every label shown.
+        [A_XSDActionDependency("Perf.Graph.Simulate", "Test")]
+        private static IEnumerator<int> Simulate(TestContext t)
+        {
+            const int Notes = 1000;
+            string vault = TempVault();
+            for (int i = 0; i < Notes; i++)
+                File.WriteAllText(Path.Combine(vault, $"n{i}.md"), $"[[n{(i * 7 + 1) % Notes}]] [[n{(i * 13 + 5) % Notes}]]\n");
+            string graph = Path.Combine(vault, "Perf.graph.axml");
+            GraphDocument.Blank("Perf").Save(graph);
+
+            string? folder = LinkIndex.cacheFolder;
+            LinkIndex.cacheFolder = vault + "-cache";
+            t.Show(new StackPanelControl());
+            VaultWindows.OpenInNewWindow(vault);
+            RenderWindow? window = null;
+            foreach (RenderWindow open in VaultWindows.Editors())
+                if (open != Engine.primary)
+                    foreach (string root in open.roots)
+                        if (KnownVaults.SamePath(root, vault)) window = open;
+            t.Check(window != null, "the vault opens in a window");
+            if (window == null) yield break;
+            yield return 3;
+
+            TabItemControl tab = SessionLayout.tabFactory(graph, false);
+            GraphEditorControl? editor = TabViewControl.FileEditorOf(tab) as GraphEditorControl;
+            t.Check(editor != null && editor.nodeCount >= Notes, $"the graph holds every note: {editor?.nodeCount}");
+            if (editor == null) yield break;
+
+            t.Show(tab);
+            yield return 30;
+            t.StartMeasure();
+            yield return 120;
+            yield return t.EndMeasure();
+            t.Check(!editor.layout.settled, "the layout was still settling while measured");
+
+            t.Show(new StackPanelControl());
+            tab.Destroy();
+            VaultWindows.CloseWindow(window);
+            yield return 3;
+
+            LinkIndex.cacheFolder = folder;
+            if (Directory.Exists(vault + "-cache")) Directory.Delete(vault + "-cache", true);
+            Forget(vault);
+        }
+
         private static List<string> Labels(Control root)
         {
             List<string> labels = new List<string>();
@@ -178,6 +226,63 @@ namespace Thorium.Tests
             }
             Walk(root);
             return labels;
+        }
+
+        [A_XSDActionDependency("LinkGraph.LinkRuns", "Test")]
+        private static IEnumerator<int> LinkRuns(TestContext t)
+        {
+            string vault = TempVault();
+            string a = Path.Combine(vault, "a.axml");
+            File.WriteAllText(a, "<Document><Block><Run Text=\"to b\" Link=\"b#h\"/><Run Text=\"web\" Link=\"https://arxtis.dev\"/>"
+                                 + "<Run Text=\"here\" Link=\"#top\"/></Block></Document>\n");
+            File.WriteAllText(Path.Combine(vault, "b.md"), "# h\n");
+
+            string? folder = LinkIndex.cacheFolder;
+            LinkIndex.cacheFolder = vault + "-cache";
+            LinkIndex index = LinkIndex.For(vault, VaultManifest.IdOf(vault));
+            index.Refresh();
+
+            IReadOnlyList<LinkEdge> edges = index.Outgoing(a);
+            t.Check(edges.Count == 1 && edges[0].kind == LinkKind.Link && edges[0].target == "b#h"
+                && edges[0].resolved != null && edges[0].resolved!.EndsWith("b.md"),
+                $"a Link run is one resolved link edge; web and same-note links add none: {string.Join(", ", edges)}");
+
+            LinkIndex.Close(vault);
+            LinkIndex.cacheFolder = folder;
+            Forget(vault);
+            if (Directory.Exists(vault + "-cache")) Directory.Delete(vault + "-cache", true);
+            yield break;
+        }
+
+        [A_XSDActionDependency("LinkGraph.RenameRewritesLinks", "Test")]
+        private static IEnumerator<int> RenameRewritesLinks(TestContext t)
+        {
+            string folder = Path.Combine(Path.GetTempPath(), $"aurora-rename-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(folder);
+            string a = Path.Combine(folder, "a.axml");
+            string c = Path.Combine(folder, "c.md");
+            string b = Path.Combine(folder, "b.md");
+            string d = Path.Combine(folder, "d.md");
+            string xml = "<Document><Block><Run Text=\"b\" Link=\"b\"/><Run Text=\" and \"/><Run Text=\"sec\" Link=\"b#h\"/></Block></Document>\n";
+            File.WriteAllText(a, xml);
+            File.WriteAllText(c, "[[b|x]] [[b]] [[b#h]] ![[b.sheet.axml#Data!A1]] [[bb]]\n");
+            File.WriteAllText(b, "# h\n");
+
+            File.Move(b, d);
+            NoteLinks.Renamed(b, d, new[] { a, c });
+
+            string ax = File.ReadAllText(a);
+            t.Check(ax.Contains("<Run Text=\"d\" Link=\"d\"/>") && ax.Contains("<Run Text=\"sec\" Link=\"d#h\"/>"),
+                $"axml links follow the rename, and a run's text where it showed the old name: {ax}");
+            t.Check(File.ReadAllText(c) == "[[d|x]] [[d]] [[d#h]] ![[b.sheet.axml#Data!A1]] [[bb]]\n",
+                $"markdown links keep their alias and heading; embeds and other names are left: {File.ReadAllText(c)}");
+
+            RichTextDocument open = DocumentXml.Parse(XElement.Parse(xml));
+            bool changed = open.RenameNoteLinks(target => target == "b" ? "d" : target == "b#h" ? "d#h" : null);
+            t.Check(changed && open.Blocks()[0].run.text == "d and sec", $"an open note's links follow: {open.Blocks()[0].run.text}");
+
+            Directory.Delete(folder, true);
+            yield break;
         }
 
         private static string TempVault()

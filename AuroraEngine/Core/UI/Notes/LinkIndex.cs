@@ -68,6 +68,8 @@ namespace ArctisAurora.Core.UI.Notes
         #region ---- queries ----
         public IEnumerable<string> Files() => files.Keys;
 
+        public int fileCount => files.Count;
+
         public IReadOnlyList<LinkEdge> Outgoing(string path) =>
             files.TryGetValue(Path.GetFullPath(path), out FileLinks? links) ? links.edges : Array.Empty<LinkEdge>();
 
@@ -172,6 +174,8 @@ namespace ArctisAurora.Core.UI.Notes
                 if ((string?)run.Attribute("Sheet") is string sheet) edges.Add(new LinkEdge(path, sheet, LinkKind.Embed, null));
                 if ((string?)run.Attribute("Math") is string math)
                     foreach (string reference in SheetLinks.MathReferences(math)) edges.Add(new LinkEdge(path, reference, LinkKind.Math, null));
+                if ((string?)run.Attribute("Link") is string linked && !linked.StartsWith('#') && !MarkdownFormat.IsWebAddress(linked))
+                    edges.Add(new LinkEdge(path, linked, LinkKind.Link, null));
                 if ((string?)run.Attribute("Text") is string runText) FromText(path, runText, false, edges);
             }
         }

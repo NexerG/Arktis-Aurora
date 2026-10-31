@@ -9,7 +9,7 @@ namespace ArctisAurora.Core.UI.Graph
     // A graph view's settings: <Graph Version Name Orphans Unresolved><Pin Path X Y/></Graph>, pins keyed by vault-relative path.
     public sealed class GraphDocument
     {
-        public const string extension = ".graph.axml";
+        public const string Extension = ".graph.axml";
 
         public string? name;
         public bool showOrphans = true;
@@ -17,7 +17,7 @@ namespace ArctisAurora.Core.UI.Graph
         public readonly Dictionary<string, Vector2> pins = new Dictionary<string, Vector2>(StringComparer.OrdinalIgnoreCase);
         public bool unsaved;
 
-        public static bool IsGraph(string path) => path.EndsWith(extension, StringComparison.OrdinalIgnoreCase);
+        public static bool IsGraph(string path) => path.EndsWith(Extension,StringComparison.OrdinalIgnoreCase);
 
         public static GraphDocument Blank(string? name) => new GraphDocument { name = name };
 
