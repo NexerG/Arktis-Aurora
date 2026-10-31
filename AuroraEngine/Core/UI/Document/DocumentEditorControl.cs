@@ -229,6 +229,13 @@ namespace ArctisAurora.Core.UI.Document
                     content.AddChild(new SealedControl(locked));
                     continue;
                 }
+                if (entry is NoteToc toc)
+                {
+                    TocControl contents = new TocControl(toc);
+                    contents.Rebuild(document.Blocks());
+                    content.AddChild(contents);
+                    continue;
+                }
 
                 BlockControl block = new BlockControl((NoteBlock)entry);
                 block.StartEffects();
@@ -607,6 +614,39 @@ namespace ArctisAurora.Core.UI.Document
                 else Log.Info($"a table cannot go inside another table; insert refused.");
             }
             RequestScrollToCaret();
+        }
+
+        // A table of contents after the caret's block.
+        public void InsertToc()
+        {
+            if (!Writable) return;
+            if (Source || Kind is FileKind.Markdown or FileKind.PlainText)
+            {
+                Log.Info($"a {Kind} note cannot store a table of contents; insert refused.");
+                return;
+            }
+            if (content.caretBlock is not BlockControl block || block.parent != content)
+            {
+                Log.Info($"a table of contents cannot go inside a table; insert refused.");
+                return;
+            }
+
+            PutNodes("Insert table of contents", Array.IndexOf(activeDocument.blocks, block.note) + 1, [], [new NoteToc()]);
+        }
+
+        public void DeleteToc(NoteToc toc)
+        {
+            int index = Writable ? Array.IndexOf(activeDocument.blocks, toc) : -1;
+            if (index >= 0) PutNodes("Delete table of contents", index, [toc], []);
+        }
+
+        private void PutNodes(string label, int index, NoteNode[] before, NoteNode[] after)
+        {
+            NoteHeader header = NoteHeader.Of(activeDocument);
+            NodesEdit edit = new NodesEdit(activeDocument, index, before, after, header, header);
+            using (BeginStep(label)) session?.undo.Push(edit);
+            edit.Redo();
+            MarkDirty();
         }
 
         // A row or column command on the caret's table; nothing outside one.

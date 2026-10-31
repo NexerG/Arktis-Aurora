@@ -49,6 +49,11 @@
 	<Test Action="TextInput.TableSplitsAcrossPages"/>
 	<Test Action="TextInput.TableInsertUndo"/>
 	<Test Action="TextInput.TableInsertRefusedInMarkdown"/>
+	<Test Action="TextInput.TocXmlRoundTrip"/>
+	<Test Action="TextInput.TocRebuilds"/>
+	<Test Action="TextInput.TocFollow"/>
+	<Test Action="TextInput.TocInsertUndo"/>
+	<Test Action="TextInput.TocInsertRefusedInMarkdown"/>
 	<Test Action="TextInput.TableRowsAndColumns"/>
 	<Test Action="TextInput.TableTabAddsRow"/>
 	<Test Action="TextInput.TableListInCell"/>

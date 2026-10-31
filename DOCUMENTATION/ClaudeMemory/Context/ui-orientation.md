@@ -424,6 +424,7 @@ Why: [[ui-palettes]].
 - **ClosedVaultControl** (Thorium, `PanelControl`, `IFileEditor`) — placeholder tab "<vault> is closed/locked" for a sticky's link to a vault no window lists, with an "Open vault" button (`VaultWindows.OpenSomewhere`); `Reopen()` swaps the real editor in. Built by `VaultBrowserControl.BuildClosedTab`. See [[multi-vault-workspace]].
 - **LockedFileControl** · IFileEditor — placeholder tab for a password-encrypted file: masked field, "Remember password for this session" checkbox, Unlock. `UnlockPrompts.Ask` queues prompts for cross-file rewrites.
 - **SealedControl** — the `[ENCRYPTED]` button standing in for a locked `NoteSealed` node in `DocumentControl`; click unlocks through `DocumentEditorControl.UnlockSeal`.
+- **TocControl** — a `StackPanelControl` standing in for a `NoteToc` node in `DocumentControl`: one clickable row per heading, indented by level, rebuilt by `DocumentControl.RefreshTocs` (`Rebuild`); a press calls `Show(heading)` → `DocumentEditorControl.ShowHeading`. `contextMenu = "toc"`, `stopsContextMenu = true`. Built in `ShowNodes`, recognised in `NodeOf`; drawn by `PdfExport.Record`.
 
 ## Context menus
 

@@ -598,6 +598,7 @@ namespace ArctisAurora.Core.UI.Document
         {
             NoteTable table => table.rows.Sum(row => row.Sum(cell => cell.blocks.Length)),
             NoteSealed => 0,
+            NoteToc => 0,
             _ => 1
         };
 

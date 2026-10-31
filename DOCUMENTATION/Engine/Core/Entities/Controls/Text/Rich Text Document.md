@@ -767,6 +767,22 @@ set the column to `width` and lay the table out again
 
 See `ClaudeMemory/Decisions/document-tables.md`.
 
+## Table of contents
+A note can hold a live table of contents, written `<Toc/>` with an optional `Depth` of 1 to 6 (absent means all six levels). It is a note-level entry like a sealed block, not text: it counts for no flat blocks, so the caret, selections and addresses never see it. Its view, `TocControl`, shows one clickable row per heading, indented by level, and rebuilds itself as headings are added, removed, renamed or re-levelled. Pressing a row puts the caret at the start of that heading and scrolls to it, the same way a `[[#heading]]` link does. "Insert table of contents" in the Note menu adds one and right-clicking it offers "Delete table of contents"; each is a single undo step. A ToC is refused in Markdown and plain-text notes, because only `.axml` can hold it.
+
+#### Refresh Tocs (change)
+	if the change is not Text, Kind, Inserted, Removed, Table or Nodes
+		return
+	if the change is a Text change of one block that is not a heading
+		return
+	for each ToC in the view
+		collect the (level, text) of every heading in the flat blocks, down to its depth
+		if the list equals the one it shows
+			continue
+		rebuild its rows
+
+See `ClaudeMemory/Decisions/note-links.md`.
+
 ## Pictures
 A picture in a note is one character, U+FFFC, whose style span names a picture file — Word's model, where every picture is anchored to a place in the text. Because it is a character, the caret steps over it, a selection covers it, Delete removes it and undo puts it back without any of that code knowing pictures exist. The span holds the file path (absolute in memory, relative to the note on disk) and an optional width and height; with no size the picture shows at its own size, shrunk to the column, and with one side set the other follows its aspect.
 

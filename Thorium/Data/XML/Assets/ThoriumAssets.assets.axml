@@ -22,6 +22,7 @@
 	<Asset Type="ContextMenuAsset" Name="file"      Source="XML/Documents/Menus/File.menu.axml"/>
 	<Asset Type="ContextMenuAsset" Name="edit"      Source="XML/Documents/Menus/Edit.menu.axml"/>
 	<Asset Type="ContextMenuAsset" Name="note"      Source="XML/Documents/Menus/Note.menu.axml"/>
+	<Asset Type="ContextMenuAsset" Name="toc"       Source="XML/Documents/Menus/Toc.menu.axml"/>
 	<Asset Type="ContextMenuAsset" Name="sheet"     Source="XML/Documents/Menus/Sheet.menu.axml"/>
 	<Asset Type="ContextMenuAsset" Name="planner"   Source="XML/Documents/Menus/Planner.menu.axml"/>
 	<Asset Type="ContextMenuAsset" Name="planner-category" Source="XML/Documents/Menus/PlannerCategory.menu.axml"/>

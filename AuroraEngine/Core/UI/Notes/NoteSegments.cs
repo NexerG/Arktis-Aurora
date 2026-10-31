@@ -395,6 +395,7 @@ namespace ArctisAurora.Core.UI.Notes
                         break;
                     case "Block":
                     case "Table":
+                    case "Toc":
                         if (next >= blocks.Length) return null;
                         marks.Add((NoteSegmentKind.Entry, null, [blocks[next++]], at));
                         reader.Skip();

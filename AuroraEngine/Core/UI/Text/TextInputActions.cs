@@ -1,6 +1,7 @@
 using ArctisAurora.Core.Filing;
 using ArctisAurora.Core.Registry;
 using ArctisAurora.Core.UI.Document;
+using ArctisAurora.Core.UI.Menus;
 using ArctisAurora.Core.UI.Notes;
 using ArctisAurora.Core.UI.Tex;
 using ArctisAurora.EngineWork;
@@ -367,6 +368,24 @@ namespace ArctisAurora.Core.UI.Text
         #region ---- tables ----
         [A_XSDActionDependency("Table.Insert", "Input", "Inserts a 3x3 table after the caret's paragraph")]
         public static void InsertTable() => Editor()?.InsertTable();
+
+        [A_XSDActionDependency("Toc.Insert", "Input", "Inserts a live table of contents after the caret's paragraph")]
+        public static void InsertToc() => Editor()?.InsertToc();
+
+        [A_XSDActionDependency("Toc.Delete", "Input", "Deletes the table of contents the menu opened on")]
+        public static void DeleteToc()
+        {
+            TocControl? toc = null;
+            for (Control? c = ContextMenus.target; c != null; c = c.parent as Control)
+            {
+                if (c is TocControl found) toc = found;
+                else if (toc != null && c is DocumentEditorControl editor)
+                {
+                    editor.DeleteToc(toc.note);
+                    return;
+                }
+            }
+        }
 
         [A_XSDActionDependency("Table.RowAbove", "Input", "Inserts a row above the caret's")]
         public static void InsertRowAbove() => Editor()?.ChangeTable("Insert row", d => d.InsertTableRow(false));

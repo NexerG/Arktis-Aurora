@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ContextMenu>
+	<ContextButton Text="Delete table of contents" Action="Toc.Delete"/>
+</ContextMenu>

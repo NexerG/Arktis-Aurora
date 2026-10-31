@@ -242,6 +242,11 @@
           <xs:enumeration value="TextInput.TableSplitsAcrossPages" />
           <xs:enumeration value="TextInput.TableInsertUndo" />
           <xs:enumeration value="TextInput.TableInsertRefusedInMarkdown" />
+          <xs:enumeration value="TextInput.TocXmlRoundTrip" />
+          <xs:enumeration value="TextInput.TocRebuilds" />
+          <xs:enumeration value="TextInput.TocFollow" />
+          <xs:enumeration value="TextInput.TocInsertUndo" />
+          <xs:enumeration value="TextInput.TocInsertRefusedInMarkdown" />
           <xs:enumeration value="TextInput.TableRowsAndColumns" />
           <xs:enumeration value="TextInput.TableTabAddsRow" />
           <xs:enumeration value="TextInput.TableListInCell" />
@@ -665,6 +670,8 @@
           <xs:enumeration value="Text.InsertPicture" />
           <xs:enumeration value="Math.Edit" />
           <xs:enumeration value="Table.Insert" />
+          <xs:enumeration value="Toc.Insert" />
+          <xs:enumeration value="Toc.Delete" />
           <xs:enumeration value="Table.RowAbove" />
           <xs:enumeration value="Table.RowBelow" />
           <xs:enumeration value="Table.ColumnLeft" />

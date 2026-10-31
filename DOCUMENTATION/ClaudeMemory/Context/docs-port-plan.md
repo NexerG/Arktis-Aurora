@@ -1,7 +1,7 @@
-# Port the docs vault to Thorium .axml — stages 1 and 2 landed, 3 to 5 not started
+# Port the docs vault to Thorium .axml — stages 1 to 3 landed, 4 and 5 not started
 
-**Agreed:** 2026-10-31/11-01. **Stage 1 landed 2026-11-01** (test-verified, NOT GUI-verified). **Stage 2 landed 2026-11-01** (test-verified, NOT GUI-verified).
-**What was built and why:** `../Decisions/note-links.md` (stage 2), `../Decisions/note-file-formats.md` (stage 1, pipe tables).
+**Agreed:** 2026-10-31/11-01. **Stage 1 landed 2026-11-01** (test-verified, NOT GUI-verified). **Stage 2 landed 2026-11-01** (test-verified, NOT GUI-verified). **Stage 3 landed 2026-11-01** (test-verified, NOT GUI-verified).
+**What was built and why:** `../Decisions/note-links.md` (stages 2 and 3), `../Decisions/note-file-formats.md` (stage 1, pipe tables).
 **Checklist form:** the "port the docs vault to Thorium .axml" entry in `DOCUMENTATION/Work in Progress List.md`.
 
 ## Stages
@@ -10,7 +10,7 @@
 |---|---|---|
 | 1 | Markdown pipe tables read into `<Table>` and write back (`MarkdownFormat` `ReadTable`, `TableLines`) | landed 2026-11-01 |
 | 2 | Note links as `<Run Text Link>`: Ctrl+click follow, typed `]]`, `[[` autocomplete, rename rewrites | landed 2026-11-01 |
-| 3 | Table of contents: live `<Toc/>` block | not started |
+| 3 | Table of contents: live `<Toc/>` block, optional `Depth`, Insert / Delete menu entries | landed 2026-11-01 |
 | 4 | Vault "Convert to .axml" action | not started |
 | 5 | Run on `DOCUMENTATION/Engine` + `Extras`; manual fix-ups: excalidraw → PNG, `.base`, mermaid stays code, callout → quote, 44 HTML lines | not started |
 
@@ -28,3 +28,4 @@
 ## Known gaps carried
 - Column spans do not survive Markdown (written as the cell plus empty cells).
 - Folder moves do not rewrite path-qualified links.
+- ToC: no ribbon button; rows are not links in exported PDF; dropped when an .axml note is converted to .md.

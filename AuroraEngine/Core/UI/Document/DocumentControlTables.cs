@@ -250,6 +250,12 @@ namespace ArctisAurora.Core.UI.Document
                     added = table.Hosted();
                 }
                 else if (node is NoteSealed locked) added = new SealedControl(locked);
+                else if (node is NoteToc toc)
+                {
+                    TocControl contents = new TocControl(toc);
+                    contents.Rebuild(document.Blocks());
+                    added = contents;
+                }
                 else
                 {
                     BlockControl block = new BlockControl((NoteBlock)node);
@@ -274,6 +280,7 @@ namespace ArctisAurora.Core.UI.Document
         {
             BlockControl block => block.note,
             SealedControl locked => locked.note,
+            TocControl contents => contents.note,
             _ => TableIn(child)?.model
         };
 

@@ -2385,6 +2385,152 @@ namespace Thorium.Tests
             t.Show(new StackPanelControl());
         }
 
+        [A_XSDActionDependency("TextInput.TocXmlRoundTrip", "Test")]
+        private static IEnumerator<int> TocXmlRoundTrip(TestContext t)
+        {
+            XElement source = new XElement("Document", new XElement("Toc"), new XElement("Toc", new XAttribute("Depth", 2)), Block("text"));
+            RichTextDocument document = DocumentXml.Parse(source);
+            t.Check(document.blocks.Length == 3 && document.blocks[0] is NoteToc { depth: 6 } && document.blocks[1] is NoteToc { depth: 2 },
+                "<Toc/> reads with every level, <Toc Depth> with its own");
+
+            XElement written = DocumentXml.ToXml(document);
+            XElement? first = null, second = null;
+            foreach (XElement element in written.Elements())
+            {
+                if (element.Name.LocalName != "Toc") continue;
+                if (first == null) first = element;
+                else second = element;
+            }
+            t.Check(first != null && first.Attribute("Depth") == null && !first.HasElements, "a full-depth table of contents writes back as <Toc/>");
+            t.Check(second != null && (int?)second.Attribute("Depth") == 2, "a limited one keeps its Depth");
+            t.Check(document.Blocks().Count == 1, "a table of contents holds no blocks of the note");
+            yield break;
+        }
+
+        [A_XSDActionDependency("TextInput.TocRebuilds", "Test")]
+        private static IEnumerator<int> TocRebuilds(TestContext t)
+        {
+            DocumentEditorControl editor = ShowFixture(t, DocumentXml.Parse(new XElement("Document",
+                new XElement("Toc"), new XElement("Toc", new XAttribute("Depth", 1)),
+                Heading("One", 1), Block("body"), Heading("Two", 2))));
+            DocumentControl content = Content(editor);
+            yield return 2;
+
+            TocControl? full = null, top = null;
+            foreach (Entity child in content.children)
+                if (child is TocControl toc)
+                {
+                    if (full == null) full = toc;
+                    else top = toc;
+                }
+            t.Check(full != null && top != null, "each <Toc/> gets its own view");
+            if (full == null || top == null) yield break;
+            t.Check(Entries(full) == "One|Two", "the table lists the headings in order");
+            t.Check(Entries(top) == "One", "Depth 1 lists only first-level headings");
+
+            List<BlockControl> blocks = Paragraphs(editor);
+            content.SetCaret(blocks[0], blocks[0].Length);
+            yield return t.Type("x");
+            t.Check(Entries(full) == "Onex|Two", "typing in a heading renames its entry");
+
+            content.SetCaret(blocks[1], 0);
+            TextInputActions.Heading2();
+            yield return 2;
+            t.Check(Entries(full) == "Onex|body|Two", "a paragraph made a heading joins the table");
+            t.Check(Entries(top) == "Onex", "a second-level heading stays out of a Depth 1 table");
+
+            TextInputActions.Paragraph();
+            yield return 2;
+            t.Check(Entries(full) == "Onex|Two", "a heading made a paragraph leaves the table");
+            t.Show(new StackPanelControl());
+        }
+
+        [A_XSDActionDependency("TextInput.TocFollow", "Test")]
+        private static IEnumerator<int> TocFollow(TestContext t)
+        {
+            DocumentEditorControl editor = ShowFixture(t, DocumentXml.Parse(new XElement("Document",
+                Block("intro"), new XElement("Toc"), Heading("One", 1), Block("body"), Heading("Two", 2))));
+            DocumentControl content = Content(editor);
+            yield return 2;
+
+            TocControl? toc = null;
+            foreach (Entity child in content.children)
+                if (child is TocControl found) toc = found;
+            t.Check(toc != null && toc.children.Count == 2, "the table shows a row per heading");
+            if (toc == null || toc.children.Count != 2) yield break;
+
+            yield return t.Click((Control)toc.children[1]);
+            yield return 2;
+            t.Check(content.caretBlock?.text == "Two" && content.caretOffset == 0, "pressing a row puts the caret at the start of its heading");
+            t.Show(new StackPanelControl());
+        }
+
+        [A_XSDActionDependency("TextInput.TocInsertUndo", "Test")]
+        private static IEnumerator<int> TocInsertUndo(TestContext t)
+        {
+            DocumentEditorControl editor = ShowFixture(t, DocumentXml.Parse(new XElement("Document", Heading("only", 1))));
+            RichTextDocument document = editor.session.document;
+            XElement original = Unstamped(document);
+            yield return 2;
+
+            TextInputActions.InsertToc();
+            yield return 2;
+            bool shown = false;
+            foreach (Entity child in Content(editor).children)
+                if (child is TocControl) shown = true;
+            t.Check(document.blocks.Length == 2 && document.blocks[1] is NoteToc && shown, "a table of contents goes after the caret's paragraph and is shown");
+            XElement inserted = Unstamped(document);
+
+            yield return t.Key(Keys.Z, Keys.LeftControl);
+            t.Check(XNode.DeepEquals(Unstamped(document), original), "one undo takes the table of contents back out");
+            yield return t.Key(Keys.Y, Keys.LeftControl);
+            t.Check(XNode.DeepEquals(Unstamped(document), inserted), "redo puts it back");
+
+            TocControl? toc = null;
+            foreach (Entity child in Content(editor).children)
+                if (child is TocControl found) toc = found;
+            if (toc == null) yield break;
+            List<ContextMenuEntry> entries = ContextMenus.Collect(toc);
+            t.Check(entries.Count == 1 && entries[0] is ContextMenuButton { text: "Delete table of contents" }, "a table of contents has its own one-entry menu");
+
+            yield return t.Click(toc, Keys.MouseRight);
+            yield return 2;
+            TextInputActions.DeleteToc();
+            ContextMenus.Close();
+            yield return 2;
+            t.Check(XNode.DeepEquals(Unstamped(document), original), "Delete table of contents takes it out");
+            yield return t.Key(Keys.Z, Keys.LeftControl);
+            t.Check(XNode.DeepEquals(Unstamped(document), inserted), "one undo brings the deleted table of contents back");
+            t.Show(new StackPanelControl());
+        }
+
+        [A_XSDActionDependency("TextInput.TocInsertRefusedInMarkdown", "Test")]
+        private static IEnumerator<int> TocInsertRefusedInMarkdown(TestContext t)
+        {
+            DocumentEditorControl editor = NewEditor();
+            t.Show(editor);
+            string path = Path.Combine(Path.GetTempPath(), $"aurora-toc-{Guid.NewGuid():N}.md");
+            File.WriteAllText(path, "text\n");
+            editor.LoadPath(path);
+            File.Delete(path);
+            Content(editor).SetCaret(Paragraphs(editor)[0], 0);
+            editor.FocusCaret();
+            yield return 2;
+
+            TextInputActions.InsertToc();
+            NoteNode[] blocks = editor.session.document.blocks;
+            bool refused = true;
+            for (int i = 0; i < blocks.Length; i++)
+                if (blocks[i] is NoteToc) refused = false;
+            t.Check(refused, "a Markdown note refuses a table of contents");
+            t.Show(new StackPanelControl());
+        }
+
+        private static XElement Heading(string text, int level) =>
+            new XElement("Block", new XAttribute("StylingType", "Heading" + level), new XElement("Run", new XAttribute("Text", text)));
+
+        private static string Entries(TocControl toc) => string.Join("|", toc.Entries);
+
         [A_XSDActionDependency("TextInput.TableRowsAndColumns", "Test")]
         private static IEnumerator<int> TableRowsAndColumns(TestContext t)
         {

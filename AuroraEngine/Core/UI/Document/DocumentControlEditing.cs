@@ -606,6 +606,7 @@ namespace ArctisAurora.Core.UI.Document
                     readOnly = document.readOnly;
                     break;
             }
+            RefreshTocs(change);
 
             if (remap)
             {
@@ -625,6 +626,19 @@ namespace ArctisAurora.Core.UI.Document
             if (!follows || change.caret is not DocumentAddress caretAt) return;
             if (change.anchor is DocumentAddress anchorAt) Select(anchorAt, caretAt);
             else CaretTo(caretAt);
+        }
+
+        // Rebuilds the tables of contents after a change that can add, drop, move or rename a heading.
+        private void RefreshTocs(NoteChange change)
+        {
+            if (change.kind is not (NoteChangeKind.Text or NoteChangeKind.Kind or NoteChangeKind.Inserted
+                or NoteChangeKind.Removed or NoteChangeKind.Table or NoteChangeKind.Nodes)) return;
+            if (change.kind == NoteChangeKind.Text && change.count == 1
+                && !NoteHeadings.IsHeading(document.BlockAt(change.first)?.stylingType ?? TextStyleType.Text)) return;
+
+            List<NoteBlock>? blocks = null;
+            foreach (Entity child in children)
+                if (child is TocControl contents) contents.Rebuild(blocks ??= document.Blocks());
         }
         #endregion
     }

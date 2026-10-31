@@ -229,6 +229,7 @@ ArctisAurora.Core.UI.Notes -> AuroraEngine/Core/UI/Notes/NoteSeals.cs
 ArctisAurora.Core.UI.Notes -> AuroraEngine/Core/UI/Notes/NoteSegments.cs
 ArctisAurora.Core.UI.Notes -> AuroraEngine/Core/UI/Notes/NoteToolsControl.cs
 ArctisAurora.Core.UI.Notes -> AuroraEngine/Core/UI/Notes/SealedControl.cs
+ArctisAurora.Core.UI.Notes -> AuroraEngine/Core/UI/Notes/TocControl.cs
 ArctisAurora.Core.UI.Notes -> AuroraEngine/Core/UI/Notes/UnlockPrompts.cs
 ArctisAurora.Core.UI.Planner -> AuroraEngine/Core/UI/Planner/CalendarControl.cs
 ArctisAurora.Core.UI.Planner -> AuroraEngine/Core/UI/Planner/GanttChartControl.cs

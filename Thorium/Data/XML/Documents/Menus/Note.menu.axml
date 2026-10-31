@@ -11,6 +11,7 @@
 	<ContextButton Text="Edit formula" Action="Math.Edit" When="formula-selected"/>
 	<ContextLine/>
 	<ContextButton Text="Insert table" Action="Table.Insert" When="outside-table"/>
+	<ContextButton Text="Insert table of contents" Action="Toc.Insert" When="outside-table"/>
 	<ContextSubmenu Text="Table" When="table-cell">
 		<ContextButton Text="Insert row above" Action="Table.RowAbove"/>
 		<ContextButton Text="Insert row below" Action="Table.RowBelow"/>

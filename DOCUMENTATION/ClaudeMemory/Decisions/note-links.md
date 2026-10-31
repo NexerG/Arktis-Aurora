@@ -35,7 +35,38 @@ Thorium autosaves (`NoteFileSync`), so a save-time diff would rewrite the vault 
 **Renames reuse the sheet rewrite machinery.**
 `SheetLinks.RewriteFile` is byte/BOM-preserving and prompts for the key of an encrypted file. Locked notes prompt on both file and heading renames, like sheets (user chose "prompt like sheets" over silently skipping).
 
+## Table of contents (docs-port stage 3, 2026-11-01)
+
+Fork F2a implemented: a note holds a live `<Toc/>` (optional `Depth="1..6"`), one clickable row per heading, indented by level, rebuilt as headings change. Pressing a row puts the caret at the start of that heading and scrolls to it.
+
+**What changed**
+- `Notes.NoteToc : NoteNode` (in NoteModel.cs), field `depth` (default 6 = all levels). `Notes.TocControl : StackPanelControl` (own file): `note`, `Rebuild(List<NoteBlock>)` (false when the heading list is unchanged), `Entries`, `Show(heading)`; `contextMenu = "toc"`, `stopsContextMenu = true`.
+- `DocumentXml.Parse` reads `Toc` (Depth clamped 1..6); `WriteNode` writes `<Toc/>`, or `<Toc Depth="n"/>` when depth < 6.
+- `RichTextDocument.FlatCount`: `NoteToc => 0`, like `NoteSealed`, so caret, selection and addresses never see it. `NoteSegments`: `"Toc"` joins the `Block`/`Table` single-entry case.
+- `DocumentControl` (DocumentControlTables.cs `ShowNodes`, `NodeOf`) builds and recognises `TocControl`. New private `RefreshTocs(NoteChange)` (DocumentControlEditing.cs), called from `OnNoteChanged` after the switch, on Text/Kind/Inserted/Removed/Table/Nodes; a single-block Text change returns early unless that block is a heading.
+- `DocumentEditorControl`: view build branch for `NoteToc`; `InsertToc()`, `DeleteToc(NoteToc)`, private `PutNodes(label, index, before, after)` (one `NodesEdit` undo step, header unchanged). `PdfExport.Record`: `NoteToc → TocControl` branch.
+- `TextInputActions`: `Toc.Insert`, `Toc.Delete` (walks up from `ContextMenus.target` to the `TocControl` and its `DocumentEditorControl`).
+- Data: `Toc.menu.axml` (one entry, "Delete table of contents"), registered in `ThoriumAssets.assets.axml` as ContextMenuAsset `toc`; `Note.menu.axml` gains "Insert table of contents" (`When="outside-table"`).
+- Tests (TextInputTests.cs): `TextInput.TocXmlRoundTrip`, `TocRebuilds`, `TocFollow`, `TocInsertUndo`, `TocInsertRefusedInMarkdown`.
+
+**A ToC is a note-level node with its own view (the `NoteSealed`/`SealedControl` pattern), not text.**
+Rejected: generating `BlockControl`s with real `<Run Link>` runs. Selectable and in document fonts, but a press goes through `DocumentControl.GlyphPressed` → `PressAt`, which would put the caret in a block the model does not hold, needing guards across the caret code.
+
+**Rows follow through `DocumentEditorControl.ShowHeading`, the path `[[#heading]]` links use.** No link text is stored.
+
+**Depth is an optional attribute; absent = all six levels.** User chose 2b over listing all headings only. All headings are listed, including any above the ToC.
+
+**Refused in `.md`/`.txt` notes and source view, as tables are.** The Markdown writer skips unknown elements and under F1a only `.axml` holds ToCs.
+
+**Delete is a right-click menu named in XML (`toc`), with `stopsContextMenu` so note entries do not follow.**
+Rejected: a menu built in code and opened on right press, because `UIEngine` always calls `ContextMenus.OpenOn(hovering)` on right release, which closes any open menu. Rejected: letting the Note menu's entries follow (user chose the own menu).
+
+**Rebuild cost:** typing in a non-heading paragraph does no ToC work; otherwise one walk of the flat blocks per ToC, rows rebuilt only when the (level, text) list changed.
+
+**Verified:** test-verified — builds clean; `--test=TextInput` 113 passed, 1 failed (Boot, pre-existing); full `--test` 513 passed, 2 failed (Boot pre-existing; TocInsertUndo failed on the unregistered menu, passes after the fix). NOT GUI-verified: clicking a row by mouse, the right-click menu's look, the ToC in a PDF export.
+
 ## Known gaps
+- ToC: no ribbon button; rows are not links in the exported PDF; a ToC is dropped when an .axml note is converted to .md; duplicate heading texts go to the first heading (`ShowHeading`).
 - Undoing a heading edit does not undo the link rewrites (leaving the heading again with the old text renames back only if the block survived).
 - Folder moves do not rewrite path-qualified links; `[[x#^block]]` refs only open the note.
 - `[text](note.md)` relative links write back as `[[note.md|text]]`.

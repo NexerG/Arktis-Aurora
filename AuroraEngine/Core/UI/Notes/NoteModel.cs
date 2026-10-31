@@ -41,6 +41,12 @@ namespace ArctisAurora.Core.UI.Notes
         public NoteSealed(XElement element) => this.element = element;
     }
 
+    // A live table of contents: the note's headings down to a level, built by its view.
+    public sealed class NoteToc : NoteNode
+    {
+        public int depth = 6;
+    }
+
     // One block of a note as data: its string, spans and block properties.
     public sealed class NoteBlock : NoteNode
     {

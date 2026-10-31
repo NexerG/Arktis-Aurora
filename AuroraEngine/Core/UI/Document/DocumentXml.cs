@@ -64,6 +64,7 @@ namespace ArctisAurora.Core.UI.Document
                     case "Footnote":
                     case "Float": blocks.AddRange(ReadInsert(element)); break;
                     case "Sealed": blocks.Add(new NoteSealed(new XElement(element))); break;
+                    case "Toc": blocks.Add(new NoteToc { depth = Math.Clamp((int?)element.Attribute("Depth") ?? 6, 1, 6) }); break;
                     default: throw new Exception($"Unknown document element '{element.Name.LocalName}'.");
                 }
 
@@ -408,6 +409,7 @@ namespace ArctisAurora.Core.UI.Document
         {
             NoteTable table => WriteTable(ns, table),
             NoteSealed locked => new XElement(locked.element),
+            NoteToc toc => toc.depth < 6 ? new XElement(ns + "Toc", new XAttribute("Depth", toc.depth)) : new XElement(ns + "Toc"),
             _ => WriteBlock(ns, (NoteBlock)node)
         };
 

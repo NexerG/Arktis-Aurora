@@ -96,6 +96,13 @@ namespace ArctisAurora.Core.UI.Document
                     view.AddChild(new SealedControl(locked));
                     continue;
                 }
+                if (entry is NoteToc toc)
+                {
+                    TocControl contents = new TocControl(toc);
+                    contents.Rebuild(document.Blocks());
+                    view.AddChild(contents);
+                    continue;
+                }
                 BlockControl block = new BlockControl((NoteBlock)entry);
                 block.StartEffects();
                 block.ApplyLayout(document.layout);
