@@ -45,6 +45,8 @@ namespace ArctisAurora.Core.Tex
     {
         public readonly char ch;
         public readonly TexStyle style;
+        // typed as ASCII ", which keeps the words it touches unhyphenated
+        public bool straightQuote;
 
         public TexChar(char ch, TexStyle style)
         {
@@ -204,6 +206,9 @@ namespace ArctisAurora.Core.Tex
         // \baselineskip when it ended, stretched by \baselinestretch, sp
         public int baselineSkip;
 
+        // \interlinepenalty when it ended
+        public int interlinePenalty;
+
         // a caption's \strut on every line
         public bool strut;
 
@@ -272,8 +277,15 @@ namespace ArctisAurora.Core.Tex
         public float footRule;
     }
 
-    // where \bibliography put the reference list, filled after the document ends
-    public sealed class TexBibliographyMark : TexNode { }
+    // where \bibliography put the reference list, filled after the document ends: its title, whether it is a contents
+    // entry, the language it stood in and where its contents entry goes
+    public sealed class TexBibliographyMark : TexNode
+    {
+        public string? title;
+        public bool inContents;
+        public string language = "english";
+        public int contentsAt;
+    }
 
     // \@starttoc: where a contents list (toc, lof, lot) is typeset once every entry is known
     public sealed class TexContentsMark : TexNode
@@ -324,7 +336,8 @@ namespace ArctisAurora.Core.Tex
         // the alignment of the paragraph the tabular sits in, taken when it ends
         public TexAlign align = TexAlign.Left;
 
-        // \parindent before a tabular that opens its paragraph, sp
+        // the tabular opens its own paragraph, and the \parindent set before it, sp
+        public bool opens;
         public int indent;
 
         // source line of \begin{tabular}

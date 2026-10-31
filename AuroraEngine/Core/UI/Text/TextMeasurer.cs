@@ -138,6 +138,7 @@ namespace ArctisAurora.Core.UI.Text
             public float space;
             public bool fill;
             public int grid;
+            public float urlWidth, urlNumWidth, urlUcWidth, urlLcWidth;
 
             public int start;
             public int length;
@@ -150,7 +151,8 @@ namespace ArctisAurora.Core.UI.Text
             public bool Matches(in TextMeasurer.Run run) =>
                 ReferenceEquals(text, run.text) && charStart == run.charStart && charCount == run.charCount
                 && ReferenceEquals(atlas, run.atlas) && face == run.face && fontSize == run.fontSize
-                && picture == run.picture && math == run.math && floating == run.floating && space == run.space && fill == run.fill && grid == run.grid;
+                && picture == run.picture && math == run.math && floating == run.floating && space == run.space && fill == run.fill && grid == run.grid
+                && urlWidth == run.urlWidth && urlNumWidth == run.urlNumWidth && urlUcWidth == run.urlUcWidth && urlLcWidth == run.urlLcWidth;
         }
 
         // Empties the layout, keeping its lines for NextLine.
@@ -219,10 +221,17 @@ namespace ArctisAurora.Core.UI.Text
             // em widths truncated to 1/grid em, as LuaTeX's font loader does; 0 keeps them exact
             public readonly int grid;
 
-            // a biblatex URL: stretch between its characters, px, and the penalties at its two break markers
+            // a URL: \Urlmuskip's stretch, width and shrink between its characters, px, and the penalties at its two break markers
             public readonly float urlStretch;
+            public readonly float urlWidth;
+            public readonly float urlShrink;
             public readonly float urlBreakPenalty;
             public readonly float urlBigBreakPenalty;
+
+            // a biblatex URL: the penalty and glue after a digit, capital and lowercase letter, px
+            public readonly float urlNumPenalty, urlNumWidth, urlNumStretch, urlNumShrink;
+            public readonly float urlUcPenalty, urlUcWidth, urlUcStretch, urlUcShrink;
+            public readonly float urlLcPenalty, urlLcWidth, urlLcStretch, urlLcShrink;
 
             public Run(string text, string fontName, AtlasMetaData atlas, float fontSize, FontStyle style = FontStyle.Regular)
             {
@@ -239,10 +248,27 @@ namespace ArctisAurora.Core.UI.Text
             public Run(string text, int charStart, int charCount, string fontName, AtlasMetaData atlas, float fontSize, FontStyle style,
                 bool picture = false, float imageWidth = 0f, float imageHeight = 0f, bool floating = false,
                 bool math = false, float depth = 0f, float space = 0f, bool fill = false, int grid = 0,
-                float urlStretch = 0f, float urlBreakPenalty = 0f, float urlBigBreakPenalty = 0f, int variant = 0)
+                float urlStretch = 0f, float urlBreakPenalty = 0f, float urlBigBreakPenalty = 0f, int variant = 0, float urlWidth = 0f, float urlShrink = 0f,
+                float urlNumPenalty = 0f, float urlNumWidth = 0f, float urlNumStretch = 0f, float urlNumShrink = 0f,
+                float urlUcPenalty = 0f, float urlUcWidth = 0f, float urlUcStretch = 0f, float urlUcShrink = 0f,
+                float urlLcPenalty = 0f, float urlLcWidth = 0f, float urlLcStretch = 0f, float urlLcShrink = 0f)
             {
                 this.grid = grid;
+                this.urlNumPenalty = urlNumPenalty;
+                this.urlNumWidth = urlNumWidth;
+                this.urlNumStretch = urlNumStretch;
+                this.urlNumShrink = urlNumShrink;
+                this.urlUcPenalty = urlUcPenalty;
+                this.urlUcWidth = urlUcWidth;
+                this.urlUcStretch = urlUcStretch;
+                this.urlUcShrink = urlUcShrink;
+                this.urlLcPenalty = urlLcPenalty;
+                this.urlLcWidth = urlLcWidth;
+                this.urlLcStretch = urlLcStretch;
+                this.urlLcShrink = urlLcShrink;
                 this.urlStretch = urlStretch;
+                this.urlWidth = urlWidth;
+                this.urlShrink = urlShrink;
                 this.urlBreakPenalty = urlBreakPenalty;
                 this.urlBigBreakPenalty = urlBigBreakPenalty;
                 this.text = text;
@@ -283,7 +309,29 @@ namespace ArctisAurora.Core.UI.Text
         public const char UrlBreak = '';
         public const char UrlBigBreak = '';
 
-        public static bool IsZeroWidthBreak(char c) => c == ZeroWidthSpace || c == UrlBreak || c == UrlBigBreak;
+        // the same after a biblatex URL digit, capital and lowercase letter, where that class's penalty is set
+        public const char UrlNumBreak = '';
+        public const char UrlUcBreak = '';
+        public const char UrlLcBreak = '';
+
+        public static bool IsZeroWidthBreak(char c) => c == ZeroWidthSpace || c == UrlBreak || c == UrlBigBreak || c is >= UrlNumBreak and <= UrlLcBreak;
+
+        // One part of the biblatex letter glue after index, px: 0 width, 1 stretch, 2 shrink; 0 unless a letter marker follows.
+        internal static float UrlLetterGlue(in Run run, int index, int part)
+        {
+            if (index + 1 >= run.charStart + run.charCount) return 0f;
+            return run.text[index + 1] switch
+            {
+                UrlNumBreak => part == 0 ? run.urlNumWidth : part == 1 ? run.urlNumStretch : run.urlNumShrink,
+                UrlUcBreak => part == 0 ? run.urlUcWidth : part == 1 ? run.urlUcStretch : run.urlUcShrink,
+                UrlLcBreak => part == 0 ? run.urlLcWidth : part == 1 ? run.urlLcStretch : run.urlLcShrink,
+                _ => 0f
+            };
+        }
+
+        // Whether a biblatex URL's \Urlmuskip follows index: beside each break character, once between two of them.
+        internal static bool IsUrlGlueAfter(string text, int index, int end) =>
+            index + 1 < end && (text[index] is UrlBreak or UrlBigBreak || index + 2 < end && text[index + 2] is UrlBreak or UrlBigBreak);
 
         // a space no line breaks at, as wide and as stretchy as any other
         public const char NoBreakSpace = ' ';
@@ -342,6 +390,18 @@ namespace ArctisAurora.Core.UI.Text
         // The width of the hyphen a line ending at soft hyphen i shows.
         private static float HyphenAt(BlockLayout layout, int i, IReadOnlyList<Run> runs) =>
             MeasureAdvance('-', runs[RunOf(layout, i)]);
+
+        // The \Urlmuskip width after URL break marker i, and its shrink: the glue TeX discards where a line breaks there.
+        private static float TrailingUrlGlue(BlockLayout layout, IReadOnlyList<Run> runs, int i, out float shrink)
+        {
+            shrink = 0f;
+            if ((layout.flags[i] & Zero) == 0) return 0f;
+            int r = RunOf(layout, i);
+            BlockLayout.MeasuredRun m = layout.runs[r];
+            if (!IsUrlGlueAfter(m.text, m.charStart + i - m.start, m.charStart + m.length)) return 0f;
+            shrink = runs[r].urlShrink;
+            return runs[r].urlWidth;
+        }
 
         // The run holding flattened character i.
         private static int RunOf(BlockLayout layout, int i)
@@ -559,28 +619,44 @@ namespace ArctisAurora.Core.UI.Text
             for (int i = 0; i < count; i++)
             {
                 if ((flags[i] & Tab) != 0) return false;
-                float glue = flags[i] is BreakAfter or Tie ? advances[i] : 0f;
-                float factor = 1f;
-                float url = 0f;
                 while (i >= measured[r].start + measured[r].length) r++;
+                float glue = flags[i] is BreakAfter or Tie ? MeasureAdvance(measured[r].text[measured[r].charStart + i - measured[r].start], runs[r]) : 0f;
+                float factor = 1f;
+                float url = 0f, urlShrink = 0f;
                 if (glue > 0f)
                 {
                     factor = MathF.Max(1f, SpaceFactor(measured[r].text[measured[r].charStart + i - measured[r].start]));
                     if (factor >= 2f) glue *= 0.75f;
                 }
-                else if (runs[r].urlStretch > 0f)
+                else if (runs[r].urlStretch > 0f || runs[r].urlBreakPenalty > 0f || runs[r].urlShrink > 0f
+                    || runs[r].urlNumPenalty > 0f || runs[r].urlUcPenalty > 0f || runs[r].urlLcPenalty > 0f)
                 {
-                    char c = measured[r].text[measured[r].charStart + i - measured[r].start];
-                    if (c == UrlBreak || c == UrlBigBreak)
+                    Run run = runs[r];
+                    int k = measured[r].charStart + i - measured[r].start;
+                    char c = measured[r].text[k];
+                    if (c == UrlBreak || c == UrlBigBreak || c is >= UrlNumBreak and <= UrlLcBreak)
                     {
                         penalties ??= new float[count];
-                        penalties[i] = c == UrlBreak ? runs[r].urlBreakPenalty : runs[r].urlBigBreakPenalty;
+                        penalties[i] = c switch
+                        {
+                            UrlBreak => run.urlBreakPenalty,
+                            UrlBigBreak => run.urlBigBreakPenalty,
+                            UrlNumBreak => run.urlNumPenalty,
+                            UrlUcBreak => run.urlUcPenalty,
+                            _ => run.urlLcPenalty
+                        };
                     }
-                    else if (i + 1 < measured[r].start + measured[r].length) url = runs[r].urlStretch;
+                    if (IsUrlGlueAfter(measured[r].text, k, measured[r].charStart + measured[r].length))
+                    {
+                        url = run.urlStretch;
+                        urlShrink = run.urlShrink;
+                    }
+                    url += UrlLetterGlue(run, k, 1);
+                    urlShrink += UrlLetterGlue(run, k, 2);
                 }
                 width[i + 1] = width[i] + advances[i];
                 stretch[i + 1] = stretch[i] + glue * GlueStretch * factor + url;
-                shrink[i + 1] = shrink[i] + glue * GlueShrink / factor;
+                shrink[i + 1] = shrink[i] + glue * GlueShrink / factor + urlShrink;
                 fills[i + 1] = fills[i] + ((flags[i] & Fill) != 0 ? 1 : 0);
             }
 
@@ -618,11 +694,15 @@ namespace ArctisAurora.Core.UI.Text
                 bool glueNext = j + 1 < count && flags[j + 1] == BreakAfter;
                 bool last = j == count - 1 || Wide(layout, j + 1, contentWidth);
                 bool forced = last || lastSolid >= 0 && Wide(layout, lastSolid, contentWidth) && !glueNext;
-                bool breakable = forced || (flags[j] & BreakAfter) != 0 && !(flags[j] == BreakAfter && glueNext) || (flags[j + 1] & Picture) != 0;
+                bool breakable = forced || (flags[j] & (BreakAfter | Picture)) == BreakAfter && !(flags[j] == BreakAfter && glueNext);
                 if (!breakable) continue;
                 bool soft = (flags[j] & Soft) != 0 && j < count - 1;
                 if (soft && !hyphens && !forced) continue;
                 float hyphen = soft ? HyphenAt(layout, j, runs) : 0f;
+                int solidEnd = j;
+                while (solidEnd >= 0 && flags[solidEnd] == BreakAfter) solidEnd--;
+                float trailingShrink = 0f;
+                float trailing = solidEnd >= 0 ? TrailingUrlGlue(layout, runs, solidEnd, out trailingShrink) : 0f;
 
                 Array.Clear(best);
                 for (int a = active.Count - 1; a >= 0; a--)
@@ -633,18 +713,18 @@ namespace ArctisAurora.Core.UI.Text
                     while (end >= start && flags[end] == BreakAfter) end--;
 
                     float room = contentWidth - (from.line == 0 ? firstLineOffset : 0f) + (j == count - 1 ? lastExtra : 0f);
-                    float shortfall = room - (width[end + 1] - width[start] + hyphen);
+                    float shortfall = room - (width[end + 1] - width[start] - (end == solidEnd ? trailing : 0f) + hyphen);
                     float ratio;
                     bool filled = fills[end + 1] - fills[start] > (end == j && (flags[j] & Fill) != 0 ? 1 : 0);
                     if (MathF.Abs(shortfall) < 0.01f || shortfall > 0f && (last || filled || ragged)) ratio = 0f;
                     else if (shortfall > 0f)
                     {
-                        float give = stretch[end + 1] - stretch[start] + background;
+                        float give = stretch[Math.Max(end, start)] - stretch[start] + background;
                         ratio = give > 0f ? shortfall / give : float.PositiveInfinity;
                     }
                     else
                     {
-                        float take = shrink[end + 1] - shrink[start];
+                        float take = shrink[end + 1] - shrink[start] - (end == solidEnd ? trailingShrink : 0f);
                         ratio = take > 0f ? shortfall / take : float.NegativeInfinity;
                     }
 
@@ -653,10 +733,10 @@ namespace ArctisAurora.Core.UI.Text
                         active.RemoveAt(a);
                         continue;
                     }
-                    float badness = float.IsPositiveInfinity(ratio) ? float.PositiveInfinity : MathF.Min(10000f, 100f * MathF.Abs(ratio * ratio * ratio));
+                    float badness = Badness(ratio);
                     if (badness > threshold) continue;
 
-                    int fitness = ratio < -0.5f ? 3 : badness <= 12f ? 2 : ratio > 1f ? 0 : 1;
+                    int fitness = ratio < 0f ? (badness > 12f ? 3 : 2) : badness > 99f ? 0 : badness > 12f ? 1 : 2;
                     float demerits = from.demerits + (LinePenalty + badness) * (LinePenalty + badness);
                     if (Math.Abs(fitness - from.fitness) > 1) demerits += AdjDemerits;
                     if (soft) demerits += HyphenPenalty * HyphenPenalty + (from.hyphenated ? DoubleHyphenDemerits : 0f);
@@ -676,6 +756,15 @@ namespace ArctisAurora.Core.UI.Text
             foreach (Breakpoint b in active)
                 if (b.demerits < chosen.demerits) chosen = b;
             return chosen;
+        }
+
+        // TeX's integer badness of a glue ratio, so equal lines tie as they do in TeX.
+        internal static float Badness(float ratio)
+        {
+            float r = MathF.Floor(297f * MathF.Abs(ratio));
+            if (!(r <= 1290f)) return 10000f;
+            int k = (int)r;
+            return (k * k * k + 0x20000) >> 18;
         }
 
         // An object as wide as the column, a display formula, sits on a line of its own.
@@ -716,7 +805,8 @@ namespace ArctisAurora.Core.UI.Text
                 BlockLayout.MeasuredRun slot = new BlockLayout.MeasuredRun
                 {
                     text = run.text, charStart = run.charStart, charCount = run.charCount, atlas = run.atlas, face = run.face,
-                    fontSize = run.fontSize, picture = run.picture, math = run.math, floating = run.floating, space = run.space, fill = run.fill, grid = run.grid, start = count
+                    fontSize = run.fontSize, picture = run.picture, math = run.math, floating = run.floating, space = run.space, fill = run.fill, grid = run.grid, urlWidth = run.urlWidth,
+                    urlNumWidth = run.urlNumWidth, urlUcWidth = run.urlUcWidth, urlLcWidth = run.urlLcWidth, start = count
                 };
 
                 if (!string.IsNullOrEmpty(run.text) && run.charCount > 0)
@@ -855,7 +945,7 @@ namespace ArctisAurora.Core.UI.Text
                 if (run.pitch > line.pitch) line.pitch = run.pitch;
             }
             if (to >= from && to < layout.count - 1 && (layout.flags[to] & Soft) != 0) line.hyphen = HyphenAt(layout, to, runs);
-            line.width = width + line.hyphen;
+            line.width = width + line.hyphen - (to >= from ? TrailingUrlGlue(layout, runs, to, out _) : 0f);
             if (layout.strut && line.pitch > 0f)
             {
                 line.ascent = MathF.Max(line.ink, 0.7f * line.pitch);
@@ -903,7 +993,9 @@ namespace ArctisAurora.Core.UI.Text
         // The advance of the run's character at index, kern to the next included; layout, drawing, justifying, hit-testing and
         // the caret all step through this so they cannot drift apart.
         public static float AdvanceAt(in Run run, int index, float penInLine) =>
-            MeasureAdvance(run.text[index], run, penInLine) + (index + 1 < run.charStart + run.charCount ? Kern(run.text[index], run.text[index + 1], run) : 0f);
+            MeasureAdvance(run.text[index], run, penInLine) + (index + 1 < run.charStart + run.charCount ? Kern(run.text[index], run.text[index + 1], run) : 0f)
+            + (run.urlWidth != 0f && IsUrlGlueAfter(run.text, index, run.charStart + run.charCount) ? run.urlWidth : 0f)
+            + (run.urlNumWidth != 0f || run.urlUcWidth != 0f || run.urlLcWidth != 0f ? UrlLetterGlue(run, index, 0) : 0f);
 
         // The kern between two characters in the run's face, at its size and grid; 0 in a spacer, picture or formula run.
         public static float Kern(char first, char second, in Run run) =>

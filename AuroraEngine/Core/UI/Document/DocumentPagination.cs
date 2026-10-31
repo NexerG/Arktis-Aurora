@@ -296,7 +296,7 @@ namespace ArctisAurora.Core.UI.Document
         private float BandTop(int page) => bands.top + page * bands.stride;
 
         // A float met in the text at y: here, at the current page's top or foot, or waiting; returns the text's y after it.
-        // inkEnd is the text's last ink plus \lineskip, which a float set here stands \intextsep below.
+        // inkEnd: the text's last ink, +\lineskip under [H]; a float set here stands \intextsep below it.
         // rewind is the page whose text must be laid out again under a new top float, else -1.
         public float Arrive(Group g, float y, float inkEnd, out int rewind)
         {

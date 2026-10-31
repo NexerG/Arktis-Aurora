@@ -18,6 +18,7 @@ namespace ArctisAurora.Core.UI.Tex
     {
         public const string RomanFont = "latin-modern";
         public const string MonoFont = "latin-modern-mono";
+        public const string Mono12Font = "latin-modern-mono-12";
         public const string MathFont = "latin-modern-math";
         public const string TermesFont = "tex-gyre-termes";
         public const string CarlitoFont = "carlito";
@@ -313,8 +314,14 @@ namespace ArctisAurora.Core.UI.Tex
                             if (!display && pieces[k].OfType<TexRuleBox>().FirstOrDefault() is TexRuleBox rule
                                 && pieces[k].All(n => n is TexRuleBox or TexGlueNode or TexKern or TexPenalty or TexLabelMark))
                             {
-                                Place(root, new XElement("Block", new XAttribute("StylingType", "Rule"),
-                                    new XAttribute("Weight", Format(rule.height / Unity * PxPerPt))), spacing);
+                                float size = Px(rule.style.font.size);
+                                XElement run = new XElement("Run");
+                                Size(run, size);
+                                XElement ruled = new XElement("Block", new XAttribute("StylingType", "Rule"),
+                                    new XAttribute("Weight", Format(rule.height / Unity * PxPerPt)), run);
+                                float multiple = p.baselineSkip / Unity * PxPerPt / size;
+                                if (p.baselineSkip != 0 && MathF.Abs(multiple - spacing.lineHeight) > 0.005f) ruled.SetAttributeValue("LineHeight", Format(multiple));
+                                Place(root, ruled, spacing);
                                 blockLines?.Add(p.line);
                                 continue;
                             }
@@ -455,6 +462,7 @@ namespace ArctisAurora.Core.UI.Tex
         private static XElement Block(TexParagraph p, List<TexNode> line, bool first, float normal, Dictionary<int, float> headings)
         {
             XElement block = new XElement("Block");
+            if (p.interlinePenalty >= 5000) block.SetAttributeValue("KeepTogether", "true");
             TexParStyle s = p.style;
             string font = Roman;
             float size = normal;
@@ -537,6 +545,7 @@ namespace ArctisAurora.Core.UI.Tex
             XElement table = new XElement("Table", new XAttribute("Borders", "false"), new XAttribute("Padding", $"{Format(MathF.Round(TabColSep, 2))} 0"));
             if (t.align != TexAlign.Left) table.SetAttributeValue("Align", t.align.ToString());
             else if (t.indent > 0) table.SetAttributeValue("Indent", Format(t.indent / Unity * PxPerPt));
+            if (t.opens) table.SetAttributeValue("Axis", Format(0.25f * normal));
             for (int i = 0; i < count; i++)
             {
                 XElement column = new XElement("Column", new XAttribute("Width", Format(MathF.Max(widths[i] > 0f ? MinColumn : 0f, MathF.Ceiling(widths[i] + 2f * TabColSep)))));
@@ -673,7 +682,8 @@ namespace ArctisAurora.Core.UI.Tex
                 }
 
                 int inserted = 0;
-                if (!marked && plain && hyphenator.Points(letters.ToString(), extra) is bool[] points)
+                bool quoted = i > 0 && list[i - 1] is TexChar { straightQuote: true } || end < list.Count && list[end] is TexChar { straightQuote: true };
+                if (!marked && plain && !quoted && hyphenator.Points(letters.ToString(), extra) is bool[] points)
                     for (int k = end - 1; k > i; k--)
                         if (points[starts[k - i]])
                         {
@@ -779,8 +789,12 @@ namespace ArctisAurora.Core.UI.Tex
         {
             float px = Px(s.font.size);
             if (c == TextMeasurer.SoftHyphen || TextMeasurer.IsZeroWidthBreak(c)) return 0f;
-            if (Font(FontFor(s.font)) is not FontAsset font || c >= AtlasMetaData.AdvanceTableSize) return px * 0.5f;
-            return TextMeasurer.Grid(font.atlasMetaData.TableAdvance(c, Face(font.atlasMetaData, s.font)), AdvanceGrid) * px;
+            if (Font(FontFor(s.font)) is not FontAsset font) return px * 0.5f;
+            AtlasMetaData atlas = font.atlasMetaData;
+            if (c < AtlasMetaData.AdvanceTableSize) return TextMeasurer.Grid(atlas.TableAdvance(c, Face(atlas, s.font)), AdvanceGrid) * px;
+            Glyph glyph = atlas.GetGlyph(c) ?? atlas.GetGlyph(' ');
+            if (glyph == null) return 0f;
+            return TextMeasurer.Grid(atlas.Metrics(glyph, Face(atlas, s.font)).advanceWidth, AdvanceGrid) * px;
         }
 
         private static float MathWidth(TexMathNode m)
@@ -806,7 +820,7 @@ namespace ArctisAurora.Core.UI.Tex
         internal static string FontFor(TexFont font) =>
             (font.face == null ? null : Named(font.face)) ?? font.family switch
             {
-                TexFamily.Mono => Mono,
+                TexFamily.Mono => mono == null && font.size >= 11f * Unity &&Font(Mono12Font) != null ? Mono12Font : Mono,
                 TexFamily.Sans => sans ?? Roman,
                 _ => Roman
             };
@@ -1069,13 +1083,27 @@ namespace ArctisAurora.Core.UI.Tex
             if (font != blockFont) run.SetAttributeValue("FontName", font);
             float px = Px(s.font.size);
             if (px != blockSize) Size(run, px);
-            if (s.urlStretch > 0)
+            if (s.urlStretch > 0 || s.urlBreakPenalty > 0 || s.urlWidth != 0 || s.urlShrink > 0 || s.urlNumPenalty > 0 || s.urlUcPenalty > 0 || s.urlLcPenalty > 0)
             {
-                run.SetAttributeValue("UrlStretch", Format(Px(s.urlStretch)));
+                if (s.urlStretch > 0) run.SetAttributeValue("UrlStretch", Format(Px(s.urlStretch)));
+                if (s.urlWidth != 0) run.SetAttributeValue("UrlWidth", Format(Px(s.urlWidth)));
+                if (s.urlShrink > 0) run.SetAttributeValue("UrlShrink", Format(Px(s.urlShrink)));
                 run.SetAttributeValue("UrlBreakPenalty", s.urlBreakPenalty);
                 run.SetAttributeValue("UrlBigBreakPenalty", s.urlBigBreakPenalty);
+                if (s.urlNumPenalty > 0) UrlLetters(run, "Num", s.urlNumPenalty, s.urlNumWidth, s.urlNumStretch, s.urlNumShrink);
+                if (s.urlUcPenalty > 0) UrlLetters(run, "Uc", s.urlUcPenalty, s.urlUcWidth, s.urlUcStretch, s.urlUcShrink);
+                if (s.urlLcPenalty > 0) UrlLetters(run, "Lc", s.urlLcPenalty, s.urlLcWidth, s.urlLcStretch, s.urlLcShrink);
             }
             return run;
+        }
+
+        // A biblatex URL letter class's penalty and glue, px: UrlNumPenalty, UrlNumWidth and so on.
+        private static void UrlLetters(XElement run, string kind, int penalty, int width, int stretch, int shrink)
+        {
+            run.SetAttributeValue($"Url{kind}Penalty", penalty);
+            if (width != 0) run.SetAttributeValue($"Url{kind}Width", Format(Px(width)));
+            if (stretch > 0) run.SetAttributeValue($"Url{kind}Stretch", Format(Px(stretch)));
+            if (shrink > 0) run.SetAttributeValue($"Url{kind}Shrink", Format(Px(shrink)));
         }
 
         private static void Size(XElement run, float px)

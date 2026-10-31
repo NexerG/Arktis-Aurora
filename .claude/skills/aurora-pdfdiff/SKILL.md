@@ -1,17 +1,26 @@
 ---
 name: aurora-pdfdiff
-description: Compare Aurora's LaTeX PDF export against the LuaLaTeX reference cheaply — one command, `_Build/thesis.sh`, builds, exports the thesis headless and prints only real differences (reflows, text, page breaks, baseline shifts, page overflow) plus a one-line summary. Use for any thesis / Tex.ExportPdf check, page-break or line-spacing question, "does our PDF match LaTeX", and before writing a text-position verification claim. Never dump pdftotext output instead.
+description: Compare Aurora's LaTeX PDF export of any .tex against its LaTeX reference PDF cheaply — one command, `_Build/pdfcheck.sh <file.tex> <reference.pdf>`, builds, exports headless and prints only real differences (reflows, text, page breaks, baseline shifts, page overflow) plus a one-line summary. Use for any Tex.ExportPdf check (the thesis, the CV, any document), page-break or line-spacing question, "does our PDF match LaTeX", and before writing a text-position verification claim. Never dump pdftotext output instead.
 ---
 
 # Comparing our PDF against LaTeX
 
 ```bash
-_Build/thesis.sh [--pages 11-14] [--tol 0.5] [--max 40] [--shot 27[:500-842]] [--raw] [--strict]
+_Build/pdfcheck.sh <file.tex> <reference.pdf> [--pages 11-14] [--tol 0.5] [--max 40] [--shot 27[:500-842]] [--raw] [--strict]
 ```
 
-Builds Debug, exports `Sablonas.tex` headless, prints any `[Vulkan]` line (stops the work, CLAUDE.md §10), fails if
-`Sablonas.pdf` was not rewritten, then runs `_Build/pdfdiff.py <ref> <ours>` with the arguments. To diff without
-re-exporting: `PYTHONIOENCODING=utf-8 python _Build/pdfdiff.py <ref.pdf> <ours.pdf> [args]`.
+Builds Debug, exports `<file>.tex` headless to `<file>.pdf` beside it, prints any `[Vulkan]` line (stops the work,
+CLAUDE.md §10), fails if that PDF was not rewritten, then runs `_Build/pdfdiff.py <ref> <ours>` with the arguments.
+Refuses when `<file>.pdf` is the reference itself. To diff without re-exporting:
+`PYTHONIOENCODING=utf-8 python _Build/pdfdiff.py <ref.pdf> <ours.pdf> [args]`.
+
+## Known documents
+Never overwrite a reference.
+
+| Document | `.tex` | Reference (engine) |
+|---|---|---|
+| Thesis | `C:/Projects-Repositories/Thorium Notes/BakisTest/Sablonas.tex` | `…/BakisTest/Real_Time_Global_Illumination_in_Video_Games.pdf` (LuaTeX) |
+| CV | `C:/Projects-Repositories/Thorium Notes/CVTest/Gytis-Mockevicius-Resume.tex` | `…/CVTest/Gytis_Mockevicius_Resume.pdf` (pdfTeX) |
 
 ## Output
 - `pX overflow: last line Y below the text bottom B` — our page runs past the lowest reference baseline.
@@ -30,11 +39,12 @@ Hyphens and minus signs (the reference drops them), `⋅`/`·`, `∘`/`◦`, our
 characters match once stacked delimiters, big operators (`Z X ∫ ∑ ⎡⎢⎣`) and invisible glyphs are removed —
 matrices, limits and integrals. Look at those with `--shot`.
 
+Not filtered: pdfTeX (OT1/T1 without ToUnicode) writes accented letters as a base letter plus a spacing accent, so a
+pdfTeX reference reads `Mockevicˇius` where ours reads `Mockevičius`. Those `text` lines are extraction noise too.
+
 ## Reading it
 - Start full-document; one break shifts every later page, so read the first divergent page, not the count.
 - Known gaps live in `ClaudeMemory/Decisions/latex-editor.md` ("Known gaps"); check before calling one new.
-- Reference `Real_Time_Global_Illumination_in_Video_Games.pdf` in `C:\Projects-Repositories\Thorium Notes\BakisTest\`
-  is LuaTeX's — never overwrite it.
 
 ## Claims
 A clean or explained diff is **shot-verified (text positions)**. It says nothing about glyph shapes, colour or images.

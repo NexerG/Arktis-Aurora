@@ -365,8 +365,22 @@
     <xs:attribute name="LeaderInset" type="xs:float" />
     <xs:attribute name="Note" type="xs:string" />
     <xs:attribute name="UrlStretch" type="xs:float" />
+    <xs:attribute name="UrlWidth" type="xs:float" />
+    <xs:attribute name="UrlShrink" type="xs:float" />
     <xs:attribute name="UrlBreakPenalty" type="xs:float" />
     <xs:attribute name="UrlBigBreakPenalty" type="xs:float" />
+    <xs:attribute name="UrlNumPenalty" type="xs:float" />
+    <xs:attribute name="UrlNumWidth" type="xs:float" />
+    <xs:attribute name="UrlNumStretch" type="xs:float" />
+    <xs:attribute name="UrlNumShrink" type="xs:float" />
+    <xs:attribute name="UrlUcPenalty" type="xs:float" />
+    <xs:attribute name="UrlUcWidth" type="xs:float" />
+    <xs:attribute name="UrlUcStretch" type="xs:float" />
+    <xs:attribute name="UrlUcShrink" type="xs:float" />
+    <xs:attribute name="UrlLcPenalty" type="xs:float" />
+    <xs:attribute name="UrlLcWidth" type="xs:float" />
+    <xs:attribute name="UrlLcStretch" type="xs:float" />
+    <xs:attribute name="UrlLcShrink" type="xs:float" />
   </xs:attributeGroup>
   <xs:element name="Run" type="types:Run" />
   <xs:complexType name="Run">

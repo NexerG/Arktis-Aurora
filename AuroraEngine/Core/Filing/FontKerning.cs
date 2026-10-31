@@ -42,10 +42,10 @@ namespace ArctisAurora.Core.Filing
 
             for (int a = 0; a < chars.Length; a++)
             {
-                if (glyphOf[a] == 0 || char.IsWhiteSpace(chars[a])) continue;
+                if (glyphOf[a] == 0 || !IsKerned(chars[a])) continue;
                 for (int b = 0; b < chars.Length; b++)
                 {
-                    if (glyphOf[b] == 0 || char.IsWhiteSpace(chars[b])) continue;
+                    if (glyphOf[b] == 0 || !IsKerned(chars[b])) continue;
                     int value = positioned ? GposValue(data, subtables, lookupStarts, glyphOf[a], glyphOf[b]) : KernTableValue(data, kern, glyphOf[a], glyphOf[b]);
                     if (value == 0) continue;
                     keys.Add((uint)chars[a] << 16 | chars[b]);
@@ -251,6 +251,9 @@ namespace ArctisAurora.Core.Filing
             return total;
         }
         #endregion
+
+        // a glyph, a space or a no-break space
+        private static bool IsKerned(char c) => c == ' ' || c == ' ' || !char.IsWhiteSpace(c);
 
         private static int U16(byte[] d, int at) => BinaryPrimitives.ReadUInt16BigEndian(d.AsSpan(at));
     }

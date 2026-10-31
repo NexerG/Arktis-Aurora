@@ -203,11 +203,53 @@ namespace ArctisAurora.Core.UI.Document
         [A_XSDElementProperty("UrlStretch", "UI", "A biblatex URL's \\Urlmuskip: stretch between its characters in pixels; absent is none.")]
         public float urlStretch { get; set; }
 
+        [A_XSDElementProperty("UrlWidth", "UI", "A URL's \\Urlmuskip: natural width between its characters in pixels; absent is none.")]
+        public float urlWidth { get; set; }
+
+        [A_XSDElementProperty("UrlShrink", "UI", "A URL's \\Urlmuskip: shrink between its characters in pixels; absent is none.")]
+        public float urlShrink { get; set; }
+
         [A_XSDElementProperty("UrlBreakPenalty", "UI", "The penalty of a line ending after one of the URL's ordinary break characters.")]
         public float urlBreakPenalty { get; set; }
 
         [A_XSDElementProperty("UrlBigBreakPenalty", "UI", "The penalty of a line ending after one of the URL's big break characters, ':' and '-'.")]
         public float urlBigBreakPenalty { get; set; }
+
+        [A_XSDElementProperty("UrlNumPenalty", "UI", "biblatex's biburlnumpenalty: the penalty of a line ending after a URL digit; absent is no break there.")]
+        public float urlNumPenalty { get; set; }
+
+        [A_XSDElementProperty("UrlNumWidth", "UI", "biblatex's \\biburlnumskip: natural width after a URL digit in pixels; absent is none.")]
+        public float urlNumWidth { get; set; }
+
+        [A_XSDElementProperty("UrlNumStretch", "UI", "biblatex's \\biburlnumskip: stretch after a URL digit in pixels; absent is none.")]
+        public float urlNumStretch { get; set; }
+
+        [A_XSDElementProperty("UrlNumShrink", "UI", "biblatex's \\biburlnumskip: shrink after a URL digit in pixels; absent is none.")]
+        public float urlNumShrink { get; set; }
+
+        [A_XSDElementProperty("UrlUcPenalty", "UI", "biblatex's biburlucpenalty: the penalty of a line ending after a URL capital letter; absent is no break there.")]
+        public float urlUcPenalty { get; set; }
+
+        [A_XSDElementProperty("UrlUcWidth", "UI", "biblatex's \\biburlucskip: natural width after a URL capital letter in pixels; absent is none.")]
+        public float urlUcWidth { get; set; }
+
+        [A_XSDElementProperty("UrlUcStretch", "UI", "biblatex's \\biburlucskip: stretch after a URL capital letter in pixels; absent is none.")]
+        public float urlUcStretch { get; set; }
+
+        [A_XSDElementProperty("UrlUcShrink", "UI", "biblatex's \\biburlucskip: shrink after a URL capital letter in pixels; absent is none.")]
+        public float urlUcShrink { get; set; }
+
+        [A_XSDElementProperty("UrlLcPenalty", "UI", "biblatex's biburllcpenalty: the penalty of a line ending after a URL lowercase letter; absent is no break there.")]
+        public float urlLcPenalty { get; set; }
+
+        [A_XSDElementProperty("UrlLcWidth", "UI", "biblatex's \\biburllcskip: natural width after a URL lowercase letter in pixels; absent is none.")]
+        public float urlLcWidth { get; set; }
+
+        [A_XSDElementProperty("UrlLcStretch", "UI", "biblatex's \\biburllcskip: stretch after a URL lowercase letter in pixels; absent is none.")]
+        public float urlLcStretch { get; set; }
+
+        [A_XSDElementProperty("UrlLcShrink", "UI", "biblatex's \\biburllcskip: shrink after a URL lowercase letter in pixels; absent is none.")]
+        public float urlLcShrink { get; set; }
 
         public FontStyle Style =>
             bold ? (italic ? FontStyle.BoldItalic : FontStyle.Bold)
@@ -399,6 +441,8 @@ namespace ArctisAurora.Core.UI.Document
         protected override bool OptimalBreaks => optimalBreaks;
 
         protected override bool WidowControl => widowControl;
+
+        protected override bool KeepTogether => note.keepTogether;
 
         protected override float FirstLineIndent => firstIndent * textZoom;
 

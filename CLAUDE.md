@@ -73,13 +73,12 @@ Transform tasks into verifiable goals:
 For multi-step tasks, state a brief plan:
 ```
 1. [Step]
-2. [Step] → midpoint: [check]
+2. [Step]
 3. [Step]
 4. [Step] → end: [check]
 ```
 
-The test suite runs twice per go: at the midpoint (the step where the change first compiles and runs
-end-to-end, named in the plan) and at the end. Not per step. A plain build between steps is fine when
+The test suite runs once per go, at the end. Not per step. A plain build between steps is fine when
 the next step depends on it compiling.
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.

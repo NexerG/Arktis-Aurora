@@ -55,6 +55,13 @@ Font sizes stay fractional through layout: `TextRunControl.Zoomed` returns `size
 			carry the line before the break over too, or the whole paragraph when fewer than two lines would stay behind
 		lines carrying a footnote anchor are not moved   // `HasAnchors`
 Under `\raggedbottom` TeX does this at its default penalties for shortfalls under about 68 pt.
+#### Keep together (`NoteBlock.keepTogether`, TeX output)
+	`TexLowering.Block` writes `KeepTogether` when the paragraph ended under `\interlinepenalty` of 5000 or more   // biblatex entries, contents entries
+	for each kept block that `Paginate` would split
+		if its first line already sits at a page's text top
+			let it split   // a block taller than a page
+		otherwise
+			move the whole block to the next page   // the widow rule with from = 0
 #### Keep with next (`NoteBlock.keepWithNext`, paged mode)
 	headings and the empty line before a paragraph-starting display carry the flag
 	after a block is placed
@@ -83,6 +90,14 @@ Justification weights each space by its factor: its share of the stretch is mult
 
 The optimal line breaker runs TeX's passes, reading `Tolerance`, `Pretolerance` and `EmergencyStretch` from the `DocumentLayout`. The defaults (200, -1, 0) keep a note on the old single pass.
 
+In a TeX layout a formula or inline picture is a breakpoint only at the space next to it, as TeX treats a math node like a kern: `BreakPass` allows no break directly before or after a `Picture` character.
+
+#### Badness (ratio)
+	`r` = floor of 297 times the absolute ratio
+	if `r` is above 1290
+		return 10000
+	return (r cubed + 2 to the power 17) shifted right by 18   // TeX's integer badness, so equal lines tie and the active-list order decides
+A shrinking line is tight above badness 12, else decent; a stretching line is very loose above 99, loose above 12, else decent.
 #### Break Optimal (tolerance, pretolerance, emergency stretch)
 build the width, stretch and shrink prefix arrays once   // a space's stretch is multiplied by its factor, its shrink divided by it, from its natural width
 if `pretolerance` is not -1
@@ -101,7 +116,11 @@ A TeX document's vertical skips carry their shrink into the model as `ShrinkBefo
 ## One pen step, kerning and the width grid
 Every walk along a line moves the pen through one function, `TextMeasurer.AdvanceAt`: layout, drawing, justify, align, fill, hit-test, caret and sheet cells. Before it, the draw loop moved the pen by the glyph's raw advance, separately from layout.
 
-Kerning from the font is global. Every text run in every font that has pairs kerns, so notes, UI labels, sheet cells and TeX documents all do. The pairs are read from the font's GPOS `kern` feature (or the old `kern` table) at import and baked into its `.agd`, so a font imported before kerning loads with no pairs until it is re-baked. A kern only joins two characters that are adjacent in the run, so none crosses a soft hyphen or a zero-width space. Pairs against whitespace are never stored.
+A URL run's `\Urlmuskip` glue has a width, a stretch and a shrink. `AdvanceAt` adds the width wherever `IsUrlGlueAfter` holds, so layout, drawing, justification, hit-testing and the caret agree. Knuth-Plass adds the shrink to its sums, and the glue after a URL break marker is dropped from a line that ends at that marker (`TrailingUrlGlue` in the break pass and `AppendLine`, and the `visible` width in `TextRunControl` justify), as TeX discards glue after a break. Justify gives a URL glue `spaceExtra × urlStretch` when stretching and `spaceExtra × urlShrink` when shrinking.
+
+A bibliography URL can also break after each digit, capital or lowercase letter when biblatex's `biburlnumpenalty`, `biburlucpenalty` or `biburllcpenalty` is above 0 (L11o). The typesetter appends a marker after the character, U+E007 for a digit, U+E008 for A–Z and U+E009 for a–z, and the run carries that class's penalty and glue as `UrlNumPenalty`, `UrlNumWidth`, `UrlNumStretch`, `UrlNumShrink` and the same for `Uc` and `Lc`. [[TextMeasurer]] treats the markers as zero-width break opportunities; `UrlLetterGlue` gives the class's width, stretch or shrink after the character at an index when a letter marker follows it, `AdvanceAt` adds the width, Knuth-Plass takes the class penalty at each marker, and justification adds the stretch and shrink. The glue sits before the break, so it stays in the line when a line breaks there, unlike `\Urlmuskip` after a break marker, which is discarded.
+
+Kerning from the font is global. Every text run in every font that has pairs kerns, so notes, UI labels, sheet cells and TeX documents all do. The pairs are read from the font's GPOS `kern` feature (or the old `kern` table) at import and baked into its `.agd`, so a font imported before kerning loads with no pairs until it is re-baked. A kern only joins two characters that are adjacent in the run, so none crosses a soft hyphen or a zero-width space. Pairs against a space or no-break space are stored and applied, as luaotfload does, which changes only the space's natural width: its stretch and shrink stay based on the unkerned advance in line breaking and justification. Other whitespace is never kerned.
 
 A TeX document also truncates every glyph width to 1/1000 em toward zero, as LuaLaTeX does, through `DocumentLayout.AdvanceGrid` (written by lowering, 0 means exact). Kerns are truncated to the same grid.
 
@@ -251,6 +270,14 @@ The pages themselves are plain panels drawn behind the highlights and the text. 
 	y = top
 	for each block
 		if not the first block: y += the block's space before when it has one, else block spacing   // a table's too; a code run has no gap unless it sets one
+		if the block is a table with Axis > 0 and the block above is a text block that is not a strut or a rule   // a tabular set in a line
+			rise = the table's rows' total height / 2 + Axis
+			distance = pitch − the line above's ink depth − rise
+			if distance < 0
+				distance = ink depth + rise + LineSkip
+			else
+				distance = pitch
+			y += distance − descent − rise
 		y = push(y, first line's height)            — the whole block moves if its first line would cross
 		for each line of the block
 			y = push(y, line height)

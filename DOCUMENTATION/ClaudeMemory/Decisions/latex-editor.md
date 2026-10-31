@@ -404,7 +404,7 @@ Plain for article and report, headings for book; `\maketitle`'s page takes plain
 
 ## Known gaps
 - Pasted tabs become spaces (existing paste path). Mixed line endings in one file normalise to CRLF on save.
-- Expander unsupported: `#{` parameter, `^^` notation, TeX's unbraced `\input file`, `\number`/`\romannumeral`/`\meaning`, `\aftergroup`/`\afterassignment`, `\refstepcounter`, `\outer`, mu units.
+- Expander unsupported: `#{` parameter, `^^` notation, TeX's unbraced `\input file`, `\number`/`\romannumeral`/`\meaning`, `\aftergroup`/`\afterassignment`, `\refstepcounter`, `\outer`, mu units — mu glue registers landed in L11n; `\mskip`/`\mkern` in text landed in L11o.
 - NOT GUI-verified: opening a `.tex` from the vault browser in a normally launched Thorium, typing in it, saving.
 - Boot fails on a pre-existing `[Assets] failed to load the default sampler asset` error (in `engine.log` before this work).
 - L2 verification: builds clean. Test-verified: `Fonts.CffCharstring` (lines, rrcurveto, hvcurveto, width + stems + one-byte hint mask, local and global subrs with bias, flex, ink box follows a curve not its controls); `LatinModern.Baked` (a/g/ﬁ/—/é distinct; a = 0.5 em and m = 0.833 em like cmr10; Roman has italic/bold/bold-italic; mono is monospaced; LM Math constants non-zero; ∑ ∫ √ α ⎛ ⎝ present). Golden-verified: `LatinModern.Draws` — PNG inspected (Roman line with ffi ligature glyph, em dash, curly quotes, é; mono line; math line ∑ ∫ √ α β γ ≤ ≠ ∞ and paren pieces; √ sits low by design, 0.96 em depth, confirmed by Windows' GlyphTypeface). Glyph indices for ∑ (3060) and √ (3077) cross-checked against Windows' `GlyphTypeface.CharacterToGlyphMap`. Full Thorium `--test`: 162 passed, 2 failed — pre-existing Boot (`default sampler asset`) and `Sheet.FixedSize` golden, which belongs to another session's concurrent uncommitted sheet work. NOT GUI-verified (nothing user-visible uses Latin Modern yet).
@@ -470,7 +470,7 @@ Plain for article and report, headings for book; `\maketitle`'s page takes plain
 	- Typesetter preamble (`TexTypesetter`): `\documentclass` points `vtarget` at a private discarded `preamble` list; `\begin{document}` ends any open paragraph and restores `vlist`. Text in the preamble is dropped and `LaTeX Error: Missing \begin{document}` is reported once (`EnsureDocument` no longer flips `inDocument`; flag `preambleReported`). A fragment with no `\documentclass` still typesets. `\documentclass` sets `\parindent` to the class's 15/17/18pt via `InsertSource`; `parIndent` (pt) reads the register; new public `bool hyphenate` (`\hyphenpenalty` < 10000); `StartParagraph` adds a `\parskip` VSkip when non-zero outside lists.
 	- Paper: new public fields `customWidth`, `customHeight`, `fitHeight` (mm), `times` (bool); `paperWidth`/`paperHeight` prefer the custom values; geometry keys `paperwidth`/`paperheight`; primitives `\pdfpagewidth`, `\pdfpageheight` (private `PdfPage`): a `\pagetotal` in the value sets `fitHeight` = the rest, otherwise sets the paper. `\definecolor{name}{model}{spec}` (private `DefineColor`, `definedColors`; `ResolveColor`/`Named` became instance methods and look there first). `\rule[raise]{w}{h}` (private `RuleBox`) adds a new `TexRuleBox` node (width, height, raise sp, style).
 	- enumitem: private nested `ListSettings` (label tokens, leftMargin/itemSep/parSep/topSep sp, `Apply`), `ListFrame.settings`; `\newlist` (`NewList`, defines `\name`/`\endname` at runtime), `\setlist[names]{keys}` (`SetList`; numeric levels read as every level), `\begin{itemize}[keys]`; keys label, leftmargin, itemsep, parsep, topsep, noitemsep, nosep (others logged). `BeginList(kind, name, token)` merges "" + kind + name settings then its own options; `Item`, `StartParagraph`, `EndEnvironment(depth, topSep?)` use the overrides. Private static `LabelMarker` maps a label's commands to a `ListMarker` name: \rule/\blacksquare→Square, \square→SquareOutline, \textbullet/\bullet→Disc, \circ/\textopenbullet→Circle, \blacktriangleright/\blacktriangle→Triangle, \triangleright/\triangle→TriangleOutline, \arabic→Decimal, \alph→LowerAlpha, \Alph→UpperAlpha, \roman→LowerRoman, \Roman→UpperRoman; anything else keeps the default marker with an Info log. `TexParStyle.marker` (string?) and `TexParStyle.leftMargin` (sp) carry them to lowering.
-	- titlesec: private nested `TitleFormat` (format, label, before, after tokens; sep; beforeSkip/afterSkip sp); `titleFormats` by depth; `\titleformat` (`TitleFormatCommand`, starred form = format only; shapes other than hang/block logged and set as hang), `\titlespacing*` (`TitleSpacing`; `*n` = n ex). `Section()` uses them: the heading starts from normalfont at normal size and the format tokens; an empty label shows no number; `\the<level>` in a label is replaced by the full number; the after-code (`headingAfterCode`) runs after `@endhead`, then new primitive `@endheadafter` adds the after-skip and keeps the next paragraph unindented. Known packages added: ulem, enumitem, titlesec, mathptmx, times, tgtermes, newtxtext; the last four set `times`.
+	- titlesec: private nested `TitleFormat` (format, label, before, after tokens; sep; beforeSkip/afterSkip sp); `titleFormats` by depth; `\titleformat` (`TitleFormatCommand`, starred form = format only; shapes other than hang/block logged and set as hang), `\titlespacing*` (`TitleSpacing`; `*n` = n ex). `Section()` uses them: the heading starts from normalfont at normal size and the format tokens; an empty label shows no number; `\the<level>` in a label is replaced by the full number; the after-code (`headingAfterCode`) runs after `@endhead`, then new primitive `@endheadafter` adds the after-skip and keeps the next paragraph unindented. Since 2026-10-31 the after-code runs in the heading's style (`headingOuterStyle` holds the body's until `@endheadafter`), as titlesec runs it inside the heading's group: the CV's `\rule` paragraph closes at `\large`'s 14 pt `\baselineskip`, not the body's 13.6 (measured against the pdfTeX reference: heading → rule 7.02 pt). A rule-only line lowers to a Rule block with a `<Run>` at the rule's font size and that paragraph's `LineHeight`, so its pitch is TeX's `\baselineskip`; before, it took the theme's Rule size and drifted +2.7 pt per section. Known packages added: ulem, enumitem, titlesec, mathptmx, times, tgtermes, newtxtext; the last four set `times`.
 	- Note model (Engine UI, any note, not LaTeX-only): `UI.Run.fill` — XML `<Run Fill="true">`: a fill run takes its line's slack like TeX's `\hfill`. Plumbing: `StyleSpan.fill`, `NoteBlock` append, `TextRunData` (Runs, SameStyle, Typable — typing beside a fill stays text), `TextMeasurer.Run.fill` (ctor param), `MeasuredRun.fill` in the reuse key, flag `Fill`=16 (a break point, zero width), `MeasureAdvance` returns 0 for it; Knuth-Plass treats a short line holding a fill (not one breaking at it) as badness 0; `TextLine.fillExtra`; `TextRunControl.Fill()` gives each line's slack to its fills, those lines are not justified or aligned; `Stretch`/`Stretched`/`FillAt`; the draw loop advances by it and records a space glyph for the PDF.
 	- `NoteBlock.listIndent` (float?) — XML `<Block ListIndent="px">` overrides the layout's ListIndent for that item; copied in `SplitAt`, `SliceSnapshot`, `TakeKind`, `BlockSnapshot.listIndent`, the plain-text paste fragment and `ForDestination`; `BlockControl.ApplyLayout` uses it. `NoteBlock.ruleWeight` (float?) — XML `<Block StylingType="Rule" Weight="px">`: the rule is that thick and stands with its bottom on the block's text-line baseline (TeX's rule box in a paragraph); without Weight the old 1px rule centred on the line. Copied like `listIndent`; `BlockSnapshot.ruleWeight`.
 	- `UI.PageLayout.fitHeight` — XML `<Page FitHeight="mm">`: the last page is cut to (its content below the top margin) + this; `DocumentControl.lastPageHeight`, set in `Paginate`, used by `ArrangePages` (so `PageRects` and the PDF MediaBox follow). `TextRunControl.Align/Justify` reworked through new private `Spread(line, stretch)`: Knuth-Plass's shrink is now applied to every line it set over its room (centred, left/right, a paragraph's last line, a line before a display), not only justified non-last lines.
@@ -560,11 +560,11 @@ Plain for article and report, headings for book; `\maketitle`'s page takes plain
 	- L10d-F7 (user: yes): a U+00A0 in a run with an explicit `Space` width (lowering's `Spacer` for `\hspace`, `\,`, kerns) stays rigid — no `Tie` flag, counted as ink in `Spread`. Found by `Tex.CenteredOverfull`: the spacer had become shrinkable glue in BreakOptimal and was counted in `Spread`'s spaces, but drawing never applies stretch to an explicit-width run, so ink ran up to 13 pt past the edge. Rejected: lowering writing spacers with another character (changes the lowered documents).
 	- L10d smaller choices: Lithuanian `indentfirst` default true (polyglossia's gloss; LTPlius dropped the indentfirst package for that reason; ground truth indents at 107.7 pt); an unknown language name has no patterns → not hyphenated (was English); british/ukenglish use en-us patterns; `\hyphenation` stays one list for all languages; hyphenation now also applies to words with non-ASCII letters in English documents, as TeX does.
 	- L10d verification: builds clean. Test-verified: `_Build/test.sh Tex` 70 passed, 1 failed (Boot — pre-existing); full Thorium `--test` 415 passed, 6 failed, 1 skipped: Boot, `Sheet.PasteLinks`, `Sheet.NotePasteLinks`, `Sheet.MathLinks` (all failing before L10d), and goldens `Tex.Floats` (Page) and `Tex.Pages` (Break) — both differ only at `~` ties ("Figure~1 … Table~1 … Section~1", "page~1") narrowing from 0.5 em to a space; both re-baselined after the user looked (`--test=LatinModern --test-approve` rewrote only those two; LatinModern then 17 passed, 1 failed — Boot). Golden-verified. No `[Vulkan]` lines. Shot-verified (text and positions): scratch copy of the thesis exported headless (`Thorium.exe Sablonas.tex --exec "Wait 3000; Focus; Tex.ExportPdf; Wait 2000; Quit"`, exit 0) and read with pypdf against the LuaLaTeX PDF: captions "1 pav. …" … "13 pav. …", "1 lentelė. …", "2 lentelė. …" (were "1: …"); no stray "justification=…" text (was printed); title page line breaks identical to the ground truth ("…naudojant „Radiance" / "Cascades“", English title on one line; was "Cas-/cades"); first paragraph after "1. ĮVADAS" indented at 107.7 pt (truth 107.7; was not indented); ground-truth hyphen breaks reproduced 106 of 114 (was 23); line ends sharing the word with the ground truth 510 of 669 (was 385 of 671); our hyphenated line ends 151 vs truth 139 (was 75); 32 pages vs 35 (table of contents missing, L10e); no U+00A0 in the PDF text. Caption bold/italic verified by test only (`Tex.CaptionSetup`), not in the PDF. NOT GUI-verified.
-	- L10d gaps: language is per paragraph — `\foreignlanguage` (and a `\selectlanguage` mid-paragraph) does not change hyphenation of the words it covers. Lithuanian `\today` not done; `\contentsname` landed in L10e, the biblatex strings landed in L10f. `\hyphenation` is one list for all languages. caption: `labelsep=newline` and keys beyond the five are ignored; `justification`, `singlelinecheck` read and ignored. `TexLowering.Advance` (cell/heading width estimates) still reads U+00A0's own glyph advance for a literal U+00A0 typed in TeX source (the measurer uses a space). U+00A0 in notes now stretches in justified paragraphs and is space-width in LM/Termes (F6, intended) — existing notes with U+00A0 reflow slightly. The template's `\addto\captionenglish` (typo for captionsenglish) is not handled.- L10e — table of contents (2026-10-28; forks L10e-F1 to L10e-F8 user-picked): the fifth stage of L10 (the thesis against its LuaLaTeX PDF). `\tableofcontents`, `\listoffigures`, `\listoftables`, `\addcontentsline`, `\addtocontents` typeset real contents lists, using ports of LaTeX's own macros (latex.ltx `\@dottedtocline`, `\numberline`, article's `\l@section`…, tocloft, tocbibind) over new TeX primitives (`\leftskip`/`\rightskip`/`\parfillskip`, `\hbox to`, `\makebox[w][pos]`, `\leaders`). Page numbers come from the existing `\pageref` after-layout pass (two passes = the preview reload). Dot leaders draw aligned across lines, in the preview and the PDF. Blocks gained left/right indents and a last-line right indent as a full note feature. The L10a placeholders for `\tableofcontents`/`\addcontentsline` are gone; `\phantomsection` stays a no-op.
+	- L10d gaps: language is per paragraph — `\foreignlanguage` (and a `\selectlanguage` mid-paragraph) does not change hyphenation of the words it covers. Lithuanian `\today` not done; `\contentsname` landed in L10e, the biblatex strings landed in L10f. `\hyphenation` is one list for all languages. caption: `labelsep=newline` and keys beyond the five are ignored; `justification`, `singlelinecheck` were read and ignored here, and are read since the internship report section. `TexLowering.Advance` (cell/heading width estimates) still reads U+00A0's own glyph advance for a literal U+00A0 typed in TeX source (the measurer uses a space). U+00A0 in notes now stretches in justified paragraphs and is space-width in LM/Termes (F6, intended) — existing notes with U+00A0 reflow slightly. The template's `\addto\captionenglish` (typo for captionsenglish) is not handled.- L10e — table of contents (2026-10-28; forks L10e-F1 to L10e-F8 user-picked): the fifth stage of L10 (the thesis against its LuaLaTeX PDF). `\tableofcontents`, `\listoffigures`, `\listoftables`, `\addcontentsline`, `\addtocontents` typeset real contents lists, using ports of LaTeX's own macros (latex.ltx `\@dottedtocline`, `\numberline`, article's `\l@section`…, tocloft, tocbibind) over new TeX primitives (`\leftskip`/`\rightskip`/`\parfillskip`, `\hbox to`, `\makebox[w][pos]`, `\leaders`). Page numbers come from the existing `\pageref` after-layout pass (two passes = the preview reload). Dot leaders draw aligned across lines, in the preview and the PDF. Blocks gained left/right indents and a last-line right indent as a full note feature. The L10a placeholders for `\tableofcontents`/`\addcontentsline` are gone; `\phantomsection` stays a no-op.
 	- Prelude (`ArctisAurora.Core.Tex.TexFormat`): registers `\skipdef\leftskip=243 \rightskip=244 \parfillskip=245`, `\dimendef\@tempdima=247`, `\countdef\interlinepenalty=246`; macros `\protect` (=\relax), `\leavevmode`, `\null`, `\nobreak`, `\normalcolor`, `\m@th`, `\hfil`, `\hss`, `\hb@xt@`, `\makebox` (+`\@makebox`, `\@imakebox`, `\@mb@l/r/c/s`), counter `tocdepth`=3, `\@mkboth`, `\@toclevel` (section), `\@starttocsetup` (empty), `\@pnumwidth` 1.55em, `\@tocrmarg` 2.55em, `\@dotsep` 4.5, `\contentsline`, `\numberline`, `\@dottedtocline`, `\l@section`, `\l@subsection`…`\l@subparagraph`, `\l@figure`, `\l@table`, `\tableofcontents`, `\listoffigures`, `\listoftables`; `\contentsname`/`\listfigurename`/`\listtablename` in `\captionsenglish` (Contents / List of Figures / List of Tables) and `\captionslithuanian` (Turinys / Paveikslų sąrašas / Lentelių sąrašas).
 	- New `TexFormat` constants: `ChapterContents` (report/book: `\@toclevel` chapter, `\l@chapter`, deeper section levels; `SetClass` reads it) and `Tocloft` (`\cftdot`, `\cftdotsep` 4.5, `\cftnodots` 5000, `\cftpnumalign`, `\cftparskip` 0pt with `\@starttocsetup` setting `\parskip\cftparskip`, `\cftdotfill`, `\@cftlevel` defining per level `\cftbefore<L>skip`, `\cft<L>indent`, `\cft<L>numwidth` lengths and `\cft<L>font/pagefont/presnum/aftersnum/aftersnumb/afterpnum/dotsep/leader` macros for sec, subsec, subsubsec, para, subpara, fig, tab with tocloft's default values; `\@cftentry`; tocloft `\numberline`; `\l@…` redefined).
 	- `ArctisAurora.Core.Tex.TexNode`: `TexParStyle.indentWidth`, `leftSkip`, `rightSkip`, `parFillSkip` (sp); `TexGlueNode.leader` (TexHBox?); `TexHBox.width` (sp, -1 natural); new `TexContentsMark(extension)`.
-	- `ArctisAurora.Core.Tex.TexTypesetter`: primitives `\leaders`, `\addcontentsline`, `\addtocontents`, `\@starttoc`, `\@endcontents`, `\@afterindenttrue`; `Box` honours `\hbox to`; `EndParagraph` records `\leftskip`/`\rightskip`/`\parfillskip`, `StartParagraph` `\parindent`; `Section` keeps `[short]` and writes `\addcontentsline{toc}{level}{\protect\numberline{n}title}` after the heading (`headingContents`, `InsertHeadingContents` at `@endhead`/`@runin`); `Caption` keeps `[short]` and writes lof/lot entries; `BeginBibliography` adds a toc entry when `bibInContents` (set by tocbibind unless `notbib`, or `\printbibliography[heading=bibintoc]`); packages `tocloft`, `tocbibind` known.
+	- `ArctisAurora.Core.Tex.TexTypesetter`: primitives `\leaders`, `\addcontentsline`, `\addtocontents`, `\@starttoc`, `\@endcontents`, `\@afterindenttrue`; `Box` honours `\hbox to`; `EndParagraph` records `\leftskip`/`\rightskip`/`\parfillskip`, `StartParagraph` `\parindent`; `Section` keeps `[short]` and writes `\addcontentsline{toc}{level}{\protect\numberline{n}title}` after the heading (`headingContents`, `InsertHeadingContents` at `@endhead`/`@runin`); `Caption` keeps `[short]` and writes lof/lot entries; `BeginBibliography` adds a toc entry when `bibInContents` (set per list: `\printbibliography[heading=bibintoc]`, or tocbibind unless `notbib` when biblatex is not loaded; see the internship report section); packages `tocloft`, `tocbibind` known.
 	- New `TexTypesetter` region `contents`: `AddContentsLine`, `AddContents`, `Protected` (\protected@write-style expansion: `\protect` → `\noexpand`, then `Expanded`), `ContentsLine`, `InsertHeadingContents`, `TypesetContents` (runs after `TypesetBibliography`, before `Resolve`; wraps entries in `\begingroup\@starttocsetup … \par\endgroup`), `TocBibind`, `ReadCode` (built-in package code read like a local package, `@` a letter); `MarkLabel` split out of `Label`. Entries are ranges of one token list (`contentsTokens`, `contentsEntries`); bibliography entries are inserted where its mark stood (`bibContentsAt`, `contentsAt`). Each entry's page is `\pageref{@toc<n>}` to an auto-label at the heading.
 	- `ArctisAurora.Core.UI.Tex.MathParser`: `\mkern`/`\mskip` (in mu, plus/minus read and dropped), `\hbox{…}` as `\text`.
 	- `ArctisAurora.Core.UI.Tex.TexLowering`: `TakeLeading` (a `\leftskip` paragraph's leading glue/kerns/penalties/empty boxes become its `Indent`), `Skips` (block `LeftIndent`, `RightIndent`, `RightIndentLast`, `Indent`), `FixedBox` (local in `Runs`: `\hbox to` slack shared at fil glue as spacers, or after with none), `LeaderCell` (leader text, inset and cell width; math kerns in mu, `\hbox` text in the text font), `TextWidth` (internal), `BoxFitNote`; fill runs get `Leader`/`LeaderWidth`/`LeaderInset`; `TexPageRefs.fits` + `TexPageRefs.Fit(run, number)`. `TexEditorControl.ResolvePages` calls `pageRefs.Fit` when it fills a number.
@@ -737,7 +737,7 @@ Script-size font dimensions (cmsy7/cmsy5) are approximated by cmsy10's scaled to
 ### Known gaps
 - About 1.2 pt still too much below displays. A probe (12pt, onehalfspacing, \parskip 3pt, a fraction display between paragraphs) puts the next baseline 32.6 pt below the display baseline where TeX's rules predict 29.6 (\belowdisplayshortskip 6.5 + \parskip 3 + \lineskip glue: depth 10.1 + 1 + height 9.0). Whether the interline rule fires between a display block and the next text block is not established (needs the lowered XML); cause not established.
 - A re-import of latinmodern-math (`MathConstants.Read` then `Save`) would write the new TFM attributes as 0, since `Read` does not set them; TFM mode would then put subscripts on the baseline.
-- Upper limits: TeX's rule 13a gap is max(big_op_spacing1 .111 + d(sup), big_op_spacing3 .2); the OpenType path computes max(UpperLimitGapMin .2 + d, UpperLimitBaselineRiseMin .111), which differs for superscripts with depth; TFM mode still uses the OpenType form (not changed).
+- Upper limits: TeX's rule 13a gap is max(big_op_spacing1 .111 + d(sup), big_op_spacing3 .2); the OpenType path computes max(UpperLimitGapMin .2 + d, UpperLimitBaselineRiseMin .111), which differs for superscripts with depth; TFM mode still uses the OpenType form (not changed). **CLOSED by L11r**: TFM mode now uses rule 13a.
 - Glyph shapes stay LM Math, not CM.
 
 ## L11f — line breaking as TeX (2026-10-30)
@@ -827,7 +827,7 @@ Follows L11f. L11g: TeX documents truncate every glyph width to 1/1000 em toward
 
 **Q2 (user): user-imported fonts in Release builds get no upgrade;** re-import in the dev build.
 
-**Q3 (user: "don't kern"): pairs involving whitespace are not stored.** TeX never kerns against a space (it is glue).
+**Q3 (user: "don't kern"): pairs involving whitespace are not stored.** TeX never kerns against a space (it is glue). **REVERSED by L11s (2026-10-31):** luaotfload, which the reference uses, does kern against interword glue; pairs with U+0020 and U+00A0 are now stored and applied.
 
 Pair counts: TNR 407, Calibri 37,533, Carlito 37,557, Cambria 3,256, Arial 342, Consolas 0.
 
@@ -995,7 +995,7 @@ Found by re-diffing the thesis: p17 and p27 ran 5.3 and 13 pt past the text bott
 - `DocumentControl.Paginate`: the overflow re-layout is a local function `ShrinkPage(page, end)` (shared by the block path and the insert path; also clears `afterHere`/`floatShrink`). The insert path runs it when a here-float lands on a later page than the text before it (`textEnd`).
 - `Paginate`: a here-float at its page's text top charges one `\intextsep` shrink, not two.
 - `PageFloats.Here`: the gap below a float uses its own page's ratio (`space.Ratio(g.page)`), the gap above the text page's.
-- Tooling: `_Build/thesis.sh` (build, headless export, stale-export and `[Vulkan]` check, pdfdiff); `_Build/pdfdiff.py` filters extraction noise, groups reflowed paragraphs into one line, flags overflow, `--shot`, `--raw`, `--strict` (exit 0 otherwise).
+- Tooling: `_Build/pdfcheck.sh <file.tex> <reference.pdf>` (build, headless export, stale-export and `[Vulkan]` check, refuses to overwrite the reference, pdfdiff; replaced `_Build/thesis.sh` 2026-10-31, known pairs in the `aurora-pdfdiff` skill); `_Build/pdfdiff.py` filters extraction noise, groups reflowed paragraphs into one line, flags overflow, `--shot`, `--raw`, `--strict` (exit 0 otherwise).
 
 ### Why these choices
 **The shrink was promised and never taken.** A line fits on the page's gap shrink (`slack`) and `ShrinkFrom` applies it when content leaves the page — but only the block path checked; a here-float moving to the next page left the overflowing page unshrunk. Reference p17 shrinks both figure gaps 2.6 pt; ours now does.
@@ -1011,9 +1011,9 @@ Found by re-diffing the thesis: p17 and p27 ran 5.3 and 13 pt past the text bott
 
 ### Known gaps
 - Line-break differences in ~10 paragraphs — mostly CLOSED by L11g-2 (below); 4 remain
-- Bibliography URLs (p33–34): ours spreads stretch across every URL letter and breaks elsewhere than biblatex; p33 starts 3 pt high
-- English abstract: ASCII `"` drawn straight, reference draws `”`
-- Table caption +1.5 pt (p28); TOC leader one dot extra (p2)
+- Bibliography URLs (p33–34): ours spreads stretch across every URL letter and breaks elsewhere than biblatex (stretch CLOSED by L11i); p33 starts 3 pt high
+- English abstract: ASCII `"` drawn straight, reference draws `”` — CLOSED by L11i
+- Table caption +1.5 pt (p28) — CLOSED by L11i; TOC leader one dot extra (p2; retracted in L11s: one dot fewer, closed there)
 
 ## L11g-2 — TeX lays out with exact glyph widths (2026-10-30)
 Corrects L11g. `TexLowering.AdvanceGrid` 1000 → 0, so TeX documents measure, break and justify with exact widths; `Tex.AdvanceGrid` expects `AdvanceGrid="0"`. `DocumentLayout.AdvanceGrid` and `TextMeasurer.Grid` stay as a note feature nothing sets.
@@ -1030,6 +1030,482 @@ Corrects L11g. `TexLowering.AdvanceGrid` 1000 → 0, so TeX documents measure, b
 
 ### Known gaps
 - Four paragraphs still break differently: p7 "kū-|rimo" vs ours "kūri-|mo", p11 ref hyphenates "apšvieti-mo" where ours does not, p17 ref "kur|x0" vs ours "kur x0|", p24 ours hyphenates "dimensijo-se" where the reference does not (new with exact widths). Not investigated.
-- English abstract (p5) still differs through the `"` quote (L11e-2 gap)
+- English abstract (p5) still differs through the `"` quote (L11e-2 gap) — the quote is CLOSED by L11i; the paragraph still breaks differently (see L11i)
+
+## L11i — URL glue, cell struts, `"`, here-float top (2026-10-31)
+From re-diffing the thesis: p28 table 1 caption, p33–34 URL spacing, p5 quote.
+
+### What changed
+- `TextMeasurer.IsUrlGlueAfter(text, index, end)`: a biblatex URL's `\Urlmuskip` sits beside each break character (after its marker, and after the character before it), once between two; Knuth-Plass and `TextRunControl.UrlStretch` both use it. Was: after every character.
+- Knuth-Plass line stretch excludes the glue after the break position (`stretch[end]`, not `stretch[end + 1]`); `Stretch` drops a URL glue at `justifyEnd - 1`; the draw loop adds the stretch of zero-width break markers.
+- `TexTypesetter.StartCell`: every tabular cell paragraph gets `strut` (`\@arstrut`: 0.7 / 0.3 of the pitch). `SingleSpaced` treats a strut paragraph as a caption only outside a table, so `[H]` cells keep the body's stretch.
+- `AddChar`: `"` → `”` outside mono (fontspec's TeX ligatures, tex-text map).
+- `DocumentControl.Paginate`: a here-float's top stands `\intextsep` below the last ink, plus `\lineskip` only under `[H]`.
+- Tests: `Tex.DoubleQuote`, `Tex.TabularStrut`, `Tex.UrlGlue`. Goldens `Tex.Floats.Page`, `Tex.Booktabs.Page` re-approved (cell text moved within unchanged rules; the figure 1 pt up).
+
+### Why
+**URL glue placement is measured.** Reference p33, LMMono12 at 12pt: letters 6.16 pt apart, 7.75 beside `. / : -`, also between `:` `/` `/` (one gap, not two). url.sty sets break characters as math bin/rel atoms with `\Urlmuskip` as their spacing; the penalty follows the atom, so the glue after it is discarded at a break.
+
+**Cells lacked TeX's row strut.** Without it a cell line took the body's fixed depth (5.9 pt, made for 1.5 spacing) instead of 0.3 × 14.4: rows sat 1.6 pt high against their rules, which cancelled table 1's top being 1 pt low.
+
+**`[h]` vs `[H]` above the float.** `[h]` goes through the output routine (`\@addtocurcol`): `\vskip\intextsep\box` in a list whose `\prevdepth` is ignored, so no interline glue. float.sty's `[H]` appends the box in the main list, where the tall box gets `\lineskip`. Reference p28 (`[h]`): rule top = baseline + depth + 14 pt; p17/p27 (`[H]`) match with `\lineskip`.
+
+**`\partopsep` was not the p33 cause (tried and reverted).** After a heading LaTeX's `\@item` takes `\@nbitem` and adds no `\topsep` at all; the exact 3 pt was a coincidence.
+
+### Verification
+- Shot-verified (text positions): `_Build/thesis.sh` — 25/35 pages identical (was 23); p28 and p29 match; p33 URL spacing matches glyph for glyph
+- Test-verified: `_Build/test.sh` full run 472 passed, 3 failed before approval (Boot; Tex.Floats, Tex.Booktabs goldens, then re-approved), 1 skipped
+- NOT GUI-verified
+
+### Known gaps
+- ~~Ours shrinks entry gaps to fit [Nex25c] on p33 where TeX, under `\raggedbottom`, takes the zero-badness break before it; not modelled~~ — resolved in L11p; the mechanism was `\interlinepenalty` 5000 with widow/club 10000, not `\raggedbottom`
+- ~~p5 abstract: line 1 holds "2D" in ours, not in the reference, before the quote is reached; joins the four unexplained reflows~~ — resolved in L11p (integer badness and the straight-quote rule)
+- Table 1 sits 1 pt left of the reference and 1.2 pt wider
+- TOC leader one dot extra (p2; retracted in L11s: one dot fewer, closed there); p6 glossary −0.7 pt; p25 superscript "(c)" in equation 15 (not a subfigure label) −0.8 pt
+
+## L11j — `\@nbitem` in the bibliography, LM Mono 12 (2026-10-31)
+From re-diffing the thesis: p33 started 3 pt high, [Gee22] wrapped differently.
+
+### What changed
+- `TexTypesetter.BibItem`: the first entry right after a heading takes `\@nbitem`'s `\addvspace(\@outerparskip − \parskip)` (field `bibOuterParskip`, saved in `BeginBibliography` before `\parskip` becomes `\parsep`); with `heading=bibintoc` it adds outright instead of merging. Away from a heading: `\topsep` merged, as before.
+- `TexLowering.Mono12Font` (`latin-modern-mono-12`): `FontFor` sets mono text of 11 pt and up in it when no `\setmonofont` is given and the asset exists. Bundled like LM Mono 10: `lmmono12-regular.otf` in `_Build/FontSources`, a `<FontImport>` in `ThoriumFonts.imports.axml`, the asset in `ThoriumAssets.assets.axml`, atlas in `Thorium/Data/Fonts/lmmono12-regular/`.
+- Tests: `Tex.BibAfterHeading`, `Tex.MonoOpticalSize`.
+
+### Why
+**`\@nbitem` (ltlists.dtx) is `\addvspace{\@outerparskip − \parskip}`**, where `\@trivlist` has set `\parskip` to `\parsep`. Normally the heading's after-skip absorbs it (`\addvspace` keeps the larger). biblatex's `heading=bibintoc` writes `\addcontentsline` after `\section*`: the whatsit hides `\lastskip`, so the thesis's 3 pt `\parskip` (minus `\bibparsep` 0) lands in full — reference p33 heading → first entry 32.8 pt, ours was 29.9. L11i's "`\@nbitem` adds no `\topsep`" stays true; it missed this term.
+
+**Negative case.** In plain article `\parsep` (4 pt) exceeds `\parskip` (0), so the term is −4 pt, which `\@xaddvskip` adds to the heading's skip; the first entry's own `\parskip` (= `\parsep`) gives it back. Ours used to add that `\parsep` on top, 4 pt too low.
+
+**Optical sizes as fontspec's Latin Modern Mono:** the 12 pt design from 11 pt up (tulmtt.fd; from memory, not checked against a TeX install). Only 10 and 12 are bundled; no Roman optical sizes (the thesis is Times). Bundled rather than read from an installed font so output does not depend on the machine and tests see it.
+
+**Left out.** Ordinary lists after a heading still merge `\topsep`, not `\@nbitem`; a `\label`/`\addcontentsline` hiding `\lastskip` is modelled only for the bibliography.
+
+### Verification
+- Shot-verified (text positions): `_Build/thesis.sh` — p33 starts at the reference's baseline, [Gee22] wraps as the reference, position diffs 61 → 34; 25/35 pages identical (unchanged)
+- Test-verified: `_Build/test.sh` 476 passed, 1 failed (Boot, pre-existing); golden `Tex.Floats.Page` re-approved (References entries ~4 pt higher, the negative case above)
+- NOT GUI-verified
+
+### Known gaps
+- ~~p33 the geometrian URL breaks "https: /|/geometrian" where the reference breaks "https: //|geometrian" — new with LM Mono 12, not investigated~~ — resolved in L11k (it was the bibliography sentence spacing, not the font)
+- ~~[Nex25c] still squeezed onto p33 (see L11i)~~ — resolved in L11p
 
 Related: [[xml-editor]], [[note-file-formats]], [[code-block-colouring]], [[math-in-notes]], [[markdown-blocks-and-alignment]], [[document-tables]]
+
+## L11k — biblatex `\frenchspacing`, `//` in URLs (2026-10-31)
+A biblatex bibliography is set under `\frenchspacing`, and in a biblatex `\url` a break character directly after another break character is an ordinary atom.
+
+### What changed
+- `TexTypesetter.BeginBibliography`: in the `biblatex != null` branch `frenchSpacing = true`, restored through the same `expander.Save` as `bibUrls`. The text after the bibliography (the thesis appendix) keeps sentence spacing.
+- `TexTypesetter` `On("url", …)`, `bibUrls` branch: an ordinary break character (`BibUrlBreaks`) gets the U+E005 marker only when `i > 0` and the character before it is not itself followed by a U+E005/U+E006 marker (`broken[^2]`). Big breaks (`BibUrlBigBreaks`, U+E006) unchanged; the non-bibliography `\url` (zero-width-space path) unchanged; glue placement unchanged.
+- Tests in `TexTests.cs`, listed in `Tex.tests.axml`: `Tex.BibFrenchSpacing` (glue after `?` in an entry has space factor 1000; after `.` in a paragraph following `\printbibliography`, 3000), `Tex.BibUrlSlashes` (`https://x.org//y` → `https:` E006 `//` E005 `x.` E005 `org/` E005 `/y`). Helper `SpaceFactorAfter(TexParagraph, char)`.
+
+### Why
+**`\frenchspacing` comes from biblatex, checked in its source** (biblatex.sty / biblatex.def from github.com/plk/biblatex master, 2026-10-31). `\bibsetup` = `\interlinepenalty=5000 \widowpenalty=10000 \clubpenalty=10000 \raggedbottom \frenchspacing \biburlsetup`; biblatex.sty:10085 runs `\bibsetup\bibfont` at every bibliography. biblatex redefines `\frenchspacing` (`\blx@setfrcodes`) to sfcodes 1003 comma, 1005 colon, 1006 period, 1008 question — all under 2000, so no extra space, effectively 1000; literal punctuation in field text (a `?` in a title) is affected too. polyglossia's `gloss-lithuanian.ldf` sets no `frenchspacing` key and polyglossia defaults it to false, so the main text stays `\nonfrenchspacing` — matches the reference (body space after `.` ~1 pt wider than a word space; ours already matched).
+
+**The three bibliography URL reflows were sentence spacing, not the URL break rules.** Measured on the reference (LuaTeX PDF, p34): in the bibliography spaces after `.`, `:` and `?` equal word spaces ([Sil21] line: all 4.35 pt). Ours set sentence spaces there: ~1 pt extra and a third of the shrink, so a line the reference sets by shrinking slightly (nvidia entry, fits "https://blogs.") was infeasible for us and we broke earlier with stretched spaces. This caused p33 geometrian, p34 nvidia, p34 Khronos.
+
+**`//` rule (TeX math atom rules; url.sty sets break characters as math atoms).** A Bin is converted to Ord when it is first or follows a Bin/Rel; an Ord carries no penalty. So in `://` the `/` after `:` (Rel) is Ord: `://` breaks after `:` or after the second `/`, never between the slashes. Glue stays as `IsUrlGlueAfter` places it (each side of a break character, once between two), which still matches TeX's Ord–Bin / Rel–Ord spacing. Extends L11i's URL glue notes.
+
+**Rejected.** A `\@` after only biblatex's generated unit punctuation (`TexBiblatex` `NewUnit`/`SetUnit`): leaves literal title punctuation sentence-spaced, contradicting biblatex and the reference's "Tracing?". Emitting `\frenchspacing` from `TexBiblatex.Format`: works, but `BeginBibliography` is where `\biburlsetup` is already modelled and its `expander.Save` scopes it.
+
+### Verification
+- Test-verified: `_Build/test.sh` full run 478 passed, 1 failed (Boot, pre-existing default-sampler error), 1 skipped; `Tex.BibFrenchSpacing` and `Tex.BibUrlSlashes` pass
+- Shot-verified (text positions): `_Build/thesis.sh` — reflows 8 → 5, the three bibliography reflows gone; 25/35 pages identical (p33/p34 still differ only by [Nex25c]); pages 1–32 unchanged
+- NOT GUI-verified
+
+### Known gaps
+- ~~Rule 6 not modelled: a Bin followed by a Rel (`/:`) should also become Ord; Rel–Rel (`::`) should take no penalty after the first and no glue between. Rare in URLs~~ — resolved in L11l, except the Rel–Rel glue shift
+- ~~The non-bibliography `\url` path (url.sty defaults, zero-width breaks) still allows a break between `//`~~ — resolved in L11l
+- ~~`\frenchspacing` / `\nonfrenchspacing` written in a document are still not group-local in our typesetter (TeX's sfcode assignments are)~~ — resolved in L11l
+- ~~`\bibsetup`'s `\raggedbottom` is the mechanism behind the [Nex25c] gap (L11i), still not modelled; [Nex25c] still squeezed onto p33~~ — retracted in L11p: the mechanism is `\interlinepenalty` 5000 (LaTeX's `\raggedbottom` only changes `\@textbottom` in the output routine)
+- Remaining thesis gaps: p2 TOC leader (closed by L11s), p6 −0.7 pt, p25 −0.8 pt (the superscript "(c)" in equation 15, not a subfigure label), table 1 offset. ~~p5 abstract reflow and the four unexplained main-text reflows (p7, p11, p17, p24)~~ — retracted in L11p: p5 and p7 are fixed there; p11, p17, p24 are inline-math letter widths (L11p known gaps)
+
+Related: [[xml-editor]], [[note-file-formats]], [[code-block-colouring]], [[math-in-notes]], [[markdown-blocks-and-alignment]], [[document-tables]]
+
+## L11l — url.sty atoms and defaults, scoped `\frenchspacing` (2026-10-31)
+`\url` is set by url.sty's math-atom rules on both the plain and the bibliography path, and plain `\url` (outside a biblatex bibliography) takes url.sty's defaults instead of free zero-width breaks. `\frenchspacing` / `\nonfrenchspacing` are group-local.
+
+### What changed
+- `ArctisAurora.Core.Tex.TexTypesetter` constants: `UrlBreaks` changed from `./-_?&=:#!;,)]|@+` to url.sty's `\UrlBreaks` `.@\/!_|;>]),?&'+=#`; new `UrlBigBreaks` `:`, `UrlHyphenBigBreaks` `:-`, `UrlNoBreaks` `([{<`, `UrlBreakPenalty` 700 (`\binoppenalty`), `UrlBigBreakPenalty` 500 (`\relpenalty`).
+- New private enum `UrlAtom { Ord, Bin, Rel, Open }`; new private static `AtomOf(char, string breaks, string bigBreaks)` (Open, then Rel, then Bin — a later list wins, as `\Url@MathSetup` assigns them in turn).
+- New field `urlHyphens`, set by `\usepackage[hyphens]{url}` in `Packages`.
+- `On("url")`: one loop for both paths. A Bin becomes Ord when it is first, follows a Bin/Rel/Open (after conversion), or precedes a Rel. U+E005 after a remaining Bin, U+E006 after a Rel not followed by a Rel; nothing after the last character. Plain path: style gets `urlBreakPenalty` 700, `urlBigBreakPenalty` 500, `urlStretch` 0; markers U+E005/U+E006 replace U+200B. Bibliography path keeps `\biburlsetup`'s 200/100 and 3mu.
+- New private `FrenchSpacing(bool on)`: saves the outer `frenchSpacing` through `expander.Save`, then sets it. `\frenchspacing`, `\nonfrenchspacing` and `BeginBibliography` call it (replaces the separate save L11k added in `BeginBibliography`).
+- `ArctisAurora.Core.UI.TexLowering` run writer: writes `UrlBreakPenalty`/`UrlBigBreakPenalty` when `urlStretch > 0 || urlBreakPenalty > 0`; `UrlStretch` only when > 0.
+- `ArctisAurora.Core.UI.TextMeasurer` Knuth-Plass setup: URL penalties apply when `urlStretch > 0 || urlBreakPenalty > 0` (was stretch only).
+- Tests (`TexTests.cs`, `Tex.tests.axml`): new `Tex.UrlAtoms` (`a//b`→`a/|/b`, `a/:b`→`a/:^b`, `a::b`→`a::^b`, `(/x`, `/a/` unmarked; `|` = U+E005, `^` = U+E006), new `Tex.FrenchSpacingGroup` (`{\frenchspacing a. b} c. d` → factors 1000 / 3000); `Tex.UrlBreaks` now expects `https:^//|a.|lt/|x-y%20z`; `Tex.UrlStretch` now expects a plain `\url` run with penalties 700/500, no stretch, and `m/`+U+E005.
+
+### Why
+**Source is url.sty 3.4 (2013/09/16), fetched from CTAN 2026-10-31.** `\Url@MathSetup`: `\medmuskip\Urlmuskip \thickmuskip\medmuskip \thinmuskip0mu`, `\relpenalty\UrlBigBreakPenalty \binoppenalty\UrlBreakPenalty`; mathcodes: `\UrlBreaks` bin (8192), `\UrlBigBreaks` rel (+4096), `\UrlNoBreaks` open (+4096). Defaults: `\Urlmuskip=0mu`, `\UrlBreakPenalty=\binoppenalty`, `\UrlBigBreakPenalty=\relpenalty`, `\do@url@hyp` empty unless `[hyphens]`. TeX's Appendix G: a Bin becomes Ord when first or after Bin/Op/Rel/Open/Punct (rule 5) or before Rel/Close/Punct (rule 6); a penalty follows a Rel only when the next noad is not a Rel.
+
+**The port replaces the old plain `\url`, which was wrong.** It broke after every character of its own set at penalty 0, after `-` by default, and lacked `\`, `>`, `'`. The user chose fork 2B (port the full url.sty rules) over applying only the atom rules.
+
+**Fork 1 (user chose A): Rel–Rel glue is shifted by one character.** Two Rels in a row get the break right (only after the last), but the `\Urlmuskip` glue is placed by the markers, so around `::`/`--` the glue count is right but shifted by one character. Stretch-only (no natural width), so effectively invisible. Rejected B: a third zero-width glue-without-break marker, touching `TextMeasurer`, `TextRunControl`, `TexLowering` and `DocumentControl`'s copy strip, for a case URLs almost never contain.
+
+**`\binoppenalty` / `\relpenalty` are the LaTeX defaults as constants,** not read from the document's registers.
+
+### Verification
+- Test-verified: `_Build/test.sh Tex` 127 passed, 1 failed (Boot, pre-existing); `Tex.UrlAtoms`, `Tex.FrenchSpacingGroup`, `Tex.UrlBreaks`, `Tex.BibUrlSlashes`, `Tex.BibFrenchSpacing`, `Tex.UrlGlue` pass
+- Test-verified: `_Build/test.sh` full run 480 passed, 1 failed (Boot, pre-existing), 1 skipped; `Tex.UrlStretch` passes; no golden moved
+- Shot-verified (text positions): `_Build/thesis.sh` unchanged from L11k — 25/35 identical, reflow 5, pos 38 (the thesis has no plain `\url`)
+- NOT GUI-verified
+
+### Known gaps
+- Rel–Rel glue shifted by one character (fork 1A, above)
+- `\PassOptionsToPackage{hyphens}{url}`, hyperref's url options, and `xurl` are not read; only `\usepackage[hyphens]{url}`
+- ~~`\binoppenalty` / `\relpenalty` set in a document are ignored~~ — resolved in L11m
+- ~~`\UrlBreaks` / `\UrlBigBreaks` redefined in a document are ignored;~~ — resolved in L11m; url.sty's `spaces` / `obeyspaces` options not modelled
+- Plain URLs in `.tex` previews and PDFs now break less eagerly; any golden with a plain `\url` may move
+
+Related: [[tex-plan]], [[xml-editor]], [[note-file-formats]], [[code-block-colouring]], [[math-in-notes]], [[markdown-blocks-and-alignment]], [[document-tables]]
+
+## L11m — url settings from the document (2026-10-31)
+`\url` reads its settings from the document the way url.sty and biblatex do: `\UrlBreaks`, `\UrlBigBreaks`, `\UrlNoBreaks` (`\do` lists), `\UrlBreakPenalty` / `\UrlBigBreakPenalty` (captured from `\binoppenalty` / `\relpenalty` when url or hyperref loads), and biblatex's `biburlbreakpenalty` / `biburlbigbreakpenalty` counters. `\mathchardef` now exists.
+
+### What changed
+- `ArctisAurora.Core.Tex.TexFormat` LaTeX prelude: `\countdef\binoppenalty=240 \countdef\relpenalty=241 \binoppenalty=700 \relpenalty=500` (latex.ltx values). `TexFormat.Biblatex`: `\newcounter{biburlbreakpenalty}` = 200, `\newcounter{biburlbigbreakpenalty}` = 100 (biblatex.def's defaults).
+- `ArctisAurora.Core.Tex.TexExpander`: primitive `mathchardef` mapped to `Op.Chardef` (a shorthand like `\chardef`, value up to `"8000`); `RegisterValue` also returns a `\chardef` / `\mathchardef` value (`RegisterKind.Char`); new public `MacroBody(string name)` — a macro's body when it takes no parameters and no optional argument, else null.
+- `ArctisAurora.Core.Tex.TexTypesetter`:
+	- `Packages`: when `url` or `hyperref` loads and `\UrlBreakPenalty` is undefined, inserts `\mathchardef\UrlBreakPenalty=\binoppenalty \mathchardef\UrlBigBreakPenalty=\relpenalty` (url.sty's own lines).
+	- `On("url")`: plain path penalties = `RegisterValue("UrlBreakPenalty") ?? RegisterValue("binoppenalty")`, same for `UrlBigBreakPenalty` / `relpenalty`; bibliography path penalties = `expander.Counter("biburlbreakpenalty")` / `("biburlbigbreakpenalty")`. Break sets: plain path reads `\UrlBreaks` / `\UrlBigBreaks` through `UrlCharacters(macro, fallback)`, both paths read `\UrlNoBreaks`; the bibliography keeps `\biburlsetup`'s constant sets.
+	- New private `UrlCharacters(string macro, string fallback)` and `AppendDoList(TexToken[], StringBuilder, int depth)`: `\do\x` (control symbol) or `\do x`, recursing into parameterless macros the list calls (depth up to 8).
+	- `AtomOf` gained a `noBreaks` parameter.
+	- Removed constants `UrlBreakPenalty`, `UrlBigBreakPenalty`, `BibUrlBreakPenalty`, `BibUrlBigBreakPenalty`; the `UrlNoBreaks` constant is now the fallback.
+- Test `Tex.UrlSettings` (`TexTests.cs`, `Tex.tests.axml`), helper `UrlRun(preamble, url)`: `\def\UrlBreaks{\do\/}` gives `a.b/`E005`c`; `\def\UrlBigBreaks{\do\:\do\-}` gives `a-`E006`b`; `\def\UrlNoBreaks{}` gives `(/`E005`x`; `\binoppenalty=300` before `\usepackage{url}` gives 300, after gives 700; `\mathchardef\UrlBreakPenalty=50` gives 50; `\relpenalty=40` before hyperref gives big penalty 40; `\setcounter{biburlbreakpenalty}{50}` / `{biburlbigbreakpenalty}{60}` reach a bibliography URL.
+
+### Why
+**url.sty captures the penalties at load, not at use.** url.sty 3.4: `\mathchardef\UrlBreakPenalty=\binoppenalty`, `\mathchardef\UrlBigBreakPenalty=\relpenalty` at load; `\Url@MathSetup` sets `\binoppenalty\UrlBreakPenalty`. So `\binoppenalty` after `\usepackage{url}` (or hyperref, which loads url) has no effect on URLs; the documented way to change it later is `\mathchardef\UrlBreakPenalty=…`. Modelled exactly. With url never loaded (real LaTeX has no `\url` then), the current `\binoppenalty` / `\relpenalty` apply.
+
+**biblatex's penalties are counters.** `biblatex.def`: `\setcounter{biburlbigbreakpenalty}{100}`, `{biburlbreakpenalty}{200}`; `\biburlsetup` does `\mathchardef\UrlBreakPenalty=\value{biburlbreakpenalty}`. Read at `\url` time inside the bibliography.
+
+**Inside a biblatex bibliography the break sets stay `\biburlsetup`'s.** Real biblatex redefines `\UrlBreaks` / `\UrlBigBreaks` there; a document's own redefinition of `\biburlsetup` is not modelled. `\UrlNoBreaks` is read on both paths (biblatex does not redefine it).
+
+**`\mathchardef` is a `\chardef`.** Rejected leaving it undefined (url.sty's own idiom needs it). Accepted consequence: a document that uses `\mathchardef` for a math symbol (`\mathchardef\foo="0141`) now typesets that character code as text instead of an "Undefined control sequence" error.
+
+**Supersedes L11l's "`\binoppenalty` / `\relpenalty` are the LaTeX defaults as constants";** L11l's Why stays as history.
+
+### Verification
+- Test-verified: `_Build/test.sh` full run 481 passed, 1 failed (Boot, pre-existing), 1 skipped; `Tex.UrlSettings` passes
+- Shot-verified (text positions): `_Build/thesis.sh` unchanged from L11l — 25/35 identical, reflow 5, pos 38
+- NOT GUI-verified
+
+### Known gaps
+- ~~`\Urlmuskip` for plain `\url` not read (no mu units)~~ — resolved in L11n
+- A document redefining `\biburlsetup` is not modelled; ~~`biburlnumpenalty` / `biburlucpenalty` / `biburllcpenalty` (breaks before digits / letters) not modelled~~ — the counters resolved in L11o
+- `\do@url@hyp` (url.sty's `[hyphens]` hook) is not defined by us, so a document's `\def\UrlBigBreaks{\do\:\do@url@hyp}` ignores `[hyphens]`; the built-in fallback still honours it
+- `\mathchardef` math-symbol use typesets the code as text (see Why)
+
+Related: [[tex-plan]], [[xml-editor]], [[note-file-formats]], [[code-block-colouring]], [[math-in-notes]], [[markdown-blocks-and-alignment]], [[document-tables]]
+
+## L11n — mu glue and URL glue (2026-10-31)
+The expander has mu glue registers (`\muskip`, `\muskipdef`, `\newmuskip`), and a URL's `\Urlmuskip` (plain `\url`) or `\biburlbigskip` (biblatex bibliography) is set as full glue — natural width, stretch and shrink — through lowering, line breaking, justification and drawing. The glue after a URL break marker is discarded where a line breaks there, as TeX discards glue after a break.
+
+### What changed
+- `ArctisAurora.Core.Tex.TexExpander`: `Op.Muskipdef`, `Op.Muskip`, `Op.NewMuskip`; primitives `muskipdef`, `muskip`, `newmuskip`; `RegisterKind.MuSkip`; table `muskips` (mu fixed point, 65536 = 1mu); `nextMuskip` = 256. `NewLength(owner, bool mu)` also allocates `\newmuskip`. `ScanGlue(bool mu = false)` (public), `ScanDimen(fil, out order, bool mu = false)`, `DimenAfter(…, bool mu = false)`, `Units(…, bool mu = false)`: with mu the unit must be `mu` ("Illegal unit of measure (mu inserted)"), and mixing a muskip with a dimen/skip gives "Incompatible glue units" either way. `AssignRegister`, `Arithmetic` (`\advance`/`\multiply`/`\divide`), `Internal`, `RegisterOf` and `\the` (`GlueText(g, unit)`, `Order(order, unit)`, prints `1.0mu plus 2.0mu`) handle MuSkip. New public `RegisterMuGlue(string name)`.
+- `ArctisAurora.Core.Tex.TexFormat.Biblatex`: `\newmuskip` `\biburlbigskip` (`0mu plus 3mu`), `\biburlnumskip`, `\biburlucskip`, `\biburllcskip` (0mu) — biblatex.def's.
+- `ArctisAurora.Core.Tex.TexTypesetter`:
+	- `Packages`: url/hyperref load inserts `\newmuskip\Urlmuskip \Urlmuskip=0mu` when undefined (url.sty's).
+	- `On("url")`: glue from `RegisterMuGlue(bibUrls ? "biburlbigskip" : "Urlmuskip")`, converted by new private `MuToSp(int mu)` = mu × font size / (18 × 65536); infinite orders set as finite with one `Log.Once().Info`. Constant `BibUrlMu` removed.
+- `ArctisAurora.Core.Tex.TexStyle`: `urlWidth`, `urlShrink` (sp).
+- `ArctisAurora.Core.UI.TexLowering` run writer: `UrlWidth`, `UrlShrink` attributes (px).
+- `ArctisAurora.Core.UI.Document` run model (`BlockControl.cs`): properties `UrlWidth`, `UrlShrink` (XSD attributes); `NoteModel` and `TextRunData` copy and compare them; `TextRunControl` span fields `urlWidth`, `urlShrink`, passed to the measurer run (× textZoom).
+- `ArctisAurora.Core.UI.TextMeasurer`: `Run.urlWidth`, `Run.urlShrink` (optional ctor params at the end); `MeasuredRun.urlWidth` (part of `Matches`, so a changed width re-measures); `AdvanceAt` adds `urlWidth` where `IsUrlGlueAfter`; Knuth-Plass setup adds `urlShrink` to the shrink sums; new private `TrailingUrlGlue(layout, runs, i, out shrink)` — the width (and shrink) after URL break marker i; `BreakPass` subtracts it from a line ending at that marker (width and shrink; stretch was already excluded via `stretch[end]`); `AppendLine` subtracts it from `line.width`.
+- `TextRunControl` justify: a URL character's trailing glue width is not part of `visible` at the line end; `shrinkWeight` gains `urlShrink`; the overfull test uses `innerShrink` (equal to the old `inner × GlueShrink` for spaces, and now counts URL shrink); `Stretch()` gives a URL glue `spaceExtra × urlStretch` when stretching and `spaceExtra × urlShrink` when shrinking; helper `UrlStretch` → `UrlGlue(run, index, part)`; unused `inner`/`shrinkable` removed.
+- Tests (`TexTests.cs`, `Tex.tests.axml`): `Tex.MuSkip` (newmuskip/assign/copy/advance/`\the`, wrong unit and incompatible glue errors); `Tex.UrlMuskip` (`\Urlmuskip=1mu plus 2mu minus 1mu` reaches a plain run's UrlWidth/UrlStretch/UrlShrink at 18mu per em; url's default 0mu adds no attributes; `\biburlbigskip=0mu plus 5mu` reaches a bibliography URL; `AdvanceAt` adds the width both sides of a break character; a Knuth-Plass line ending at the marker keeps the glue before it and drops the glue after it).
+
+### Why
+**User chose full glue (fork B) over stretch only (A: width/shrink logged and ignored, Tex layer only).**
+
+**Width goes through `AdvanceAt`, not a separate pass.** It is already the one function layout, drawing, justification, hit-testing and the caret step through, so they cannot drift. The cost is one float compare per character when the run has no URL width.
+
+**Glue after a break marker is discarded at a line end.** TeX discards the glue after the break; url.sty's penalty follows the atom, so the glue after it is the discarded one (L11i). Done at the three places a line's width is decided: `BreakPass` shortfall and shrink, `AppendLine`'s `line.width`, and the draw-time justify `visible`. Segment widths still include it.
+
+**1mu = 1/18 of the current font size.** The same approximation the 3mu bibliography stretch already used; TeX's is 1/18 of the math symbol font's quad (`\fontdimen6\textfont2`).
+
+**Values are from the sources**, fetched 2026-10-31: url.sty 3.4 `\newmuskip\Urlmuskip \Urlmuskip=0mu`; biblatex.def `\biburlbigskip=0mu plus 3mu`, `\Urlmuskip\biburlbigskip` in `\biburlsetup`.
+
+**Supersedes** the stretch-only reading of URL glue (`urlStretch` 3mu constant for the bibliography, 0 for plain `\url`).
+
+### Verification
+- Test-verified: `_Build/test.sh Tex` 130 passed, 1 failed (Boot, pre-existing); `Tex.MuSkip`, `Tex.UrlMuskip`, `Tex.UrlStretch` pass
+- Test-verified: `_Build/test.sh` full run 483 passed, 1 failed (Boot, pre-existing), 1 skipped; no golden moved
+- Shot-verified (text positions): `_Build/thesis.sh` unchanged from L11m — 25/35 identical, reflow 5, pos 38 (biblatex's default 0mu plus 3mu has no width or shrink)
+- NOT GUI-verified; drawn URL spacing with nonzero width not inspected in a golden or shot
+
+### Known gaps
+- ~~`\mskip` / `\mkern` in text, and `\biburlnumskip`/`ucskip`/`lcskip` doing anything (defined only so documents that set them don't error)~~ — resolved in L11o
+- Infinite (`fil`) URL glue is set as finite
+- 1mu from the current font, not the math symbol font's quad
+- `LineSegment` widths include a line-end marker's trailing URL width (only `line.width` excludes it)
+- The greedy breaker counts the trailing glue when deciding whether the next character fits (correct, since that character would follow the glue), but has no shrink; URL shrink only acts under Knuth-Plass
+
+## L11o — mu in text and biblatex URL letter breaks (2026-10-31)
+`\mskip` and `\mkern` now work in text: set like `\hskip` / `\kern`, mu converted at 18mu to the current font's em. biblatex's `\biburlnumskip`, `\biburlucskip` and `\biburllcskip` now do something: with the `biburlnumpenalty` / `biburlucpenalty` / `biburllcpenalty` counters above 0, a bibliography URL can break after each digit / capital / lowercase letter at that penalty, with that class's skip set as full glue (width, stretch, shrink). Follows L11n.
+
+### What changed
+- `ArctisAurora.Core.Tex.TexFormat.Biblatex`: `\newcounter{biburlnumpenalty}`, `{biburlucpenalty}`, `{biburllcpenalty}`, all 0 (biblatex.def's defaults)
+- `ArctisAurora.Core.Tex.TexExpander`: `ScanDimen()` → `ScanDimen(bool mu = false)`, public; with mu the unit must be `mu`
+- `ArctisAurora.Core.Tex.TexTypesetter`:
+	- `On("mskip")`: `ScanGlue(true)`, width and finite stretch/shrink through `MuToSp`, infinite (fil) orders kept; `StartParagraph`, then a `TexGlueNode` that takes a pending `\leaders` box, same as `\hskip`
+	- `On("mkern")`: `MuToSp(ScanDimen(true))`, `StartParagraph`, then a `TexKern`
+	- `On("url")`, bibliography path (`bibUrls`): penalty and glue per class from new private `UrlLetters(counter, skip)`; a class with penalty ≤ 0 returns all zero; an infinite order is logged once with `Log.Once().Info` and set as finite
+	- new private static `UrlLetterMarker(char, in TexStyle)`: appends U+E007 after a digit, U+E008 after A–Z, U+E009 after a–z, only when that class's penalty is above 0 and never after the URL's last character
+- `ArctisAurora.Core.Tex.TexStyle` (TexFont.cs): `urlNumPenalty/Width/Stretch/Shrink`, `urlUc…`, `urlLc…` (sp)
+- `ArctisAurora.Core.UI.TexLowering`: run attributes `UrlNumPenalty`, `UrlNumWidth`, `UrlNumStretch`, `UrlNumShrink` and the same for `Uc` and `Lc` (px), written by new private `UrlLetters(run, kind, …)` only when the class's penalty is above 0, each glue part only when non-zero; the URL attribute block is written when any letter penalty is set
+- `ArctisAurora.Core.UI.Document` run model (`BlockControl.cs`): 12 matching XSD properties; `NoteModel` and `TextRunData` copy and compare them; `TextRunControl` gets 12 span fields passed to the measurer run (glue scaled by textZoom)
+- `ArctisAurora.Core.UI.TextMeasurer`:
+	- constants `UrlNumBreak` U+E007, `UrlUcBreak` U+E008, `UrlLcBreak` U+E009; `IsZeroWidthBreak` includes them
+	- 12 readonly `Run` fields and optional constructor parameters
+	- `MeasuredRun.urlNumWidth/urlUcWidth/urlLcWidth`, part of `Matches`
+	- new internal `UrlLetterGlue(in Run, index, part)` (0 width, 1 stretch, 2 shrink): the glue after the character at index when a letter marker follows it
+	- `AdvanceAt` adds the width; Knuth-Plass setup takes the class penalty at each new marker and adds the class stretch and shrink on the character before it
+- `TextRunControl` justify (`Spread`, `Stretch`) adds the letter glue's stretch and shrink
+- Tests (`TexTests.cs`, `Tex.tests.axml`):
+	- `Tex.MuText`: `\mskip 9mu plus 18mu` gives a width of half the font size and a stretch of one font size; `\mkern18mu` gives one font size; `\mskip 1pt` gives "mu inserted"
+	- `Tex.BibUrlLetterBreaks`, helper `BibUrlRun(preamble)`, URL `https://x.org/Y12z`: defaults give no markers or attributes; `\setcounter{biburlnumpenalty}{100}\biburlnumskip=1mu plus 2mu` gives `1`E007`2`E007`z`, `UrlNumPenalty` 100, width 1mu, stretch 2mu, no shrink attribute; a Knuth-Plass line can break at a digit marker and keeps the glue before it
+
+### Why these choices
+**`\mskip`/`\mkern` in text are set silently, like `\hskip`/`\kern` (fork A, user's choice).** TeX rejects both outside math, so they only reach our text path where we set as text something TeX sets as math. Rejected fork B: report TeX's own "Missing $ inserted" error first. Finite glue keeps only its width once converted to runs, the same as `\hskip`.
+
+**Full glue for each biburl class (fork A, user's choice).** Rejected fork B: penalties plus stretch only (3 attributes instead of 9). Matches the full-glue choice made in L11n.
+
+**The values come from biblatex.def's `\biburlsetup`.** When a class's penalty counter is above 0, `\UrlSpecials` sets `\do X{\mathchar`X\mskip\biburlXskip\penalty\value{biburlXpenalty}}` for the digits, A–Z and a–z. That is why the skips do nothing at the default penalty 0, and why the counters had to be modelled along with the skips.
+
+**The glue goes after the character and before the break.** It stays in the line when a line breaks there; TeX discards only what follows a break. Unlike `\Urlmuskip` after a break marker, which is discarded.
+
+**`IsUrlGlueAfter` needed no change.** Where a letter marker comes before a break character, as in `a`E009`/`E005, the existing rule puts `\Urlmuskip` after the letter marker (the Ord–Bin spacing). A break at the letter marker then discards it through `TrailingUrlGlue`, which is what TeX does.
+
+**New private-use markers with run-level attributes.** A finite `TexPenalty` inside a paragraph is dropped when the text is lowered to runs, so a break inside a URL has to go through the marker scheme.
+
+### Verification
+- Test-verified: `_Build/test.sh Tex` gave 132 passed, 1 failed (Boot, pre-existing); `Tex.MuText` and `Tex.BibUrlLetterBreaks` pass
+- Test-verified: full `_Build/test.sh` gave 485 passed, 1 failed (Boot, pre-existing), 1 skipped; no golden moved
+- Shot-verified (text positions): `_Build/thesis.sh` matches L11n — 25/35 identical, reflow 5, pos 38; the thesis uses the default 0 penalties, so no markers are added
+- NOT GUI-verified; drawn spacing of letter glue not inspected in a golden or shot
+
+### Known gaps
+- Plain-text copy (`DocumentControl.CopySelection`) strips U+E005/U+E006 but not yet U+E007–E009, pending the user's OK
+- No letter break or glue after a URL's last character (TeX would add one; at the default 0mu no visible difference)
+- Infinite (`fil`) letter glue is set as finite
+- A document redefining `\biburlsetup` or `\UrlSpecials` is still not modelled
+- 1mu from the current font, not the math symbol font's quad
+
+## L11p — integer badness, straight-quote hyphenation, keep together (2026-10-31)
+TeX documents now break lines with TeX's integer badness (equal lines tie and TeX's tie order decides), words touching an ASCII `"` are not hyphenated, and a paragraph ended under `\interlinepenalty` >= 5000 (biblatex entries, contents entries) never splits across a page. Thesis diff: 29/35 pages identical (was 25); p5 abstract, p7 "kū-|rimo" and the p33/p34 [Nex25c] break now match the reference.
+
+### What changed
+- `ArctisAurora.Core.UI.Text.TextMeasurer.Badness(float ratio)`: new internal static, TeX's badness; r = floor(297·|ratio|), 10000 when r > 1290, else (r³ + 2^17) >> 18
+- `TextMeasurer.BreakPass` uses `Badness` instead of 100·|r|³; fitness classes are TeX's: a shrinking line is tight above 12, else decent; a stretching line is very loose above 99, loose above 12, else decent
+- `ArctisAurora.Core.Tex.TexChar.straightQuote`: new bool, set by `TexTypesetter.AddChar` when an ASCII `"` becomes `”`
+- `ArctisAurora.Core.UI.Tex.TexLowering.HyphenateWords`: skips a word whose neighbour before or after is a `TexChar { straightQuote: true }`
+- `ArctisAurora.Core.Tex.TexParagraph.interlinePenalty`: new int, `\interlinepenalty` when the paragraph ended; recorded in the typesetter's paragraph end beside leftskip/rightskip/parfillskip
+- `TexBiblatex`: generated `\@bibsetup` sets `\interlinepenalty5000` (biblatex's `\bibsetup` value)
+- `TexLowering.Block` writes `KeepTogether="true"` when `interlinePenalty >= 5000`
+- New note-model attribute `KeepTogether` (bool, absent = false), mirrored like `KeepWithNext`:
+	- `NoteBlock.keepTogether` (NoteModel.cs, its clone and snapshot sites)
+	- `BlockSnapshot.keepTogether` (DocumentEdits.cs)
+	- `DocumentControlEditing`: two clone sites
+	- `DocumentXml`: read and write
+	- `BlockControl`: override `KeepTogether => note.keepTogether`
+- `ArctisAurora.Core.UI.Text.TextRunControl`: new `protected virtual bool KeepTogether => false`; `Paginate` treats a kept block like the widow rule with from = 0 — when any line would cross onto a later page the whole block moves to the next page, unless its first line already sits at a page's text top (a block taller than a page still splits)
+- Tests (`TexTests.cs`, `Tex.tests.axml`): `Tex.KeepTogether`, `Tex.IntegerBadness`, `Tex.StraightQuoteHyphen`
+
+### Why these choices
+**Lithuanian hyphenation ("skiemenys") was suspected and is not the cause.** The lt patterns load and 131 of 135 line-end hyphenations in our PDF equal the reference's; two-letter fragments are common in the reference, so righthyphenmin 2 is right. Method: a scratch TeX line breaker (integer sp, Times New Roman hmtx/kern, TeX space factor rules) reproduced the reference on all 17 plain thesis paragraphs plus p7 once the three rules here were in. Interword glue 1/2 and 1/3 of the space was confirmed best of a sweep (16/17 vs at most 14/17 for others); TeX's 12pt is 11.955 bp in the PDF (glyph steps 5.978 for a 0.5 em glyph), which an earlier sweep at 12 bp got wrong.
+
+**Integer badness, because p7 is an exact tie in TeX.** Ours "kūri-" line has badness 22, the reference's line 3 has badness 22, identical totals; TeX's active-list order (new nodes per fitness class very loose to tight; `<=` keeps the later) then picks "kū-". Float badness (21.8 vs 22.1) never ties. Our candidate order already matched TeX, so only the badness arithmetic changed. Space factor after "O," is 1000 (TeX: a >1000 sfcode after an uppercase 999 gives 1000); ours was already right.
+
+**Words touching an ASCII `"` are not hyphenated (fork F1, user's choice a).** LuaTeX left "Radiance" and "Cascades" unhyphenated in `"Radiance Cascades"` (p5); with that rule the model reproduces p5 exactly. Evidence is one instance (the only ASCII `"` in the thesis); every word touching „ “ (typed U+201E/U+201C) hyphenates in the reference (e.g. „Ver-tex“, „Auro-ra“). LuaTeX's mechanism is not known. Rejected (b): leave p5 as a gap.
+
+**A threshold rule stands in for TeX's page cost (fork F2, user's choice a).** biblatex's `\bibsetup` sets `\interlinepenalty=5000`; for [Nex25c] (4 lines) a break inside costs ~5000 + ~39 while breaking before it costs the underfull page's badness (~1200 estimated with `\itemsep` stretch) − 51, so TeX moves it. Our pagination has no vertical stretch, so `>= 5000` means never split. Rejected (b): mark bibliography entries directly with no register (less general; contents entries already set 10000). Rejected (c): TeX's page cost model with vertical stretch (already rejected as L11e-F2 b; large).
+
+### Verification
+- Test-verified: `_Build/test.sh` full run 488 passed, 1 failed (Boot, pre-existing sampler error), 1 skipped; no golden moved; Tex suite 135 passed, 1 failed (Boot)
+- Shot-verified (text positions): `_Build/thesis.sh` 29/35 identical, reflow 3 (was 5), text 1 (was 5), pos 15 (was 38); no `[Vulkan]` lines
+- NOT GUI-verified
+
+### Known gaps
+- ~~Remaining reflows p11, p17, p24~~ — closed by L11q (CM TFM widths). Was: p11 ("apšvieti-|mo"), p17 ("kur|x0"), p24 ("dimensijose|x") all involve inline math. Measured cause: the reference sets math letters in CMMI12 (x 0.556 em, z 0.499 em advances); ours uses a text italic (x 0.518 em, z 0.463 em), ~0.45 bp narrower per letter. Needs CM math-italic widths (cmmi12 at 12pt), a separate stage
+- The straight-quote rule rests on one instance; mechanism unknown
+- KeepTogether threshold 5000 approximates TeX's page cost; a very underfull page where TeX would split a 5000-penalty paragraph is not modelled
+- Still open: p2 TOC leader one dot extra (retracted in L11s: one dot fewer, closed there), p6 glossary −0.7 pt, p25 superscript "(c)" in equation 15 (not a subfigure label) −0.8 pt
+
+## L11q — Computer Modern TFM widths for inline math, formula break rule (2026-10-31)
+
+**Scope:** `ArctisAurora.Core.UI.Tex` — `TexMathMetrics`, `MathLayout`; `ArctisAurora.Core.UI.Text` — `TextRunControl`, `TextMeasurer`; `_Build/TfmToAxml.py`
+
+### What changed
+- In TeX documents without unicode-math (`MathRules.Tfm`), math letters, digits and symbols take Computer Modern's real widths and italic corrections at the design size LaTeX picks for the point size; scripts are set at LaTeX's `\DeclareMathSizes` sizes
+- New data `Math/ComputerModern.tfm.axml` (generated, no XSD type, read with `DataFiles` like the hyphenation patterns): `<ComputerModern><Font Name="cmmi12" Family="MathItalic|Roman|Symbol" Size="12"><Char Code="x" Width="0.556419" Italic="0"/>`; widths and italic corrections in em, keyed by Unicode; fonts cmmi5–9,10,12; cmr5–9,10,12,17; cmsy5–10
+- New tool `_Build/TfmToAxml.py <tfm folder> <out.axml>`: reads TFM binaries, maps OML/OT1/OMS codes to Unicode. Sources: 22 .tfm from https://mirrors.ctan.org/fonts/cm/tfm/ (cmmi5-10,12; cmr5-10,12,17; cmsy5-10; cmex10 — downloaded, not converted) in gitignored `_Build/FontSources/cm-tfm/`
+- New static `TexMathMetrics`: `Glyph(FontStyle face, float pt, char ch, out float width, out float italic)` (Italic face and `. , < / > ∂ ℓ` → cmmi; else cmr, then cmsy; Bold → false); `ScriptPt(float textPt, bool scriptScript)` (LaTeX's table 5..24.88 pt, else 0.7/0.5); private `DesignSize` (<9.5 pt round to 5–9; <11.5 pt or cmsy → 10; cmr ≥15.8 → 17; else 12 — the .fd files' choice); loaded once under a lock, Warn once if the file is missing
+- `MathLayout.Layout(..., MathRules rules, float textPt = 0f)` new trailing parameter; `Layouter` gets `textPt` (0 unless TFM rules); `Scale(style)` uses `ScriptPt/textPt` when textPt > 0; new private `Char(ch, face, scale)` = `Glyph` then TFM width/italic override; `Symbol` (non-big-op) and `MathText` (via `Text(..., math: true)`) use it. Big operators, sized delimiters, radicals, tags and error text keep Latin Modern metrics
+- `TextRunControl`: `MathBoxFor(span, font, float size)` and `FittedBox(span, font, lineWidth, float size)` take the span's effective size; new private `TextPt(float size)` = size / `TexLowering.PxPerPt` under TFM rules else 0; caches (`mathBoxes`, `_fitted`/`_fittedBefore`) keyed by textPt too
+- `TextMeasurer.BreakPass`: `breakable` no longer allows a break after a `Picture` character or before one; a formula/inline picture breaks only at the space next to it (TeX: a math node is a breakpoint only when glue follows, like a kern). TeX layouts only (OptimalBreaks)
+- Tests: `Tex.CmMathWidths`, `Tex.CmScriptSize`, `Tex.MathBreak`
+
+### Why these choices
+
+**The widths are TeX's TFM widths because the reference PDF's embedded fonts' /Widths are.** CMMI12 x 556.4, z 454.9 (+ italic 44.6 measured 44.5 as advance), CMR12 digits 489.6, [ 272.0; ours used LM Roman Italic (LM Math's italic face) x 0.518 em, z 0.463, digits 0.500 — ~0.45 bp narrower per italic letter at 12pt. Script size: LaTeX 8pt at 12pt (ratio 0.667) vs LM Math's 70% (8.4pt).
+
+**Per-size tables, not a function of pt.** Asked why CMMI10 and CMMI12 differ and whether logic could adjust by pt: optical sizes — each design size is Knuth's METAFONT program run with its own hand-tuned parameter file; only discrete sizes exist and LaTeX's .fd tables pick one and scale it. Rejected: interpolating between designs (widths TeX never uses); porting the METAFONT width formulas plus parameter files (hundreds of glyph definitions, the TFMs are their evaluated result); LM Math's math-italic alphabet (10pt design, x 0.5715 em: ~0.18 pt too wide per letter at 12pt).
+
+**F1 (user: a): the converter is a Python tool in `_Build` beside pdfdiff.py, output committed.** Rejected (b): a step in the C# font importer — more code for a one-off conversion.
+
+**Departure approved mid-implementation: the effective size is passed into `MathBoxFor`/`FittedBox`.** The plan took the size from `span.fontSize`, which is 0 for math runs inheriting the block's size (lowering writes FontSize only when it differs). Rejected: always writing FontSize on math runs in lowering (larger .axml, TeX-only).
+
+**Formula break rule (found when p9 reflowed "$z_c$|," after the width change; user approved).** TeX treats a math node like a kern — breakable only when glue follows; never before math-on. Ours allowed breaks on both sides of every Picture/math character.
+
+### Verification
+- Test-verified: full `_Build/test.sh` 487 passed, 5 failed, 1 skipped — Boot (pre-existing), Notes.LocalWins (transient file lock; passes on rerun of the Notes suite), and goldens Tex.Preview (877 px), Tex.Amsmath (4117 px), Tex.FootnotePage (1422 px) — PNGs inspected: formulas shifted by the new widths/script sizes, footnote marks at LaTeX script size, nothing overlapping or missing; re-approval PENDING user. New tests Tex.CmMathWidths, Tex.CmScriptSize, Tex.MathBreak pass
+- Shot-verified (text positions): `_Build/thesis.sh` 32/35 identical (was 29), reflow 0 (was 3), text 1, pos 25 > 0.5 pt; p11, p17, p24 fixed; no `[Vulkan]` lines
+- NOT GUI-verified
+
+### Known gaps
+- ~~Glyph heights/depths still Latin Modern's ink (affects interline `\lineskip` decisions with inline math)~~ — closed by L11s
+- Script-style TFM parameters: classic rules use cmsy10's sub1/sup… scaled, TeX reads cmsy8's own values at 8pt
+- Bold math (cmbx/cmmib) and cmex10 delimiters not converted; they keep LM metrics (cmex10 big-operator heights/depths converted in L11r). `TexLowering.MathWidth` (table cell width estimates) still uses OpenType widths
+- Remaining thesis diffs: p2 TOC leader one dot extra (retracted in L11s: one dot fewer, closed there), p6 glossary −0.7 pt (closed by L11r), p25 superscript "(c)" in equation 15 −1.1 pt (was −0.8; not a subfigure label; closed by L11r)
+- Goldens Tex.Preview, Tex.Amsmath, Tex.FootnotePage await re-approval
+
+## L11r — tabular in a line, float \@parboxrestore, script clash, cmex10 operator boxes (2026-10-31)
+Follows L11q. Three thesis-match fixes in the LaTeX engine.
+
+### What changed
+- A tabular that opens its own paragraph takes `\parskip` and sits on the math axis like TeX's `\vcenter`; pagination puts TeX's interline glue between it and the text line above
+- Floats run LaTeX's `\@parboxrestore`: `\parskip`, `\parindent`, `\leftskip`, `\rightskip`, `\parfillskip` are reset inside a float body
+- Sub+superscript pairs lift only when they clash (TeX rule 18e in TFM mode; the OpenType MATH spec's order in OpenType mode)
+- In TFM mode big operators take cmex10's TFM box height/depth, and upper limits use TeX's big_op_spacing1/3
+- `TexTable.opens` (bool): the tabular opens its own paragraph; its comment now covers `indent` too
+- `TexTypesetter.BeginTabular`: when `opens`, sets `table.opens` and adds the space `StartParagraph` adds (list `\parsep` via `Rigid(list.settings.parSep) ?? ListSkip(...)`, else `\parskip` when `list == null && keepSkip == 0 && !environmentStart`), then clears `environmentStart`
+- `TexTypesetter.BeginFloat` ends by inserting `\@parboxrestore` into the token stream, inside the float's group
+- `TexFormat.Prelude`: `\@arrayparboxrestore` = `\parindent0pt\parskip0pt\leftskip0pt\rightskip0pt\parfillskip0pt plus1fil\relax`; `\@parboxrestore` = `\@arrayparboxrestore`
+- `TexLowering.Table` writes `<Table Axis="…">` (px, 0.25 × the normal font size in px, cmsy's axis_height) when `t.opens`
+- `NoteTable.axis` (float, px; 0 = not set in a line); `DocumentXml` reads/writes `Table Axis` beside `Indent`
+- `TableControl`: `internal float Axis` (model.axis × zoom) and `internal float AboveAxis()` (rows' total height / 2 + Axis)
+- `DocumentControl` (DocumentControlPages.cs, `Paginate`): a table with `Axis > 0` after a non-strut, non-rule text block: `distance = pitch − inkDepth − rise ≥ 0 ? pitch : inkDepth + rise + LineSkip`, `y += distance − descent − rise`, rise = `AboveAxis()`
+- `MathLayout.Layouter.Attach`: `clash = gapMin − gap`; only when clash > 0: TFM lowers the sub by clash then lifts both by `superscriptBottomMaxWithSubscript − (u − d(sup))` if positive; OpenType raises the sup by min(that, clash) (≥0) and lowers the sub by the rest
+- `MathLayout.Layouter.Limits`: TFM upper limit rise = `max(bigOpSpacing1·k + sup.depth, bigOpSpacing3·k)`; OpenType unchanged
+- `MathLayout.Layouter.Symbol`: in TFM mode a big operator's box height/depth become cmex10's box (height+depth)·k centred on the axis; glyph drawing and width unchanged (Latin Modern)
+- `MathConstants`: new `BigOpSpacing1`, `BigOpSpacing3` (XSD AssetRegistry); `latinmodern-math.math.axml` gains `BigOpSpacing1="0.111112" BigOpSpacing3="0.2"`
+- `TexMathMetrics.BigOp(char op, bool display, out float height, out float depth)`; the loader reads `<Font Family="Extension">` into a private `(ch, display) → (height, depth)` map and no longer lets it fall into the Symbol family
+- `ComputerModern.tfm.axml`: new `<Font Name="cmex10" Family="Extension" Size="10">` with `<Char Code Style="Text|Display" Width Italic Height Depth>` for ∑ ∏ ∐ ∫ ∮ ⋃ ⋂ ⨀ ⨁ ⨂ ⨄ ⨆ ⋀ ⋁; regenerated by `_Build/TfmToAxml.py`, which now also reads TFM heights/depths and has OMX / OMX_DISPLAY code maps; existing fonts' entries byte-identical
+- Tests (`TexTests.cs`, listed in `Tex.tests.axml`): `Tex.ScriptsNoClash`, `Tex.LimitsTfm`, `Tex.TabularParskip` (body case + float case)
+
+### Why these choices
+
+**p6 glossary was −0.7 pt; the cause was measured.**
+Reference: line baseline → first row baseline 19.2 pt = prev line ink depth 2.61 + `\parskip` 3 + `\lineskip` 1 + row strut 12.55 (TeX `\vcenter`s the tabular on the axis, so its line is far taller than `\baselineskip` and `\lineskip` fires). Ours was 5.93 (fixed body BaselineDepth) + 0 + 12.55 = 18.48: `BeginTabular` gave `\parindent` but not `\parskip`, and pagination put a table under the previous block's fixed depth with no interline rule. Now 0.1 pt.
+
+**The interline rule uses the `[c]` centring (height/2 + axis), not just `\lineskip`.**
+A lineskip-only rule would put a one-row tabular ~2.4 pt too high (TeX gives `\baselineskip` there); current behaviour happened to be near-right for those. `[t]`/`[b]` positions are not modelled (optional arg still discarded).
+
+**Axis is a Table attribute written only for tabulars that open a paragraph.**
+It doubles as the "set in a line" flag: note tables and float tables get no attribute and keep current placement. The rule also requires a non-strut text block above, so captions (strut blocks) never trigger it.
+
+**Floats run `\@parboxrestore`, as the spec does (user: "check the spec and do it as it does").**
+LaTeX's `\@xfloat` (ltfloat.dtx) and float.sty's `[H]` open the float `\vbox` with `\hsize\columnwidth \@parboxrestore`; `\@arrayparboxrestore` sets `\parindent\z@ \parskip\z@skip`, `\leftskip`/`\rightskip`/`\@rightskip` `\z@skip`, `\parfillskip\@flushglue`, `\lineskip\normallineskip`, `\baselineskip\normalbaselineskip`, `\linewidth\hsize`, `\@totalleftmargin\z@`, `\everypar{}`, `\sloppy`. Our format models only parindent, parskip, leftskip, rightskip, parfillskip, so the macro sets those. Found because the tabular parskip moved thesis p29's `[H]` table 3.1 pt down. Rejected: skipping the parskip only in `BeginTabular` inside floats (a float's ordinary paragraphs would keep a parskip LaTeX never gives them).
+
+**Script lift is conditional on a clash (user picked F1b: both paths).**
+tex.web §759 (rule 18e): `clr = 4θ − gap; if clr > 0 { shift_down += clr; clr = 4/5 x-height − (shift_up − d(x)); if clr > 0 { shift_up += clr; shift_down −= clr } }`. Ours lifted unconditionally: thesis eq. 15 `L_r^{(c)}` had (c) 1.17 pt high and r 1.17 pt shallow; the reference keeps sup1 4.93 / sub2 2.96. The OpenType path follows the OpenType MATH spec's order: raise the superscript up to SuperscriptBottomMaxWithSubscript, then lower the subscript for the rest. Rejected F1a (TFM only, leave OpenType as a known gap).
+
+**Upper limits in TFM mode use TeX rule 13a.**
+rise = max(bos1 .111 + d(sup), bos3 .2). LM Math's UpperLimitGapMin .2 / UpperLimitBaselineRiseMin .111 have the roles swapped relative to TeX; reference eq. 15 has "N_c" and "4" on one baseline, ours had N_c 1.3 pt higher. Lower limits unchanged: LM's LowerLimitGapMin .167 / LowerLimitBaselineDropMin .6 equal bos2/bos4. Closes the L11c2 known gap "Upper limits: TFM mode still uses the OpenType form".
+
+**Big operator box from cmex10's TFM (user picked F2a: data in ComputerModern.tfm.axml via the existing converter).**
+cmex10 display ∑ (0x58): ht 0.1, dp 1.5 em, a 1.6 em box around 1.4 em of ink; text ∑ (0x50) ht 0, dp 1.0. Ink positions already matched (within 0.13 pt); the reference limits sat ~1.1–1.2 pt further out on each side. Rejected F2b: a hand-typed `TfmOperators` string on MathConstants like `DisplayOperators`. Widths/italics stay Latin Modern (L11q's decision for big ops unchanged); horizontal error ~0.3 pt, under tolerance.
+
+### Verification
+- Test-verified: `_Build/test.sh Tex` 141 passed, 1 failed (Boot, pre-existing default-sampler error), 0 skipped; the three new tests pass. Full `_Build/test.sh` 492 passed, 3 failed, 1 skipped: Boot (pre-existing) and goldens LatinModern/Tex.Preview (5255 px) and LatinModern/Tex.Amsmath (3778 px), inspected: limits sit further from each display ∑ (cmex10 box) and everything below moves 1–2 px down, nothing overlapping or missing; re-approval PENDING user
+- Shot-verified (text positions): `_Build/thesis.sh` 33/35 pages identical (was 32), reflow 0, text 1 (p2 TOC leader), pos 1 > 0.5 pt (p25), no `[Vulkan]` lines. p6 within 0.1 pt; p25 "(c)", "r" and upper limits within 0.3 pt; p29 identical
+- NOT GUI-verified. Not perf-measured. The float case of Tex.TabularParskip was not seen failing before the fix
+
+### Known gaps
+- (closed by L11s, p25 within 0.2 pt) p25 lower limits "c=1"/"r=1" 0.4 pt low and the text below display (15) +0.5–0.6 pt: math glyph heights are still Latin Modern's ink ("1" 5.36 pt vs cmr8's 5.15), the L11q gap
+- p28 +0.4–0.5 pt from the `[H]` figure 10 image down (text baseline → image top 17.54 vs reference 17.07): not caused by L11r (same in a run before the float change), not investigated, under the 0.5 pt tolerance
+- ~~p2 TOC leader one dot extra, still open~~ — closed by L11s (it was one dot fewer; cause space kerns)
+- `\@arrayparboxrestore` covers only the registers the format models; `\lineskip`, `\baselineskip`, `\linewidth`, `\@totalleftmargin`, `\everypar`, `\sloppy` are not reset
+- Tabular `[t]`/`[b]` positions not modelled; spacing below a paragraph-opening tabular not changed (unmeasured; thesis p6 ends at the table)
+- cmex10 big-operator widths/italics not used; ∬ ∭ have no cmex glyph and keep LM boxes
+
+## L11s — Computer Modern heights/depths, kerns against spaces (2026-10-31)
+
+Follows L11r. Closes the L11q/L11r gap "glyph heights/depths still Latin Modern's ink" and the p2 and p25 thesis diffs. `_Build/thesis.sh` 35/35 pages identical (was 33/35).
+
+### What changed
+- `_Build/TfmToAxml.py`: writes `Height` and `Depth` (em) on every `<Char>` of cmmi/cmr/cmsy fonts, not only cmex10; header comment "Width, Italic, Height and Depth in em". `ComputerModern.tfm.axml` regenerated; existing Width/Italic byte-identical, only Height/Depth added
+- `TexMathMetrics.Glyph(FontStyle face, float pt, char ch, out (float width, float italic, float height, float depth) box)`: signature changed from `out float width, out float italic`; the table value is a 4-tuple, private `Find` returns the tuple
+- `MathLayout` (Layouter `Char`): under classic rules sets `box.height`/`box.depth` from CM too
+- `FontKerning`: new private `IsKerned(char)` — a glyph, U+0020 or U+00A0; other whitespace still skipped
+- `AssetImporter.importerVersion` 8 → 9 (all fonts re-baked)
+- `TextMeasurer.BreakOptimal`: a space's glue (stretch/shrink basis) is `MeasureAdvance` of the character, without the kern to the next character; its width still includes the kern
+- `TextRunControl.Spread` and `Stretch`: justification weights from the unkerned space advance, same rule
+- Data: all Thorium fonts re-baked (`.agd`, `.import.axml`). `latinmodern-math.math.axml`: the re-bake wiped the hand-set TFM constants a fourth time; restored by hand to Sub1="0.15" Sub2="0.247217" Sup1="0.412892" Sup2="0.362892" Sup3="0.288889" SubDrop="0.05" SupDrop="0.386108" BigOpSpacing1="0.111112" BigOpSpacing3="0.2" BigOpSpacing5="0.1". Before restoring, the export moved p10, p17, p25 by up to 4.7 pt. `cambria.math.axml` gained the TFM attributes at 0 (harmless, OpenType path) and was left
+
+### Decisions
+**Q3 is REVERSED (user approved, 2026-10-31): kern pairs involving a space or no-break space are stored and applied.**
+Measured on thesis p2: the reference's space before "API" is narrower than ours by 0.66 pt after "grafikos"/"Metal" (TNR `space A`), 1.12 pt after "WebGL" (`L space` + `space A`), 1.33 pt after "CUDA" (`A space` + `space A`). luaotfload kerns against interword glue by adjusting the glue's width. The extra 1.14 pt pushed "API" past a leader cell edge on the WebGL line, so we drew one dot fewer. The earlier note "TOC leader one dot extra" is retracted: it was one dot fewer, and the leader grid was never the cause. Q3's premise "TeX never kerns against a space" holds for TeX, not for luaotfload, which the reference uses.
+
+**Space kerns change only the glue's natural width.**
+Stretch and shrink stay based on the unkerned space advance, as luaotfload modifies only the width. Applied in all three places that weigh glue (`BreakOptimal`, `Spread`, `Stretch`) so breaking and justification agree. The `TextRunControl` part was a mid-implementation departure, approved by the user.
+
+**U+00A0 is kerned too.** Lowering turns TeX interword glue into ' ' or NBSP. Other whitespace stays unkerned.
+
+**Global, per D3.** UI and notes text with a space kern pair shift slightly (e.g. Planner "Ada on Thursday").
+
+**Heights and depths come from the TFMs through the existing converter** (as F2a did for big operators). The brief records no rejected alternative.
+
+**p25 cause (measured):** LM's "1" is 5.36 pt tall vs cmr8's 5.15, so the lower limit's drop exceeded ξ12 (0.6 em) and "c=1"/"r=1" sat 0.13 pt low, the upper limit 0.2 pt high, and the text below display (15) +0.5–0.6 pt. Now within 0.2 pt.
+
+### Verification
+- Shot-verified (text positions): `_Build/thesis.sh` 35/35 identical, reflow 0, text 0, pos 0 > 0.5 pt, no `[Vulkan]` lines; p25 within 0.2 pt
+- Test-verified: midpoint `_Build/test.sh Tex` 141 passed, 1 failed (Boot, pre-existing). Full `_Build/test.sh` 491 passed, 4 failed, 1 skipped: Boot (pre-existing) and goldens LatinModern/Tex.Preview (4749 px), LatinModern/Tex.Amsmath (3641 px), Planner/Planner.ExpandGantt (541 px) — inspected: displays and everything below shift from CM heights; Gantt note text "Ada on Thursday" shifts from space kerns; nothing overlapping or missing. Re-approved by user 2026-10-31 (`--test-approve`, LatinModern and Planner suites)
+- NOT GUI-verified. Not perf-measured. No new tests added
+
+### Known gaps
+- Math italic letters are drawn with LM Roman 10 Italic (text italic, Face 2 of latinmodern-math) because the math font's italic letters live at U+1D44E+, outside `char`. Text-italic f overhangs differently from cmmi's, so "floor" in equations 13/14 shows "f loor". Widths match ("(" within 0.04 pt); below pdfdiff tolerance. The fix needs those glyphs imported under remapped codepoints
+- The re-bake still wipes the hand-set TFM constants in `latinmodern-math.math.axml` (four times now); WIP item stays open
+
+## Internship report diff — several bibliographies, hyperref, wide-char advance, caption justification (2026-10-31)
+
+Found by diffing the internship report (`Sablonas.tex`, LuaLaTeX reference `Profesines_darbo_praktikos_ataiskaita.pdf`). Extends the bibliography part of this note.
+
+### What changed
+- `TexNode.TexBibliographyMark`: was empty; now `title` (string?), `inContents` (bool), `language` (string, default "english"), `contentsAt` (int)
+- `TexTypesetter`:
+	- removed `bibMark`, `bibTitle`, `bibLanguage`, `bibContentsAt`; added `bibMarks` (List of (list, mark), capacity 2) and `bibTocbibind` (tocbibind without `notbib` sets it; it used to set `bibInContents` directly)
+	- `bibInContents` now means "the list being typeset is a contents entry", set per mark in `TypesetBibliography`
+	- `PlaceBibliography()` → `PlaceBibliography(string? title, bool inContents)`; a mark's `inContents` = `heading=bibintoc` || (`bibTocbibind` && biblatex not loaded)
+	- `TypesetBibliography` reads the .bib files and builds the cited list once, then typesets each mark in document order; a list's own contents entry shifts the later lists' `contentsAt`
+	- `Reference`: `\ref`/`\pageref` take an optional star (`expander.TakeStar()`)
+	- new `On("hyperref", …)`: `[label]{text}` sets the text plainly (no underline); the four-argument URL form is not handled
+	- `CaptionSetup`: keys `justification` and `singlelinecheck` become `\caption@justification[@kind]` / `\caption@singlelinecheck[@kind]` macros
+	- new `captionJustify` (TexAlign) and `CaptionSetting(key, kind, t)`; `Caption`: `centering`→Center, `raggedright`→Left, `raggedleft`→Right, anything else→Justify; with `singlelinecheck=false|off|no` the caption starts in that alignment, otherwise centred; `EndCaption`: an overflowing caption takes `captionJustify` (was always Justify)
+	- new property `MarksHeadings` (pageStyle is headings/myheadings or a fancyhdr style); `BibItem`'s first-entry skip after a heading merges only when neither `bibInContents` nor `MarksHeadings`
+- `UI.TexLowering.Advance`: below `AtlasMetaData.AdvanceTableSize` (256) the table as before; above it `GetGlyph(c) ?? GetGlyph(' ')` and `Metrics(glyph, face).advanceWidth`, gridded — same as `TextMeasurer.MeasureAdvance`. Affects every lowering width: table columns, caption fit, leader cells, `TextWidth`
+- `TexBiblatex.Year`: `Purify(…, true)` keeps case
+- Tests (`TexTests.cs`, `Tex.tests.axml`): new `Tex.BibTwice`, `Tex.HyperrefRef`, `Tex.TableWideChars`, `Tex.CaptionJustification`, `Tex.BiblatexYearCase`; `Tex.BibAfterHeading` gains a fancyhdr case; helper `FirstEntrySpace` gains a `preamble` parameter
+
+### Decisions
+**Several lists: one per `\printbibliography`, each with its own heading and title.**
+LaTeX prints one list per call. The old single mark let the last call overwrite the first, and leaked `bibintoc` and `title=` into it.
+
+**Under biblatex, tocbibind does not make a list a contents entry.**
+biblatex prints its own heading through `\defbibheading`, so tocbibind does not touch it; only `heading=bibintoc` adds the contents line. tocbibind still applies to plain BibTeX's thebibliography. The user ruled: the reference PDF is the authority.
+
+**The first-entry skip after a bibliography heading is a rule in `BibItem`, not a mark node.**
+In LaTeX `\@mkboth` is `\markboth` under headings/myheadings/fancyhdr (fancyhdr's `\ps@@fancy` lets it), `\@gobbletwo` otherwise. The mark node, like bibintoc's `\addcontentsline`, stops the list's `\addvspace` merging, so the `\@outerparskip` lands in full (3pt in the test). We do not emit a mark node; `\@mkboth` in the Prelude stays a no-op.
+
+**Lowering measures characters above U+00FF at their real advance.**
+The half-em fallback made every em dash and Lithuanian letter half an em in lowering measures; the fix mirrors `TextMeasurer` so the two measures agree.
+
+### Verification
+Test-verified: Thorium `--test=Tex` 146 passed, 1 failed (Boot: the pre-existing default sampler asset error). Shot-verified (text positions) via `_Build/pdfcheck.sh`: internship report 18/18 pages, 16/18 identical (was 17/18 pages, 11 identical); thesis 35/35 identical; CV unchanged (only the documented pdfTeX accent extraction lines). Glyph shapes, colour and images not checked. NOT GUI-verified.
+
+### Known gaps
+- Internship p5 and p14 still break lines differently from LuaTeX (p5 "būtų|iš" vs ours "būtų iš|"; p14 TeX "Abiejuose|" unhyphenated, ours "Abiejuo-|se"). Glyph advances match the reference within 0.05pt; our Knuth-Plass passes, demerits, interword glue (½/⅓ space) and space factors mirror TeX and read the class's `\tolerance 1414`, `\emergencystretch 1.5em`; measured from the PDFs, LuaTeX's chosen break set costs more than ours under plain Knuth-Plass, so LuaTeX applies something we don't model. Needs LuaTeX's `\tracingparagraphs`; no TeX install on the dev machine
+- The ink box of `ų`/`ą`/`ę`/`į` is ~0.5pt narrower in our PDF than the reference (ogonek extent); glyph outline, advance identical. Not investigated
+- `\hyperref`'s four-argument form `\hyperref{url}{category}{name}{text}` not handled
+- caption's other `justification` values (centerlast, centerfirst, Centering, RaggedRight…) fall to Justify
+- No mark node is emitted for `\@mkboth`; the first-entry skip is a rule in `BibItem`
+Related: [[tex-plan]], [[xml-editor]], [[note-file-formats]], [[code-block-colouring]], [[math-in-notes]], [[markdown-blocks-and-alignment]], [[document-tables]]

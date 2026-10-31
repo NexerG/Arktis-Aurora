@@ -47,6 +47,7 @@ namespace ArctisAurora.Core.UI.Document
         public float? listIndent;
         public float? lineHeight;
         public bool keepWithNext;
+        public bool keepTogether;
         public bool strut;
         public int? listStart;
         public bool isChecked;

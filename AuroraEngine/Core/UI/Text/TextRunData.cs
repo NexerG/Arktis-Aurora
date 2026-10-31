@@ -259,7 +259,11 @@ namespace ArctisAurora.Core.UI.Text
             && a.fill == b.fill
             && a.leader == b.leader && a.leaderWidth == b.leaderWidth && a.leaderInset == b.leaderInset
             && a.note == b.note
-            && a.urlStretch == b.urlStretch && a.urlBreakPenalty == b.urlBreakPenalty && a.urlBigBreakPenalty == b.urlBigBreakPenalty;
+            && a.urlStretch == b.urlStretch && a.urlBreakPenalty == b.urlBreakPenalty && a.urlBigBreakPenalty == b.urlBigBreakPenalty
+            && a.urlWidth == b.urlWidth && a.urlShrink == b.urlShrink
+            && a.urlNumPenalty == b.urlNumPenalty && a.urlNumWidth == b.urlNumWidth && a.urlNumStretch == b.urlNumStretch && a.urlNumShrink == b.urlNumShrink
+            && a.urlUcPenalty == b.urlUcPenalty && a.urlUcWidth == b.urlUcWidth && a.urlUcStretch == b.urlUcStretch && a.urlUcShrink == b.urlUcShrink
+            && a.urlLcPenalty == b.urlLcPenalty && a.urlLcWidth == b.urlLcWidth && a.urlLcStretch == b.urlLcStretch && a.urlLcShrink == b.urlLcShrink;
 
         // Save: the spans cut back into runs. The last span absorbs whatever is left of the string,
         // so its count is read off the text rather than trusted.
@@ -292,8 +296,13 @@ namespace ArctisAurora.Core.UI.Text
                     leaderInset = span.leaderInset,
                     note = span.note,
                     urlStretch = span.urlStretch,
+                    urlWidth = span.urlWidth,
+                    urlShrink = span.urlShrink,
                     urlBreakPenalty = span.urlBreakPenalty,
                     urlBigBreakPenalty = span.urlBigBreakPenalty,
+                    urlNumPenalty = span.urlNumPenalty, urlNumWidth = span.urlNumWidth, urlNumStretch = span.urlNumStretch, urlNumShrink = span.urlNumShrink,
+                    urlUcPenalty = span.urlUcPenalty, urlUcWidth = span.urlUcWidth, urlUcStretch = span.urlUcStretch, urlUcShrink = span.urlUcShrink,
+                    urlLcPenalty = span.urlLcPenalty, urlLcWidth = span.urlLcWidth, urlLcStretch = span.urlLcStretch, urlLcShrink = span.urlLcShrink,
                     width = span.imageWidth,
                     height = span.imageHeight,
                     wrap = span.wrap,

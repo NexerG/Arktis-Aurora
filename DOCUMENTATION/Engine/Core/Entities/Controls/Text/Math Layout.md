@@ -37,13 +37,15 @@ Layout takes the line width as an optional argument, 0 meaning none, and only a 
 
 A `\tag` becomes the box's `tag`: its text sits at its row's baseline with its right edge at x 0, and a display formula's height and depth include it. An inline formula's tag is placed after the formula, a quad apart. The note draws a formula centred but shifted left to keep a quad clear of its tag, and lets it overflow past that.
 
+In a TeX document without unicode-math (`MathRules.Tfm`) the layout is given the text point size. Letters, digits and symbols then take Computer Modern's real widths, italic corrections, heights and depths from `TexMathMetrics`, at the design size LaTeX picks for that point size, and scripts are set at LaTeX's `\DeclareMathSizes` sizes instead of the font's percentages. Big operators, sized delimiters, radicals, tags and error text keep Latin Modern metrics.
+
 Formulas are inserted and edited through [[Formula Popup]].
 
 ## API summary
 
 | Member | Kind | Summary |
 | --- | --- | --- |
-| `Layout(MathNode root, bool display, AtlasMetaData atlas, MathConstants constants, float lineWidth = 0, float strut = 0, MathRules rules = MathRules.OpenType)` | static | The formula as a `MathBox` in em; a `MathError` lays out its source as plain text with `error` set. A line width in em makes a top-level `align`, `flalign` or `multline` spread over it. A strut in em replaces the array row strut. With `MathRules.Tfm` scripts and limits follow TeX's Appendix G rule 18 using the constants file's `Sub1`, `Sub2`, `Sup1`, `Sup2`, `Sup3`, `SubDrop`, `SupDrop` and `BigOpSpacing5`, which a TeX document without unicode-math selects. |
+| `Layout(MathNode root, bool display, AtlasMetaData atlas, MathConstants constants, float lineWidth = 0, float strut = 0, MathRules rules = MathRules.OpenType, float textPt = 0f)` | static | The formula as a `MathBox` in em; a `MathError` lays out its source as plain text with `error` set. A line width in em makes a top-level `align`, `flalign` or `multline` spread over it. A strut in em replaces the array row strut. With `MathRules.Tfm` scripts and limits follow TeX's Appendix G rule 18 using the constants file's `Sub1`, `Sub2`, `Sup1`, `Sup2`, `Sup3`, `SubDrop`, `SupDrop` and `BigOpSpacing5`, which a TeX document without unicode-math selects. |
 
 ## Fields & Properties
 
@@ -75,9 +77,18 @@ MathBox tag;              // a display formula's tag, right edge at x 0
 ### Laying out scripts
 	if the nucleus is a big operator or operator name that takes limits, in display style
 		centre the limits above and below the operator by the font's limit gaps
+		in TFM mode the upper limit rises by the larger of big_op_spacing1 plus the superscript's depth and big_op_spacing3   // TeX rule 13a
+		in TFM mode the operator's height and depth come from cmex10's box, centred on the axis   // glyph and width stay Latin Modern
 	otherwise
 		raise the superscript and lower the subscript by the font's shifts
-		keep the gap between them at least the font's minimum
+		clash = the font's minimum gap − the gap between them
+		if clash > 0
+			in TFM mode   // TeX rule 18e
+				lower the subscript by clash
+				lift both by the font's superscript-bottom-max-with-subscript − (the superscript's shift − its depth), when that is positive
+			in OpenType mode   // the MATH spec's order
+				raise the superscript by the smaller of that same amount (not below 0) and clash
+				lower the subscript by the rest
 		put the superscript after the nucleus's italic correction
 		add the font's space after the scripts
 

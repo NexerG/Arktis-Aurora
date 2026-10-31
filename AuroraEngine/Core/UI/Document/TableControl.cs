@@ -259,6 +259,16 @@ namespace ArctisAurora.Core.UI.Document
 
         #region ---- pages ----
         internal float FirstRowHeight => rowDefinitions.Count > 0 ? rowDefinitions[0].resolvedSize : 0f;
+        internal float Axis => model.axis * zoom;
+
+        // How far the table rises above the baseline of the line it is centred on, as TeX's \vcenter.
+        internal float AboveAxis()
+        {
+            float height = 0f;
+            for (int r = 0; r < rowDefinitions.Count; r++)
+                height += rowDefinitions[r].resolvedSize;
+            return height * 0.5f + Axis;
+        }
 
         // Pushes each row that would cross a page break to the next page, through the gap above it;
         // returns the table's height.

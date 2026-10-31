@@ -129,15 +129,18 @@ namespace ArctisAurora.Core.Tex
             "hline", "cline", "toprule", "midrule", "bottomrule", "cmidrule", "multicolumn", "endtabular"
         };
 
-        // the url package's break characters: a URL may end a line after any of them
-        private const string UrlBreaks = "./-_?&=:#!;,)]|@+";
+        // url.sty's \UrlBreaks, \UrlBigBreaks (- only under [hyphens]) and \UrlNoBreaks, unless the document defines them
+        private const string UrlBreaks = ".@\\/!_|;>]),?&'+=#";
+        private const string UrlBigBreaks = ":";
+        private const string UrlHyphenBigBreaks = ":-";
+        private const string UrlNoBreaks = "([{<";
 
-        // biblatex's \biburlsetup: its big and ordinary break characters, their penalties, and \Urlmuskip = 3mu
+        // a URL character as url.sty sets it: an ordinary, binary, relation or opening math atom
+        private enum UrlAtom : byte { Ord, Bin, Rel, Open }
+
+        // biblatex's \biburlsetup: its big and ordinary break characters
         private const string BibUrlBigBreaks = ":-";
         private const string BibUrlBreaks = ".@/\\!_|;>])},?'+=#$&*^\"";
-        private const int BibUrlBigBreakPenalty = 100;
-        private const int BibUrlBreakPenalty = 200;
-        private const int BibUrlMu = 3;
 
         // packages that set the roman family in Times
         private static readonly HashSet<string> timesPackages = new HashSet<string> { "mathptmx", "times", "tgtermes", "newtxtext" };
@@ -275,38 +278,41 @@ namespace ArctisAurora.Core.Tex
         private string? floatKind;
         private TexFloat? openFloat;
         private int captionStart = -1, captionEnd = -1;
+        private TexAlign captionJustify;
         private string algorithmStyle = "ruled";
         private List<string> graphicsPath = new List<string> { "" };
         private readonly List<TableBuild> tables = new List<TableBuild>();
         private readonly List<(List<TexNode> target, TexTable table)> unaligned = new List<(List<TexNode>, TexTable)>();
 
-        // bibliography: \bibliographystyle, \bibliography's files and where it stood
+        // bibliography: \bibliographystyle, \bibliography's files and where each list stood
         private string bibStyle = "";
         private string[] bibFiles = Array.Empty<string>();
-        private (List<TexNode> list, TexBibliographyMark mark)? bibMark;
+        private readonly List<(List<TexNode> list, TexBibliographyMark mark)> bibMarks = new List<(List<TexNode>, TexBibliographyMark)>(2);
         private bool allCited;
         private int bibCount;
         private int bibItems;
+        // \parskip around the bibliography, as \@trivlist keeps it in \@outerparskip
+        private TexGlue bibOuterParskip;
         // inside a biblatex bibliography, where \url takes \biburlsetup's breaks, penalties and stretch
         private bool bibUrls;
+        // \usepackage[hyphens]{url}
+        private bool urlHyphens;
 
-        // biblatex: its settings once loaded, \printbibliography's title, the language it stood in, each entry's place in it
+        // biblatex: its settings once loaded, each entry's place in it
         private TexBiblatexSettings? biblatex;
-        private string? bibTitle;
-        private string bibLanguage = "english";
         private readonly Dictionary<string, int> bibOrder = new Dictionary<string, int>();
 
         // contents: every list's entries as ranges of one token list in document order, where each \@starttoc stood,
         // the heading's \addcontentsline waiting for its paragraph, the entries keyed so far, where the bibliography's
-        // entries go (-1 at the end), where its mark stood, and whether it is an entry itself
+        // entries go (-1 at the end), whether the one being typeset is an entry itself, and whether tocbibind makes every one
         private readonly List<TexToken> contentsTokens = new List<TexToken>(1024);
         private readonly List<(string extension, int start, int count)> contentsEntries = new List<(string, int, int)>(64);
         private readonly List<(List<TexNode> list, TexContentsMark mark)> contentsMarks = new List<(List<TexNode>, TexContentsMark)>(4);
         private TexToken[]? headingContents;
         private int contentsKeys;
         private int contentsAt = -1;
-        private int bibContentsAt;
         private bool bibInContents;
+        private bool bibTocbibind;
 
         // page style slot sources by style and place, the styles fancyhdr defined, the one \fancyhead writes to, the styles used,
         // what the next paragraph takes, the numbered heading whose marks are pending, and whether a slot is being typeset
@@ -331,6 +337,7 @@ namespace ArctisAurora.Core.Tex
         // titlesec: \titleformat and \titlespacing by section depth, and the after-code of the heading being set
         private readonly Dictionary<int, TitleFormat> titleFormats = new Dictionary<int, TitleFormat>();
         private TexToken[]? headingAfterCode;
+        private TexStyle? headingOuterStyle;
 
         // \@startsection's format for the heading it starts
         private TitleFormat? startSection;
@@ -668,6 +675,8 @@ namespace ArctisAurora.Core.Tex
             On("@endheadafter", _ =>
             {
                 EndParagraph();
+                if (headingOuterStyle is TexStyle outer) style = outer;
+                headingOuterStyle = null;
                 VSkip(new TexGlue { width = (int)headingAfter });
                 afterHeading = true;
             });
@@ -692,6 +701,7 @@ namespace ArctisAurora.Core.Tex
             }
             On("@endhead", _ =>
             {
+                TexStyle inHeading = style;
                 Resume();
                 if (headingMark is (int depth, string number) && vtarget.Count > 0 && vtarget[^1] is TexParagraph heading)
                     HeadingMarks(heading, depth, number);
@@ -699,6 +709,8 @@ namespace ArctisAurora.Core.Tex
                 afterHeading = true;
                 if (headingAfterCode != null)
                 {
+                    headingOuterStyle = style;
+                    style = inHeading;
                     expander.Insert(headingAfterCode.Append(TexToken.Cs("@endheadafter")).ToArray());
                     headingAfterCode = null;
                 }
@@ -916,8 +928,8 @@ namespace ArctisAurora.Core.Tex
             On("settowidth", SetToWidth);
             On("ignorespaces", _ => suppressSpace = true);
             On("@", _ => spaceFactor = 1000);
-            On("frenchspacing", _ => frenchSpacing = true);
-            On("nonfrenchspacing", _ => frenchSpacing = false);
+            On("frenchspacing", _ => FrenchSpacing(true));
+            On("nonfrenchspacing", _ => FrenchSpacing(false));
             On("vskip", _ =>
             {
                 TexGlue glue = expander.ScanGlue();
@@ -929,6 +941,24 @@ namespace ArctisAurora.Core.Tex
                 int width = expander.ScanDimen();
                 if (mode == Mode.Horizontal) HList.Add(new TexKern(width, style));
                 else vtarget.Add(new TexVGlue(new TexGlue { width = width }));
+            });
+            On("mskip", _ =>
+            {
+                TexGlue mu = expander.ScanGlue(true);
+                TexGlue glue = new TexGlue
+                {
+                    width = MuToSp(mu.width), stretchOrder = mu.stretchOrder, shrinkOrder = mu.shrinkOrder,
+                    stretch = mu.stretchOrder > 0 ? mu.stretch : MuToSp(mu.stretch), shrink = mu.shrinkOrder > 0 ? mu.shrink : MuToSp(mu.shrink)
+                };
+                StartParagraph();
+                HList.Add(new TexGlueNode(glue, false, style) { leader = leaderBox });
+                leaderBox = null;
+            });
+            On("mkern", _ =>
+            {
+                int width = MuToSp(expander.ScanDimen(true));
+                StartParagraph();
+                HList.Add(new TexKern(width, style));
             });
             On("penalty", _ =>
             {
@@ -979,20 +1009,44 @@ namespace ArctisAurora.Core.Tex
                 if (arg == null) return;
                 TexStyle outer = style;
                 style = style with { font = style.font with { family = TexFamily.Mono, face = null } };
+                style = bibUrls
+                    ? style with { urlBreakPenalty = expander.Counter("biburlbreakpenalty"), urlBigBreakPenalty = expander.Counter("biburlbigbreakpenalty") }
+                    : style with
+                    {
+                        urlBreakPenalty = expander.RegisterValue("UrlBreakPenalty") ?? expander.RegisterValue("binoppenalty") ?? 0,
+                        urlBigBreakPenalty = expander.RegisterValue("UrlBigBreakPenalty") ?? expander.RegisterValue("relpenalty") ?? 0
+                    };
+                TexGlue mu = expander.RegisterMuGlue(bibUrls ? "biburlbigskip" : "Urlmuskip") ?? default;
+                if (mu.stretchOrder > 0 || mu.shrinkOrder > 0) Log.Once().Info($"infinite \\Urlmuskip stretch or shrink in a URL is set as finite");
+                style = style with { urlWidth = MuToSp(mu.width), urlStretch = MuToSp(mu.stretch), urlShrink = MuToSp(mu.shrink) };
                 if (bibUrls)
-                    style = style with { urlStretch = style.font.size * BibUrlMu / 18, urlBreakPenalty = BibUrlBreakPenalty, urlBigBreakPenalty = BibUrlBigBreakPenalty };
+                {
+                    (int penalty, int width, int stretch, int shrink) num = UrlLetters("biburlnumpenalty", "biburlnumskip");
+                    (int penalty, int width, int stretch, int shrink) uc = UrlLetters("biburlucpenalty", "biburlucskip");
+                    (int penalty, int width, int stretch, int shrink) lc = UrlLetters("biburllcpenalty", "biburllcskip");
+                    style = style with
+                    {
+                        urlNumPenalty = num.penalty, urlNumWidth = num.width, urlNumStretch = num.stretch, urlNumShrink = num.shrink,
+                        urlUcPenalty = uc.penalty, urlUcWidth = uc.width, urlUcStretch = uc.stretch, urlUcShrink = uc.shrink,
+                        urlLcPenalty = lc.penalty, urlLcWidth = lc.width, urlLcStretch = lc.stretch, urlLcShrink = lc.shrink
+                    };
+                }
+                string breaks = bibUrls ? BibUrlBreaks : UrlCharacters("UrlBreaks", UrlBreaks);
+                string bigBreaks = bibUrls ? BibUrlBigBreaks : UrlCharacters("UrlBigBreaks", urlHyphens ? UrlHyphenBigBreaks : UrlBigBreaks);
+                string noBreaks = UrlCharacters("UrlNoBreaks", UrlNoBreaks);
                 string url = Text(arg).Replace("\\%", "%").Replace("\\#", "#").Replace("\\_", "_").Replace("\\&", "&");
                 StringBuilder broken = new StringBuilder(url.Length + 16);
+                UrlAtom previous = UrlAtom.Open;
                 for (int i = 0; i < url.Length; i++)
                 {
+                    UrlAtom atom = AtomOf(url[i], breaks, bigBreaks, noBreaks);
+                    UrlAtom next = i + 1 < url.Length ? AtomOf(url[i + 1], breaks, bigBreaks, noBreaks) : UrlAtom.Ord;
+                    if (atom == UrlAtom.Bin && (previous != UrlAtom.Ord || next == UrlAtom.Rel)) atom = UrlAtom.Ord;
                     broken.Append(url[i]);
-                    if (i == url.Length - 1) continue;
-                    if (!bibUrls)
-                    {
-                        if (UrlBreaks.IndexOf(url[i]) >= 0) broken.Append('​');
-                    }
-                    else if (BibUrlBigBreaks.IndexOf(url[i]) >= 0) broken.Append('');
-                    else if (BibUrlBreaks.IndexOf(url[i]) >= 0) broken.Append('');
+                    if (i < url.Length - 1 && atom == UrlAtom.Bin) broken.Append('');
+                    else if (i < url.Length - 1 && atom == UrlAtom.Rel && next != UrlAtom.Rel) broken.Append('');
+                    if (i < url.Length - 1 && bibUrls && UrlLetterMarker(url[i], style) is char marker) broken.Append(marker);
+                    previous = atom;
                 }
                 AddText(broken.ToString());
                 style = outer;
@@ -1003,6 +1057,12 @@ namespace ArctisAurora.Core.Tex
                 TexToken[]? text = expander.Argument(t, true);
                 if (text == null) return;
                 expander.Insert(Grouped(new[] { TexToken.Cs("@underline") }.Concat(text)));
+            });
+            On("hyperref", t =>
+            {
+                if (expander.Optional(t) == null) return;
+                TexToken[]? text = expander.Argument(t, true);
+                if (text != null) expander.Insert(Grouped(text));
             });
 
             foreach (KeyValuePair<string, string> symbol in symbols)
@@ -1113,6 +1173,12 @@ namespace ArctisAurora.Core.Tex
                 if (name == "algorithm" && loadedFiles.Add(name)) Algorithm(options);
                 if (name == "tocbibind" && loadedFiles.Add(name)) TocBibind(options);
                 if (name == "biblatex") BiblatexOptions(options);
+                if (name == "url")
+                    foreach (string option in Options(options))
+                        if (option == "hyphens") urlHyphens = true;
+                if (name is "url" or "hyperref" && !expander.IsDefined("UrlBreakPenalty"))
+                    expander.InsertSource("\\mathchardef\\UrlBreakPenalty=\\binoppenalty \\mathchardef\\UrlBigBreakPenalty=\\relpenalty ");
+                if (name is "url" or "hyperref" && !expander.IsDefined("Urlmuskip")) expander.InsertSource("\\newmuskip\\Urlmuskip \\Urlmuskip=0mu ");
                 if (timesPackages.Contains(name)) times = true;
                 if (!knownPackages.Contains(name)) Log.Info($"package {name} is not supported and is ignored");
             }
@@ -1503,6 +1569,14 @@ namespace ArctisAurora.Core.Tex
             }
         }
 
+        // \frenchspacing or \nonfrenchspacing until the group ends.
+        private void FrenchSpacing(bool on)
+        {
+            bool outer = frenchSpacing;
+            expander.Save(() => frenchSpacing = outer);
+            frenchSpacing = on;
+        }
+
         // The language paragraphs start in, and with captions its \captions<name>, until the group ends.
         private void SelectLanguage(string name, bool captions)
         {
@@ -1518,8 +1592,8 @@ namespace ArctisAurora.Core.Tex
             if (captions && expander.IsDefined("captions" + name)) expander.Insert(new[] { TexToken.Cs("captions" + name) });
         }
 
-        // caption's \captionsetup[kind]{keys}: name, labelsep, labelfont, font and textfont become \caption@key[@kind] macros
-        // the group scopes; other keys are read and ignored.
+        // caption's \captionsetup[kind]{keys}: name, labelsep, labelfont, font, textfont, justification and singlelinecheck
+        // become \caption@key[@kind] macros the group scopes; other keys are read and ignored.
         private void CaptionSetup(TexToken t)
         {
             expander.TakeStar();
@@ -1536,7 +1610,7 @@ namespace ArctisAurora.Core.Tex
                 TexToken[] value = Unbraced(option[(equals + 1)..]);
                 TexToken[]? body = key switch
                 {
-                    "name" => value,
+                    "name" or "justification" or "singlelinecheck" => value,
                     "labelsep" => LabelSeparator(Text(value).Trim()),
                     "labelfont" or "font" or "textfont" => CaptionFont(value),
                     _ => null
@@ -2080,6 +2154,7 @@ namespace ArctisAurora.Core.Tex
         private void Reference(TexToken t, bool cite, bool page = false)
         {
             TexToken[]? note = cite ? expander.Optional(t) : null;
+            if (!cite) expander.TakeStar();
             string? names = expander.NameArgument(t);
             if (names == null) return;
             string[] keys = cite ? Keys(names) : new[] { names.Trim() };
@@ -2177,6 +2252,9 @@ namespace ArctisAurora.Core.Tex
                 ["FootCenter"] = page
             };
         }
+
+        // whether the page style makes \@mkboth a \markboth: headings, myheadings and fancyhdr's styles
+        private bool MarksHeadings => pageStyle is "headings" or "myheadings" || fancyStyles.Contains(pageStyle);
 
         // \pagestyle sets every page's; \thispagestyle the page the paragraph being set, or the next one, lands on.
         private void SetPageStyle(TexToken t, bool thisPage)
@@ -2408,6 +2486,7 @@ namespace ArctisAurora.Core.Tex
             align = TexAlign.Justify;
             style = new TexStyle(new TexFont(TexFamily.Roman, false, false, Size(NormalSize)), null, false);
             noIndent = true;
+            expander.Insert(new[] { TexToken.Cs("@parboxrestore") });
         }
 
         private void EndFloat()
@@ -2478,7 +2557,13 @@ namespace ArctisAurora.Core.Tex
             EndParagraph();
             if (!algorithm && HoldsContent(vtarget.Count)) VSkip(expander.RegisterGlue("abovecaptionskip") ?? default);
             captionStart = openFloat != null && vtarget == openFloat.vlist ? vtarget.Count : -1;
-            Suspend(new TexParStyle { kind = TexParKind.Text, align = algorithm && algorithmStyle == "ruled" ? TexAlign.Justify : TexAlign.Center }, style.font);
+            captionJustify = CaptionSetting("justification", kind, t) switch
+            {
+                "centering" => TexAlign.Center, "raggedright" => TexAlign.Left, "raggedleft" => TexAlign.Right, _ => TexAlign.Justify
+            };
+            bool singleLineCheck = CaptionSetting("singlelinecheck", kind, t) is not ("false" or "off" or "no");
+            TexAlign start = algorithm && algorithmStyle == "ruled" ? TexAlign.Justify : singleLineCheck ? TexAlign.Center : captionJustify;
+            Suspend(new TexParStyle { kind = TexParKind.Text, align = start }, style.font);
             par!.strut = !algorithm;
 
             TexToken open = TexToken.Char('{', TexCatcode.BeginGroup), close = TexToken.Char('}', TexCatcode.EndGroup);
@@ -2504,11 +2589,11 @@ namespace ArctisAurora.Core.Tex
             expander.Insert(tokens.ToArray());
         }
 
-        // caption's singlelinecheck: a caption that fits on one line stays centred, a longer one is justified.
+        // caption's singlelinecheck: a caption that fits on one line stays centred, a longer one takes its justification.
         private void EndCaption()
         {
             bool strut = par is { strut: true };
-            if (par != null && Width(par.list) > (expander.RegisterValue("linewidth") ?? textWidth)) align = TexAlign.Justify;
+            if (par != null && Width(par.list) > (expander.RegisterValue("linewidth") ?? textWidth)) align = captionJustify;
             Resume();
             if (captionStart >= 0) captionEnd = vtarget.Count;
             if (strut && !HoldsContent(vtarget.Count - 1)) VSkip(expander.RegisterGlue("abovecaptionskip") ?? default);
@@ -2521,6 +2606,10 @@ namespace ArctisAurora.Core.Tex
                 if (vtarget[i] is not TexVGlue) return true;
             return false;
         }
+
+        // a \captionsetup value for a float kind as text, empty when unset
+        private string CaptionSetting(string key, string kind, TexToken t) =>
+            CaptionMacro(key, kind) is string macro ? Text(expander.Expanded(new[] { TexToken.Cs(macro) }, t) ?? Array.Empty<TexToken>()).Trim() : "";
 
         // caption's setting for a float kind: its own \caption@key@kind, else \caption@key, else null.
         private string? CaptionMacro(string key, string kind) =>
@@ -2618,8 +2707,12 @@ namespace ArctisAurora.Core.Tex
             TexTable table = new TexTable { line = sourceLine };
             if (opens)
             {
+                table.opens = true;
                 if (IndentsNext) table.indent = expander.RegisterValue("parindent") ?? 0;
                 noIndent = afterHeading = afterEnvironment = false;
+                if (list != null && !itemPending) VSkip(Rigid(list.settings.parSep) ?? ListSkip(itemSeps, itemSepShrinks, list.depth));
+                if (list == null && keepSkip == 0 && !environmentStart && expander.RegisterGlue("parskip") is TexGlue { width: not 0 } parskip) VSkip(parskip);
+                environmentStart = false;
             }
             ColumnSpec(spec, table, 0);
             if (table.columns.Count == 0) table.columns.Add(new TexColumn { align = TexAlign.Left });
@@ -2692,6 +2785,7 @@ namespace ArctisAurora.Core.Tex
 
             TexAlign to = b.column < b.table.columns.Count ? b.table.columns[b.column].align : TexAlign.Left;
             Suspend(new TexParStyle { kind = TexParKind.Text, align = to }, b.style.font, cell.vlist);
+            par!.strut = true;
             style = b.style;
             suppressSpace = true;
         }
@@ -2917,7 +3011,7 @@ namespace ArctisAurora.Core.Tex
                      })
                 if (!given.Contains(option))
                     code.Append($@"\def\{command}{{\csname\@toclevel\endcsname*{{\{name}\@mkboth{{}}{{}}}}\addcontentsline{{toc}}{{\@toclevel}}{{\{name}}}\@starttoc{{{extension}}}}}");
-            if (!given.Contains("notbib")) bibInContents = true;
+            if (!given.Contains("notbib")) bibTocbibind = true;
             ReadCode(code.ToString());
         }
 
@@ -2963,7 +3057,7 @@ namespace ArctisAurora.Core.Tex
             if (names == null) return;
             bibFiles = Keys(names);
             if (!inDocument) return;
-            PlaceBibliography();
+            PlaceBibliography(null, false);
         }
 
         // biblatex's \printbibliography[heading=…, title=…]: the list goes here; plain BibTeX when biblatex is not loaded.
@@ -2971,6 +3065,8 @@ namespace ArctisAurora.Core.Tex
         {
             TexToken[]? options = expander.Optional(t);
             if (bibStyle.Length == 0) bibStyle = "plain";
+            string? title = null;
+            bool inContents = false;
             if (options != null)
             {
                 List<TexToken[]> keys = Split(options);
@@ -2981,11 +3077,11 @@ namespace ArctisAurora.Core.Tex
                     if (equals < 0) continue;
                     string key = Text(option[..equals]).Trim();
                     string value = Text(Unbraced(option[(equals + 1)..])).Trim();
-                    if (key == "heading" && value == "bibintoc") bibInContents = true;
-                    else if (key == "title") bibTitle = value;
+                    if (key == "heading" && value == "bibintoc") inContents = true;
+                    else if (key == "title") title = value;
                 }
             }
-            PlaceBibliography();
+            PlaceBibliography(title, inContents);
         }
 
         // \DefineBibliographyStrings{language}{key = text, …}
@@ -3006,15 +3102,16 @@ namespace ArctisAurora.Core.Tex
         }
 
         // The bibliography is typeset here once every \cite is known.
-        private void PlaceBibliography()
+        private void PlaceBibliography(string? title, bool inContents)
         {
             EndParagraph();
             EnsureDocument();
-            bibLanguage = language;
-            TexBibliographyMark mark = new TexBibliographyMark();
+            TexBibliographyMark mark = new TexBibliographyMark
+            {
+                title = title, inContents = inContents || bibTocbibind && biblatex == null, language = language, contentsAt = contentsEntries.Count
+            };
             vtarget.Add(mark);
-            bibMark = (vtarget, mark);
-            bibContentsAt = contentsEntries.Count;
+            bibMarks.Add((vtarget, mark));
         }
 
         private void BeginBibliography(TexToken t)
@@ -3028,12 +3125,14 @@ namespace ArctisAurora.Core.Tex
                 bool outer = bibUrls;
                 expander.Save(() => bibUrls = outer);
                 bibUrls = true;
+                FrenchSpacing(true);
             }
             TexToken[] setup = new TexToken[widest.Length + 1];
             setup[0] = TexToken.Cs("@bibsetup");
             widest.CopyTo(setup, 1);
             expander.Insert(setup);
             TexGlue parsep = ListSkip(itemSeps, itemSepShrinks, 1);
+            bibOuterParskip = expander.RegisterGlue("parskip") ?? default;
             expander.InsertSource($"\\parskip={parsep.width}sp minus{parsep.shrink}sp\\relax ");
             TexToken[] heading =
             {
@@ -3056,7 +3155,13 @@ namespace ArctisAurora.Core.Tex
             TexToken[] shown = label ?? Chars((++bibCount).ToString(CultureInfo.InvariantCulture));
             bibLabels[key] = Text(shown.Where(x => x.IsCs || x.cat is not (TexCatcode.BeginGroup or TexCatcode.EndGroup))).Replace("\\labelalphaothers", "+");
             bibOrder[key] = bibItems;
-            VSkip(bibItems == 0 ? ListSkip(topSeps, topSepShrinks, 1) : ListSkip(itemSeps, itemSepShrinks, 1), bibItems == 0);
+            if (bibItems > 0) VSkip(ListSkip(itemSeps, itemSepShrinks, 1));
+            else if (afterHeading)
+            {
+                TexGlue parskip = expander.RegisterGlue("parskip") ?? default;
+                VSkip(new TexGlue { width = bibOuterParskip.width - parskip.width, shrink = bibOuterParskip.shrink - parskip.shrink }, !bibInContents && !MarksHeadings);
+            }
+            else VSkip(ListSkip(topSeps, topSepShrinks, 1), true);
             bibItems++;
             noIndent = true;
             StartParagraph();
@@ -3070,7 +3175,7 @@ namespace ArctisAurora.Core.Tex
         // BibTeX's job, once every \cite is known: the cited entries as a thebibliography, typeset where \bibliography stood.
         private void TypesetBibliography()
         {
-            if (bibMark is not (List<TexNode> list, TexBibliographyMark mark)) return;
+            if (bibMarks.Count == 0) return;
 
             List<TexBibEntry> entries = new List<TexBibEntry>();
             foreach (string file in bibFiles)
@@ -3096,22 +3201,29 @@ namespace ArctisAurora.Core.Tex
             IEnumerable<string> keys = allCited ? citations.Concat(entries.Select(e => e.key)).Distinct() : citations;
             List<TexBibEntry> cited = keys.Where(byKey.ContainsKey).Select(k => byKey[k]).ToList();
 
-            List<TexNode> made = new List<TexNode>();
-            vtarget = made;
-            mode = Mode.Vertical;
-            par = null;
-            done = false;
-            contentsAt = bibContentsAt;
-            expander.Insert(new[] { TexToken.Cs("@endbib") });
-            if (biblatex != null) ReadCode(TexBiblatex.Format(cited, biblatex, bibLanguage, bibTitle));
-            else expander.InsertSource(TexBibliography.Format(cited, bibStyle));
-            while (!done && expander.Next(out TexToken t)) Dispatch(t);
-            EndParagraph();
-            contentsAt = -1;
+            // each list in document order; a list's own contents entry moves the later lists' entry places along
+            int shift = 0;
+            foreach ((List<TexNode> list, TexBibliographyMark mark) in bibMarks)
+            {
+                List<TexNode> made = new List<TexNode>();
+                vtarget = made;
+                mode = Mode.Vertical;
+                par = null;
+                done = false;
+                bibInContents = mark.inContents;
+                contentsAt = mark.contentsAt + shift;
+                expander.Insert(new[] { TexToken.Cs("@endbib") });
+                if (biblatex != null) ReadCode(TexBiblatex.Format(cited, biblatex, mark.language, mark.title));
+                else expander.InsertSource(TexBibliography.Format(cited, bibStyle));
+                while (!done && expander.Next(out TexToken t)) Dispatch(t);
+                EndParagraph();
+                shift = contentsAt - mark.contentsAt;
+                contentsAt = -1;
 
-            int at = list.IndexOf(mark);
-            list.RemoveAt(at);
-            list.InsertRange(at, made);
+                int at = list.IndexOf(mark);
+                list.RemoveAt(at);
+                list.InsertRange(at, made);
+            }
         }
         #endregion
 
@@ -3155,10 +3267,12 @@ namespace ArctisAurora.Core.Tex
             if (hlist.Count == 0 || hlist[^1] != factorNode) spaceFactor = 1000;
             int code = SfCode(c);
             if (code != 0) spaceFactor = code > 1000 && spaceFactor < 1000 ? 1000 : code;
+            bool straightQuote = false;
             if (style.font.family != TexFamily.Mono)
             {
                 if (c == '`') c = '‘';
                 else if (c == '\'') c = '’';
+                else if (c == '"') (c, straightQuote) = ('”', true);
                 if (joins && hlist.Count > 0 && hlist[^1] is TexChar last && last.style == style && Ligature(last.ch, c) is char merged and not '\0'
                     && (merged is not ('ﬀ' or 'ﬁ' or 'ﬂ' or 'ﬃ' or 'ﬄ') || JoinsF(style.font)))
                 {
@@ -3166,7 +3280,7 @@ namespace ArctisAurora.Core.Tex
                     return;
                 }
             }
-            hlist.Add(factorNode = new TexChar(c, style));
+            hlist.Add(factorNode = new TexChar(c, style) { straightQuote = straightQuote });
         }
 
         // f-ligatures: the TFM fonts and Latin Modern; other fontspec fonts take only TeX's text ligatures.
@@ -3284,6 +3398,7 @@ namespace ArctisAurora.Core.Tex
             par.style.leftSkip = expander.RegisterValue("leftskip") ?? 0;
             par.style.rightSkip = expander.RegisterValue("rightskip") ?? 0;
             par.style.parFillSkip = expander.RegisterValue("parfillskip") ?? 0;
+            par.interlinePenalty = expander.RegisterValue("interlinepenalty") ?? 0;
             if (align != TexAlign.Justify) par.style.indent = false;
             if (hlist.Count > 0 || par.style.item)
             {
@@ -3374,7 +3489,7 @@ namespace ArctisAurora.Core.Tex
         }
 
         // setspace single-spaces footnotes and floats, except an [H] float's body
-        private bool SingleSpaced => setspace && (floatKind != null && (openFloat == null || !openFloat.placement.Contains('H') || par is { strut: true }) || InNote);
+        private bool SingleSpaced => setspace && (floatKind != null && (openFloat == null || !openFloat.placement.Contains('H') || par is { strut: true } && tables.Count == 0) || InNote);
         #endregion
 
         #region ---- math ----
@@ -3623,6 +3738,54 @@ namespace ArctisAurora.Core.Tex
             }
             items.Add(item.ToArray());
             return items.Where(i => i.Any(t => !(t.IsChar(t.ch, TexCatcode.Space)))).ToList();
+        }
+
+        // mu (65536 = 1mu) in sp at the current font: 18mu to its em.
+        private int MuToSp(int mu) => (int)((long)mu * style.font.size / (18L * 65536));
+
+        // biblatex's break after a URL digit, capital or lowercase letter: its counter's penalty and its muskip in sp; none at penalty 0.
+        private (int penalty, int width, int stretch, int shrink) UrlLetters(string counter, string skip)
+        {
+            int penalty = expander.Counter(counter);
+            if (penalty <= 0) return default;
+            TexGlue mu = expander.RegisterMuGlue(skip) ?? default;
+            if (mu.stretchOrder > 0 || mu.shrinkOrder > 0) Log.Once().Info($"infinite \\{skip} stretch or shrink in a URL is set as finite");
+            return (penalty, MuToSp(mu.width), MuToSp(mu.stretch), MuToSp(mu.shrink));
+        }
+
+        // The marker after a URL digit, capital or lowercase letter whose biblatex break penalty is set; null for any other character.
+        private static char? UrlLetterMarker(char c, in TexStyle style) =>
+            c is >= '0' and <= '9' ? (style.urlNumPenalty > 0 ? '' : null)
+            : c is >= 'A' and <= 'Z' ? (style.urlUcPenalty > 0 ? '' : null)
+            : c is >= 'a' and <= 'z' ? (style.urlLcPenalty > 0 ? '' : null) : null;
+
+        // The math atom url.sty sets a URL character as; a later list wins, as \Url@MathSetup assigns them in turn.
+        private static UrlAtom AtomOf(char c, string breaks, string bigBreaks, string noBreaks) =>
+            noBreaks.IndexOf(c) >= 0 ? UrlAtom.Open : bigBreaks.IndexOf(c) >= 0 ? UrlAtom.Rel : breaks.IndexOf(c) >= 0 ? UrlAtom.Bin : UrlAtom.Ord;
+
+        // The characters a \do list macro names (\do\x or \do x, through parameterless macros it calls); fallback when undefined.
+        private string UrlCharacters(string macro, string fallback)
+        {
+            TexToken[]? body = expander.MacroBody(macro);
+            if (body == null) return fallback;
+            StringBuilder chars = new StringBuilder(body.Length);
+            AppendDoList(body, chars, 0);
+            return chars.ToString();
+        }
+
+        private void AppendDoList(TexToken[] body, StringBuilder chars, int depth)
+        {
+            for (int i = 0; i < body.Length; i++)
+            {
+                if (!body[i].IsCs) continue;
+                if (body[i].name == "do" && i + 1 < body.Length)
+                {
+                    TexToken x = body[++i];
+                    if (!x.IsCs) chars.Append(x.ch);
+                    else if (x.name!.Length == 1) chars.Append(x.name[0]);
+                }
+                else if (depth < 8 && expander.MacroBody(body[i].name!) is TexToken[] inner) AppendDoList(inner, chars, depth + 1);
+            }
         }
 
         private static IEnumerable<string> Options(TexToken[]? tokens) =>

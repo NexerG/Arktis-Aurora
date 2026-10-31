@@ -282,6 +282,290 @@ namespace ArctisAurora.Tests
             yield break;
         }
 
+        [A_XSDActionDependency("Tex.BibAfterHeading", "Test")]
+        private static IEnumerator<int> BibAfterHeading(TestContext t)
+        {
+            string folder = Folder(("refs.bib", "@misc{a, title={First}, year={2020}}\n"));
+            float plain = FirstEntrySpace(folder, "", out int plainErrors), inContents = FirstEntrySpace(folder, "[heading=bibintoc]", out int contentsErrors);
+            float marked = FirstEntrySpace(folder, "", out int markedErrors, "\\usepackage{fancyhdr}\\pagestyle{fancy}");
+            Directory.Delete(folder, true);
+            t.Check(plainErrors == 0 && contentsErrors == 0 && Near(inContents - plain, 3f * TexLowering.PxPerPt, 0.05f),
+                $"\\@nbitem's \\@outerparskip lands in full after bibintoc's \\addcontentsline: {plain} / {inContents}");
+            t.Check(markedErrors == 0 && Near(marked, inContents, 0.05f), $"and after the \\markboth a fancy page style makes of \\@mkboth: {marked} / {inContents}");
+            yield break;
+        }
+
+        private static float FirstEntrySpace(string folder, string options, out int errors, string preamble = "")
+        {
+            XElement document = TexLowering.Compile("\\documentclass{article}" + preamble + "\\usepackage[style=numeric]{biblatex}\\addbibresource{refs.bib}"
+                + $"\\setlength{{\\parskip}}{{3pt}}\\begin{{document}}\\cite{{a}}\\printbibliography{options}\\end{{document}}", out List<TexError> found, null, folder);
+            errors = found.Count;
+            foreach (XElement block in document.Descendants("Block"))
+                foreach (XElement run in block.Elements("Run"))
+                    if (((string?)run.Attribute("Text"))?.Contains("First") == true) return (float?)block.Attribute("SpaceBefore") ?? 0f;
+            return -1f;
+        }
+
+        [A_XSDActionDependency("Tex.BibFrenchSpacing", "Test")]
+        private static IEnumerator<int> BibFrenchSpacing(TestContext t)
+        {
+            string folder = Folder(("refs.bib", "@misc{a, title={Is It? Yes}, year={2020}}\n"));
+            TexTypesetter typesetter = new TexTypesetter("\\documentclass{article}\\usepackage[style=numeric]{biblatex}\\addbibresource{refs.bib}"
+                + "\\begin{document}\\cite{a}\\printbibliography\n\nEnd. Next\\end{document}", null, folder);
+            typesetter.Run();
+            Directory.Delete(folder, true);
+            List<TexParagraph> pars = Pars(typesetter);
+            int inEntry = SpaceFactorAfter(pars[^2], '?'), after = SpaceFactorAfter(pars[^1], '.');
+            t.Check(typesetter.errors.Count == 0 && inEntry == 1000 && after == 3000,
+                $"\\bibsetup's \\frenchspacing holds inside the bibliography and ends with it: {inEntry} / {after}");
+            yield break;
+        }
+
+        private static int SpaceFactorAfter(TexParagraph p, char mark)
+        {
+            for (int i = 1; i < p.list.Count; i++)
+                if (p.list[i] is TexGlueNode g && p.list[i - 1] is TexChar c && c.ch == mark) return g.spaceFactor;
+            return -1;
+        }
+
+        [A_XSDActionDependency("Tex.BibUrlSlashes", "Test")]
+        private static IEnumerator<int> BibUrlSlashes(TestContext t)
+        {
+            string folder = Folder(("refs.bib", "@misc{a, title={T}, url={https://x.org//y}, year={2020}}\n"));
+            TexTypesetter typesetter = new TexTypesetter("\\documentclass{article}\\usepackage[style=numeric]{biblatex}\\addbibresource{refs.bib}"
+                + "\\begin{document}\\cite{a}\\printbibliography\\end{document}", null, folder);
+            typesetter.Run();
+            Directory.Delete(folder, true);
+            string line = Line(Pars(typesetter)[^1]);
+            int start = line.IndexOf("https", StringComparison.Ordinal);
+            string url = start < 0 ? "" : line[start..];
+            t.Check(typesetter.errors.Count == 0 && url.StartsWith("https://x.org//y", StringComparison.Ordinal),
+                $"a break character after another sets as an ordinary atom, with no break between the slashes of //: {url}");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.UrlAtoms", "Test")]
+        private static IEnumerator<int> UrlAtoms(TestContext t)
+        {
+            (string url, string marked)[] cases =
+            {
+                ("a//b", "a/|/b"), ("a/:b", "a/:^b"), ("a::b", "a::^b"), ("(/x", "(/x"), ("/a/", "/a/")
+            };
+            foreach ((string url, string marked) in cases)
+            {
+                StringBuilder typed = new StringBuilder();
+                foreach (TexChar c in Chars("\\url{" + url + "}"))
+                    typed.Append(c.ch == '' ? '|' : c.ch == '' ? '^' : c.ch);
+                t.Check(typed.ToString() == marked, $"a bin after a bin, rel or open, or before a rel, is ordinary; a rel breaks only after the last of a run: {url} → {typed}");
+            }
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.UrlSettings", "Test")]
+        private static IEnumerator<int> UrlSettings(TestContext t)
+        {
+            XElement? breaks = UrlRun("\\def\\UrlBreaks{\\do\\/}", "a.b/c"), big = UrlRun("\\def\\UrlBigBreaks{\\do\\:\\do\\-}", "a-b"), open = UrlRun("\\def\\UrlNoBreaks{}", "(/x");
+            t.Check((string?)breaks?.Attribute("Text") == "a.b/c" && (string?)big?.Attribute("Text") == "a-b" && (string?)open?.Attribute("Text") == "(/x",
+                $"\\UrlBreaks, \\UrlBigBreaks and \\UrlNoBreaks from the document: {breaks?.Attribute("Text")} / {big?.Attribute("Text")} / {open?.Attribute("Text")}");
+
+            string? before = (string?)UrlRun("\\binoppenalty=300 \\usepackage{url}", "a/b")?.Attribute("UrlBreakPenalty");
+            string? after = (string?)UrlRun("\\usepackage{url}\\binoppenalty=300 ", "a/b")?.Attribute("UrlBreakPenalty");
+            string? set = (string?)UrlRun("\\usepackage{url}\\mathchardef\\UrlBreakPenalty=50 \\relpenalty=40 ", "a/b")?.Attribute("UrlBreakPenalty");
+            string? rel = (string?)UrlRun("\\relpenalty=40 \\usepackage{hyperref}", "a:b")?.Attribute("UrlBigBreakPenalty");
+            t.Check(before == "300" && after == "700" && set == "50" && rel == "40",
+                $"url.sty takes \\binoppenalty and \\relpenalty as it loads, \\UrlBreakPenalty after: {before} / {after} / {set} / {rel}");
+
+            string folder = Folder(("refs.bib", "@online{a, title={T}, url={https://x.org/y}, year={2020}}\n"));
+            XElement document = TexLowering.Compile("\\documentclass{article}\\usepackage{biblatex}\\addbibresource{refs.bib}\\setcounter{biburlbreakpenalty}{50}"
+                + "\\setcounter{biburlbigbreakpenalty}{60}\\begin{document}\\nocite{*}\\printbibliography\\end{document}", out List<TexError> errors, null, folder);
+            Directory.Delete(folder, true);
+            XElement? bib = null;
+            foreach (XElement run in document.Descendants("Run"))
+                if (((string?)run.Attribute("Text"))?.Contains("x.") == true) bib = run;
+            t.Check(errors.Count == 0 && (string?)bib?.Attribute("UrlBreakPenalty") == "50" && (string?)bib?.Attribute("UrlBigBreakPenalty") == "60",
+                $"biblatex's biburlbreakpenalty and biburlbigbreakpenalty counters: {bib}");
+            yield break;
+        }
+
+        private static XElement? UrlRun(string preamble, string url)
+        {
+            XElement document = TexLowering.Compile("\\documentclass{article}" + preamble + "\\begin{document}x \\url{" + url + "}\\end{document}", out List<TexError> errors);
+            if (errors.Count > 0) return null;
+            foreach (XElement run in document.Descendants("Run"))
+                if (((string?)run.Attribute("Text"))?.Replace("", "").Replace("", "") == url) return run;
+            return null;
+        }
+
+        [A_XSDActionDependency("Tex.MuSkip", "Test")]
+        private static IEnumerator<int> MuSkip(TestContext t)
+        {
+            string set = Lines("\\newmuskip\\mua \\mua=1mu plus 2mu minus 3mu \\newmuskip\\mub \\mub=\\mua \\advance\\mub by 1mu \\the\\mua; \\the\\mub", out List<TexError> errors);
+            t.Check(errors.Count == 0 && set == "1.0mu plus 2.0mu minus 3.0mu; 2.0mu plus 2.0mu minus 3.0mu",
+                $"\\newmuskip, assignment, copying, \\advance and \\the in mu: {set}");
+            Lines("\\newmuskip\\mua \\mua=1pt", out List<TexError> wrongUnit);
+            Lines("\\newmuskip\\mua \\mua=\\parskip", out List<TexError> wrongGlue);
+            t.Check(wrongUnit.Count == 1 && wrongUnit[0].message.Contains("mu inserted") && wrongGlue.Count == 1 && wrongGlue[0].message.Contains("Incompatible"),
+                $"a muskip takes only mu: {(wrongUnit.Count > 0 ? wrongUnit[0].message : "")} / {(wrongGlue.Count > 0 ? wrongGlue[0].message : "")}");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.UrlMuskip", "Test")]
+        private static IEnumerator<int> UrlMuskip(TestContext t)
+        {
+            XElement? plain = UrlRun("\\usepackage{url}\\Urlmuskip=1mu plus 2mu minus 1mu ", "a/b"), none = UrlRun("\\usepackage{url}", "a/b");
+            float mu = 12f * TexLowering.PxPerPt / 18f;
+            t.Check(plain != null && Near((float?)plain.Attribute("UrlWidth") ?? 0f, mu * 10f / 12f, 0.05f) && Near((float?)plain.Attribute("UrlStretch") ?? 0f, 2f * mu * 10f / 12f, 0.05f)
+                && Near((float?)plain.Attribute("UrlShrink") ?? 0f, mu * 10f / 12f, 0.05f) && none != null && none.Attribute("UrlWidth") == null && none.Attribute("UrlStretch") == null,
+                $"\\Urlmuskip's width, stretch and shrink reach a plain URL at 18mu to the em; url.sty's 0mu adds none: {plain}");
+
+            string folder = Folder(("refs.bib", "@online{a, title={T}, url={https://x.org/y}, year={2020}}\n"));
+            XElement document = TexLowering.Compile("\\documentclass{article}\\usepackage{biblatex}\\addbibresource{refs.bib}\\biburlbigskip=0mu plus 5mu\\relax"
+                + "\\begin{document}\\nocite{*}\\printbibliography\\end{document}", out List<TexError> errors, null, folder);
+            Directory.Delete(folder, true);
+            XElement? bib = null;
+            foreach (XElement run in document.Descendants("Run"))
+                if (((string?)run.Attribute("Text"))?.Contains("x.") == true) bib = run;
+            t.Check(errors.Count == 0 && bib != null && Near((float?)bib.Attribute("UrlStretch") ?? 0f, 5f * mu * 10f / 12f, 0.05f),
+                $"\\biburlbigskip sets a bibliography URL's stretch: {bib}");
+
+            AtlasMetaData atlas = AssetRegistries.GetRegistryByValueType<string, FontAsset>(typeof(FontAsset))["default"].atlasMetaData;
+            const string text = "aa/bb";
+            TextMeasurer.Run run1 = new TextMeasurer.Run(text, 0, text.Length, "default", atlas, 16, FontStyle.Regular, urlStretch: 2f, urlBreakPenalty: 200f, urlWidth: 3f);
+            TextMeasurer.Run run0 = new TextMeasurer.Run(text, 0, text.Length, "default", atlas, 16, FontStyle.Regular, urlBreakPenalty: 200f);
+            float with = 0f, without = 0f;
+            for (int i = 0; i < text.Length; i++)
+            {
+                with += TextMeasurer.AdvanceAt(run1, i, with);
+                without += TextMeasurer.AdvanceAt(run0, i, without);
+            }
+            t.Check(Near(with - without, 6f, 0.01f), $"\\Urlmuskip's width stands either side of the break character: {with - without}");
+
+            float upToMarker = 0f;
+            for (int i = 0; i < 4; i++) upToMarker += TextMeasurer.AdvanceAt(run0, i, upToMarker);
+            BlockLayout layout = TextMeasurer.MeasureBlock(new List<TextMeasurer.Run> { run1 }, upToMarker + 3.5f, new FontAssetGlyphMetrics(), 1.5f, optimal: true);
+            t.Check(layout.lines.Count == 2 && Near(layout.lines[0].width, upToMarker + 3f, 0.01f),
+                $"a line ending at the break drops the glue after it and keeps the glue before: {layout.lines.Count} lines, {(layout.lines.Count > 0 ? layout.lines[0].width : 0f)} of {upToMarker + 3f}");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.MuText", "Test")]
+        private static IEnumerator<int> MuText(TestContext t)
+        {
+            TexTypesetter typesetter = Typeset("\\documentclass{article}\\begin{document}a\\mskip 9mu plus 18mu b\\mkern18mu c\\end{document}", out List<TexError> errors);
+            List<TexParagraph> pars = Pars(typesetter);
+            TexGlueNode? glue = null;
+            TexKern? kern = null;
+            if (pars.Count == 1)
+                foreach (TexNode node in pars[0].list)
+                    if (node is TexGlueNode { interword: false } g) glue = g;
+                    else if (node is TexKern k) kern = k;
+            t.Check(errors.Count == 0 && glue != null && glue.glue.width == glue.style.font.size / 2 && glue.glue.stretch == glue.style.font.size
+                && kern != null && kern.width == kern.style.font.size,
+                $"\\mskip and \\mkern in text at 18mu to the em: {glue?.glue.width} plus {glue?.glue.stretch} / {kern?.width} of {kern?.style.font.size}");
+            Lines("a\\mskip 1pt b", out List<TexError> wrongUnit);
+            t.Check(wrongUnit.Count == 1 && wrongUnit[0].message.Contains("mu inserted"), $"\\mskip in text takes only mu: {(wrongUnit.Count > 0 ? wrongUnit[0].message : "")}");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.BibUrlLetterBreaks", "Test")]
+        private static IEnumerator<int> BibUrlLetterBreaks(TestContext t)
+        {
+            XElement? plain = BibUrlRun(""), num = BibUrlRun("\\setcounter{biburlnumpenalty}{100}\\biburlnumskip=1mu plus 2mu\\relax");
+            string plainText = (string?)plain?.Attribute("Text") ?? "", numText = (string?)num?.Attribute("Text") ?? "";
+            t.Check(plain != null && plainText.IndexOf(TextMeasurer.UrlNumBreak) < 0 && plainText.IndexOf(TextMeasurer.UrlLcBreak) < 0 && plain.Attribute("UrlNumPenalty") == null,
+                $"biblatex's default letter penalties add no breaks: {plain}");
+            float mu = 10f * TexLowering.PxPerPt / 18f;
+            t.Check(num != null && numText.Contains("12z") && numText.IndexOf(TextMeasurer.UrlLcBreak) < 0 && numText.IndexOf(TextMeasurer.UrlUcBreak) < 0
+                && (string?)num.Attribute("UrlNumPenalty") == "100" && Near((float?)num.Attribute("UrlNumWidth") ?? 0f, mu, 0.05f)
+                && Near((float?)num.Attribute("UrlNumStretch") ?? 0f, 2f * mu, 0.05f) && num.Attribute("UrlNumShrink") == null,
+                $"biburlnumpenalty breaks after each digit with \\biburlnumskip's glue: {num}");
+
+            AtlasMetaData atlas = AssetRegistries.GetRegistryByValueType<string, FontAsset>(typeof(FontAsset))["default"].atlasMetaData;
+            const string text = "aa1bb";
+            TextMeasurer.Run run1 = new TextMeasurer.Run(text, 0, text.Length, "default", atlas, 16, FontStyle.Regular, urlNumPenalty: 100f, urlNumWidth: 3f);
+            TextMeasurer.Run run0 = new TextMeasurer.Run(text, 0, text.Length, "default", atlas, 16, FontStyle.Regular, urlNumPenalty: 100f);
+            float upToMarker = 0f;
+            for (int i = 0; i < 4; i++) upToMarker += TextMeasurer.AdvanceAt(run0, i, upToMarker);
+            BlockLayout layout = TextMeasurer.MeasureBlock(new List<TextMeasurer.Run> { run1 }, upToMarker + 3.5f, new FontAssetGlyphMetrics(), 1.5f, optimal: true);
+            t.Check(layout.lines.Count == 2 && Near(layout.lines[0].width, upToMarker + 3f, 0.01f),
+                $"a line breaks after a digit and keeps the glue before the break: {layout.lines.Count} lines, {(layout.lines.Count > 0 ? layout.lines[0].width : 0f)} of {upToMarker + 3f}");
+            yield break;
+        }
+
+        private static XElement? BibUrlRun(string preamble)
+        {
+            string folder = Folder(("refs.bib", "@online{a, title={T}, url={https://x.org/Y12z}, year={2020}}\n"));
+            XElement document = TexLowering.Compile("\\documentclass{article}\\usepackage{biblatex}\\addbibresource{refs.bib}" + preamble
+                + "\\begin{document}\\nocite{*}\\printbibliography\\end{document}", out List<TexError> errors, null, folder);
+            Directory.Delete(folder, true);
+            if (errors.Count > 0) return null;
+            foreach (XElement run in document.Descendants("Run"))
+                if (((string?)run.Attribute("Text"))?.Contains("x.") == true) return run;
+            return null;
+        }
+
+        [A_XSDActionDependency("Tex.FrenchSpacingGroup", "Test")]
+        private static IEnumerator<int> FrenchSpacingGroup(TestContext t)
+        {
+            TexTypesetter typesetter = Typeset("\\documentclass{article}\\begin{document}{\\frenchspacing a. b} c. d\\end{document}", out List<TexError> errors);
+            List<TexParagraph> pars = Pars(typesetter);
+            int inside = -1, after = -1;
+            List<TexNode> list = pars.Count == 1 ? pars[0].list : new List<TexNode>();
+            for (int i = 1; i < list.Count; i++)
+                if (list[i] is TexGlueNode g && list[i - 1] is TexChar { ch: '.' })
+                {
+                    if (inside < 0) inside = g.spaceFactor;
+                    else after = g.spaceFactor;
+                }
+            t.Check(errors.Count == 0 && inside == 1000 && after == 3000, $"\\frenchspacing ends with its group: {inside} / {after}");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.MonoOpticalSize", "Test")]
+        private static IEnumerator<int> MonoOpticalSize(TestContext t)
+        {
+            TexLowering.Faces(null);
+            string at12 = TexLowering.FontFor(new TexFont(TexFamily.Mono, false, false, (int)(12f * TexLowering.Unity)));
+            string at10 = TexLowering.FontFor(new TexFont(TexFamily.Mono, false, false, (int)(10f * TexLowering.Unity)));
+            t.Check(at12 == TexLowering.Mono12Font && at10 == TexLowering.MonoFont, $"Latin Modern Mono takes its 12pt design from 11pt up: {at12} / {at10}");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.DoubleQuote", "Test")]
+        private static IEnumerator<int> DoubleQuote(TestContext t)
+        {
+            string line = Lines("\\documentclass{article}\\begin{document}\"a\" \\texttt{\"b\"}\\end{document}", out List<TexError> errors);
+            t.Check(errors.Count == 0 && line.Contains("”a”") && line.Contains("\"b\""), $"\" is TeX's closing quote in text and stays straight in mono: {line}");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.TabularStrut", "Test")]
+        private static IEnumerator<int> TabularStrut(TestContext t)
+        {
+            XElement document = TexLowering.Compile("\\documentclass{article}\\begin{document}\\begin{tabular}{|l|l|}a & b\\\\\\end{tabular}\\end{document}",
+                out List<TexError> errors);
+            int cells = 0, struts = 0;
+            foreach (XElement cell in document.Descendants("Cell"))
+            {
+                cells++;
+                foreach (XElement block in cell.Elements("Block"))
+                    if ((string?)block.Attribute("Strut") == "true") struts++;
+            }
+            t.Check(errors.Count == 0 && cells == 2 && struts == 2, $"every tabular cell carries the row's \\@arstrut: {struts} of {cells}");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.UrlGlue", "Test")]
+        private static IEnumerator<int> UrlGlue(TestContext t)
+        {
+            string url = "ab.\uE005cd:\uE006/\uE005e";
+            StringBuilder after = new StringBuilder(url.Length);
+            for (int i = 0; i < url.Length; i++)
+                after.Append(TextMeasurer.IsUrlGlueAfter(url, i, url.Length) ? '1' : '0');
+            t.Check(after.ToString() == "01010101010", $"\\Urlmuskip stands either side of each break character, once between two, none at the end: {after}");
+            yield break;
+        }
+
         [A_XSDActionDependency("Tex.CaptionSingleLine", "Test")]
         private static IEnumerator<int> CaptionSingleLine(TestContext t)
         {
@@ -291,6 +575,33 @@ namespace ArctisAurora.Tests
             List<TexParagraph> captions = Pars(typesetter).Where(p => Line(p).Contains("Short") || Line(p).Contains("runs on")).ToList();
             t.Check(errors.Count == 0 && captions.Count == 2 && captions[0].style.align == TexAlign.Center && captions[1].style.align == TexAlign.Justify,
                 $"a caption that fits is centred, a longer one justified: {string.Join(", ", captions.Select(c => c.style.align))}");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.CaptionJustification", "Test")]
+        private static IEnumerator<int> CaptionJustification(TestContext t)
+        {
+            TexAlign Aligned(string setup, string caption)
+            {
+                TexTypesetter typesetter = Typeset("\\documentclass{article}\\begin{document}\\begin{table}\\captionsetup{" + setup + "}\\caption{" + caption
+                    + "}\\end{table}\\end{document}", out _);
+                List<TexParagraph> pars = Pars(typesetter);
+                for (int i = 0; i < pars.Count; i++)
+                    if (Line(pars[i]).Contains("runs on") || Line(pars[i]).Contains("Short")) return pars[i].style.align;
+                return (TexAlign)(-1);
+            }
+            string longText = "";
+            for (int i = 0; i < 12; i++)
+                longText += "a caption that runs on ";
+
+            TexAlign justified = Aligned("justification=justified,singlelinecheck=false", "Short");
+            t.Check(justified == TexAlign.Justify, $"singlelinecheck=false sets a short caption justified: {justified}");
+            TexAlign ragged = Aligned("justification=raggedright,singlelinecheck=false", "Short");
+            t.Check(ragged == TexAlign.Left, $"raggedright sets it left: {ragged}");
+            TexAlign checkedShort = Aligned("justification=raggedright", "Short");
+            t.Check(checkedShort == TexAlign.Center, $"with singlelinecheck a short caption still centres: {checkedShort}");
+            TexAlign checkedLong = Aligned("justification=raggedright", longText);
+            t.Check(checkedLong == TexAlign.Left, $"and a long one takes the justification: {checkedLong}");
             yield break;
         }
 
@@ -450,6 +761,67 @@ namespace ArctisAurora.Tests
             t.Check(split < 0 && moved > 0 && editor.PageAt(80, 0) > 0, $"no heading ends a page apart from the block after it: split at {split}, {moved} moved");
             t.Show(new StackPanelControl());
         }
+
+        [A_XSDActionDependency("Tex.KeepTogether", "Test")]
+        private static IEnumerator<int> KeepTogether(TestContext t)
+        {
+            XElement lowered = TexLowering.Compile("\\documentclass{article}\\begin{document}Loose.\\par{\\interlinepenalty5000 Kept.\\par}\\end{document}",
+                out List<TexError> errors);
+            XElement? loose = FindRun(lowered, "Loose")?.Parent, kept = FindRun(lowered, "Kept")?.Parent;
+            t.Check(errors.Count == 0 && loose?.Attribute("KeepTogether") == null && (string?)kept?.Attribute("KeepTogether") == "true",
+                "a paragraph ended under \\interlinepenalty 5000 is kept together, an ordinary one is not");
+
+            string words = "";
+            for (int i = 0; i < 60; i++) words += "word ";
+            XElement document = new XElement("Document",
+                new XElement("DocumentLayout", new XElement("Page", new XAttribute("Mode", "Paged"), new XAttribute("Size", "A6"))));
+            for (int i = 0; i < 30; i++)
+            {
+                document.Add(new XElement("Block", new XElement("Run", new XAttribute("Text", $"line {i}"))));
+                document.Add(new XElement("Block", new XAttribute("KeepTogether", "true"), new XElement("Run", new XAttribute("Text", words))));
+            }
+            RichTextDocument parsed = DocumentXml.Parse(document);
+            bool written = false;
+            foreach (XElement e in DocumentXml.ToXml(parsed).Descendants())
+                if ((string?)e.Attribute("KeepTogether") == "true") written = true;
+            t.Check(parsed.blocks[1] is NoteBlock { keepTogether: true } && written, "KeepTogether round-trips through .axml");
+
+            DocumentEditorControl editor = ShowDocument(t, document);
+            yield return 2;
+            int split = -1, moved = 0;
+            for (int i = 1; i < 60; i += 2)
+            {
+                int? first = editor.PageAt(i, 0), last = editor.PageAt(i, words.Length - 1), before = editor.PageAt(i - 1, 0);
+                if (first != last) split = i;
+                if (first > before) moved++;
+            }
+            t.Check(split < 0 && moved > 0 && editor.PageAt(59, 0) > 1, $"no kept block is split across pages: split at {split}, {moved} moved");
+            t.Show(new StackPanelControl());
+        }
+
+        [A_XSDActionDependency("Tex.IntegerBadness", "Test")]
+        private static IEnumerator<int> IntegerBadness(TestContext t)
+        {
+            t.Check(TextMeasurer.Badness(0f) == 0f && TextMeasurer.Badness(1f) == 100f && TextMeasurer.Badness(-1f) == 100f,
+                $"ratio 0 and ±1 give TeX's 0 and 100: {TextMeasurer.Badness(1f)}");
+            t.Check(TextMeasurer.Badness(-0.6045f) == 22f && TextMeasurer.Badness(-0.602f) == 22f,
+                $"two lines TeX scores alike tie: {TextMeasurer.Badness(-0.6045f)} / {TextMeasurer.Badness(-0.602f)}");
+            t.Check(TextMeasurer.Badness(5f) == 10000f && TextMeasurer.Badness(float.PositiveInfinity) == 10000f, "past 1290/297 the badness is 10000");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.StraightQuoteHyphen", "Test")]
+        private static IEnumerator<int> StraightQuoteHyphen(TestContext t)
+        {
+            XElement document = TexLowering.Compile("\\documentclass{article}\\begin{document}\"Radiance Cascades\" and cascades.\\end{document}",
+                out List<TexError> errors);
+            string text = "";
+            foreach (XElement run in document.Descendants("Run"))
+                text += (string?)run.Attribute("Text");
+            t.Check(errors.Count == 0 && text.Contains("”Radiance Cascades”") && text.Contains("cas­cades."),
+                $"words touching an ASCII \" are not hyphenated, the same word elsewhere is: {text.Replace('­', '~')}");
+            yield break;
+        }
         #endregion
 
         #region ---- L11c: the thesis against its reference, display vertical model ----
@@ -484,6 +856,27 @@ namespace ArctisAurora.Tests
                 $"a formula taller than the line box sits \\lineskip under the line above's ink: {apart} with depth {(lines.Count > 0 ? lines[0].inkDepth : 0f)}");
             List<TextLine> plain = TextMeasurer.MeasureBlock(runs, 500f, metrics, 1.5f).lines;
             t.Check(plain.Count == 2 && Near(plain[1].baseline - plain[0].baseline, plain[0].descent + 40f, 0.001f), "notes stack line boxes as before");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.MathBreak", "Test")]
+        private static IEnumerator<int> MathBreak(TestContext t)
+        {
+            IGlyphMetrics metrics = new FontAssetGlyphMetrics();
+            AtlasMetaData atlas = AssetRegistries.GetRegistryByValueType<string, FontAsset>(typeof(FontAsset))["default"].atlasMetaData;
+            string text = "aaaa ￼, b";
+            TextMeasurer.Run before = new TextMeasurer.Run(text, 0, 5, "default", atlas, 16, FontStyle.Regular);
+            List<TextMeasurer.Run> runs = new List<TextMeasurer.Run>
+            {
+                before,
+                new TextMeasurer.Run(text, 5, 1, "default", atlas, 16, FontStyle.Regular, imageWidth: 30f, imageHeight: 10f, math: true),
+                new TextMeasurer.Run(text, 6, 3, "default", atlas, 16, FontStyle.Regular)
+            };
+            float lead = 0f;
+            for (int i = 0; i < 5; i++) lead += TextMeasurer.MeasureAdvance(text[i], before);
+            List<TextLine> lines = TextMeasurer.MeasureBlock(runs, lead + 30f + TextMeasurer.MeasureAdvance(',', before) * 0.5f, metrics, 1.5f, optimal: true, ragged: true).lines;
+            int second = lines.Count > 1 ? lines[1].segments[0].charStart : -1;
+            t.Check(lines.Count == 2 && second == 5, $"a formula followed by a comma is no break: the line breaks at the space before it, line 2 starts at {second}");
             yield break;
         }
 
@@ -578,6 +971,94 @@ namespace ArctisAurora.Tests
             float drop = Below(integral, 'Ω');
             t.Check(Near(drop, sign.depth + c.subDrop * c.scriptPercentScaleDown / 100f, 0.002f),
                 $"a big operator's subscript hangs sub_drop at script size under its depth: {drop} for depth {sign.depth}");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.CmMathWidths", "Test")]
+        private static IEnumerator<int> CmMathWidths(TestContext t)
+        {
+            FontAsset font = AssetRegistries.GetRegistryByValueType<string, FontAsset>(typeof(FontAsset))[TexLowering.MathFont];
+            float Width(string tex, float pt) => MathLayout.Layout(MathParser.Parse(tex), false, font.atlasMetaData, font.mathConstants!, rules: MathRules.Tfm, textPt: pt).width;
+            t.Check(Near(Width("x", 12f), 0.556419f, 0.0005f) && Near(Width("0", 12f), 0.489578f, 0.0005f) && Near(Width("[", 12f), 0.271988f, 0.0005f),
+                $"at 12pt x, 0 and [ take cmmi12 / cmr12 widths, as the thesis reference: {Width("x", 12f)} {Width("0", 12f)} {Width("[", 12f)}");
+            t.Check(Near(Width("z", 12f), 0.454857f + 0.04456f, 0.0005f), $"z adds cmmi12's italic correction: {Width("z", 12f)}");
+            t.Check(Near(Width("x", 10f), 0.571527f, 0.0005f) && Near(Width("x", 10.95f), 0.571527f, 0.0005f),
+                $"10pt and 10.95pt take cmmi10: {Width("x", 10f)} {Width("x", 10.95f)}");
+            float open = MathLayout.Layout(MathParser.Parse("x"), false, font.atlasMetaData, font.mathConstants!, textPt: 12f).width;
+            t.Check(!Near(open, 0.556419f, 0.0005f), $"OpenType rules keep Latin Modern's widths: {open}");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.CmScriptSize", "Test")]
+        private static IEnumerator<int> CmScriptSize(TestContext t)
+        {
+            FontAsset font = AssetRegistries.GetRegistryByValueType<string, FontAsset>(typeof(FontAsset))[TexLowering.MathFont];
+            float Scale(float pt)
+            {
+                MathBox box = MathLayout.Layout(MathParser.Parse("x_c"), false, font.atlasMetaData, font.mathConstants!, rules: MathRules.Tfm, textPt: pt);
+                foreach (MathGlyph g in box.glyphs)
+                    if (g.ch == 'c') return g.scale;
+                return float.NaN;
+            }
+            t.Check(Near(Scale(12f), 8f / 12f, 0.001f) && Near(Scale(10f), 0.7f, 0.001f) && Near(Scale(10.95f), 8f / 10.95f, 0.001f),
+                $"a script is LaTeX's 8pt at 12pt and 10.95pt, 7pt at 10pt: {Scale(12f)} {Scale(10f)} {Scale(10.95f)}");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.ScriptsNoClash", "Test")]
+        private static IEnumerator<int> ScriptsNoClash(TestContext t)
+        {
+            FontAsset font = AssetRegistries.GetRegistryByValueType<string, FontAsset>(typeof(FontAsset))[TexLowering.MathFont];
+            MathConstants c = font.mathConstants!;
+            static float Rise(MathBox box, char ch)
+            {
+                foreach (MathGlyph g in box.glyphs)
+                    if (g.ch == ch) return g.y;
+                return float.NaN;
+            }
+            MathBox tfm = MathLayout.Layout(MathParser.Parse("L_r^{(c)}"), true, font.atlasMetaData, c, rules: MathRules.Tfm, textPt: 12f);
+            t.Check(Near(Rise(tfm, 'c'), c.sup1, 0.001f) && Near(-Rise(tfm, 'r'), c.sub2, 0.001f),
+                $"scripts far enough apart keep sup1 and sub2, no lift: {Rise(tfm, 'c')} / {-Rise(tfm, 'r')}");
+            MathBox open = MathLayout.Layout(MathParser.Parse("L_r^{(c)}"), true, font.atlasMetaData, c);
+            t.Check(Near(-Rise(open, 'r'), c.subscriptShiftDown, 0.001f),
+                $"OpenType raises the superscript first, so a small clash leaves the subscript at SubscriptShiftDown: {-Rise(open, 'r')}");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.LimitsTfm", "Test")]
+        private static IEnumerator<int> LimitsTfm(TestContext t)
+        {
+            FontAsset font = AssetRegistries.GetRegistryByValueType<string, FontAsset>(typeof(FontAsset))[TexLowering.MathFont];
+            MathConstants c = font.mathConstants!;
+            MathBox Layout(string tex) => MathLayout.Layout(MathParser.Parse(tex), true, font.atlasMetaData, c, rules: MathRules.Tfm, textPt: 12f);
+            MathBox sign = Layout(@"\sum");
+            t.Check(Near(sign.height, 0.8f + c.axisHeight, 0.001f) && Near(sign.depth, 0.8f - c.axisHeight, 0.001f),
+                $"a display \\sum takes cmex10's 1.6 em box centred on the axis: {sign.height} / {sign.depth}");
+            float four = float.NaN;
+            foreach (MathGlyph g in Layout(@"\sum_{c=1}^{4}").glyphs)
+                if (g.ch == '4') four = g.y;
+            t.Check(Near(four, sign.height + c.bigOpSpacing3, 0.001f), $"an upper limit without depth stands big_op_spacing3 over the operator: {four}");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.TabularParskip", "Test")]
+        private static IEnumerator<int> TabularParskip(TestContext t)
+        {
+            float px = 96f / 72.27f;
+            XElement document = TexLowering.Compile("\\documentclass{article}\\setlength{\\parskip}{3pt}\\begin{document}Text\n\n\\begin{tabular}{l}a\\\\\\end{tabular}\\end{document}",
+                out List<TexError> errors);
+            XElement? table = document.Element("Table");
+            float before = (float?)table?.Attribute("SpaceBefore") ?? 0f, axis = (float?)table?.Attribute("Axis") ?? 0f;
+            t.Check(errors.Count == 0 && Near(before, 3f * px, 0.01f) && Near(axis, 2.5f * px, 0.01f),
+                $"a tabular that opens a paragraph takes \\parskip and sits on the math axis: {before} / {axis}");
+
+            XElement floated = TexLowering.Compile("\\documentclass{article}\\setlength{\\parskip}{3pt}\\begin{document}\\begin{figure}[h]Text\n\n\\begin{tabular}{l}a\\\\\\end{tabular}\\end{figure}\\end{document}",
+                out errors);
+            XElement? inFloat = null;
+            foreach (XElement e in floated.Descendants("Table"))
+                inFloat = e;
+            t.Check(errors.Count == 0 && inFloat != null && inFloat.Attribute("SpaceBefore") == null,
+                $"a float's \\@parboxrestore zeroes \\parskip: {inFloat?.Attribute("SpaceBefore")}");
             yield break;
         }
         #endregion
@@ -1400,6 +1881,16 @@ namespace ArctisAurora.Tests
             yield break;
         }
 
+        [A_XSDActionDependency("Tex.HyperrefRef", "Test")]
+        private static IEnumerator<int> HyperrefRef(TestContext t)
+        {
+            string text = Lines("\\section{A}\\label{a} See \\hyperref[a]{sec. \\ref*{a}} and \\ref*{a}.", out List<TexError> errors);
+            t.Check(text.Contains("See sec. 1 and 1.") && !text.Contains("??") && !text.Contains("[a]"),
+                $"\\hyperref[label]{{text}} sets its text, \\ref* resolves like \\ref: {text}");
+            t.Check(errors.Count == 0, $"no errors: {string.Join("; ", errors)}");
+            yield break;
+        }
+
         [A_XSDActionDependency("Tex.Equations", "Test")]
         private static IEnumerator<int> Equations(TestContext t)
         {
@@ -1612,8 +2103,9 @@ namespace ArctisAurora.Tests
             t.Check(bibUrl != null && (float?)bibUrl.Attribute("UrlStretch") > 0f && (string?)bibUrl.Attribute("UrlBreakPenalty") == "200"
                 && (string?)bibUrl.Attribute("UrlBigBreakPenalty") == "100" && ((string?)bibUrl.Attribute("Text"))!.Contains("-\uE006"),
                 $"a bibliography URL carries \\biburlsetup's stretch, penalties and break markers: {bibUrl}");
-            t.Check(plainUrl != null && plainUrl.Attribute("UrlStretch") == null && ((string?)plainUrl.Attribute("Text"))!.Contains("/\u200B"),
-                $"a \\url in the text keeps the url package's free breaks: {plainUrl}");
+            t.Check(plainUrl != null && plainUrl.Attribute("UrlStretch") == null && (string?)plainUrl.Attribute("UrlBreakPenalty") == "700"
+                && (string?)plainUrl.Attribute("UrlBigBreakPenalty") == "500" && ((string?)plainUrl.Attribute("Text"))!.Contains("m/\uE005"),
+                $"a \\url in the text takes url.sty's \\binoppenalty and \\relpenalty and no stretch: {plainUrl}");
 
             string url = "https://e.com/abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789";
             DocumentEditorControl editor = ShowDocument(t, UrlBlock(url.Replace("/", "/\uE005"), 0f, 0f, 0f));
@@ -1700,6 +2192,38 @@ namespace ArctisAurora.Tests
             yield break;
         }
 
+        [A_XSDActionDependency("Tex.BibTwice", "Test")]
+        private static IEnumerator<int> BibTwice(TestContext t)
+        {
+            const string bib = "@misc{a, author = {Ann Bee}, title = {Page}, year = 2025}\n";
+            string source = "\\documentclass{article}\\usepackage{polyglossia}\\setmainlanguage{lithuanian}\\usepackage[abbreviate=false]{biblatex}\\addbibresource{refs.bib}\\usepackage[nottoc]{tocbibind}\n" +
+                "\\begin{document}\n\\tableofcontents\n\\section{Įvadas}\n\\nocite{*}\n" +
+                "\\printbibliography[heading=bibintoc]\n\\printbibliography[title={Literatūra ir šaltiniai}]\n\\end{document}\n";
+            List<string> lines = BibLines(source, bib, out List<TexError> errors);
+            int first = lines.IndexOf("Literatūros sąrašas"), second = lines.IndexOf("Literatūra ir šaltiniai");
+            int entries = 0, firstContents = 0, secondContents = 0;
+            for (int i = 0; i < lines.Count; i++)
+            {
+                if (lines[i].StartsWith('[') && lines[i].EndsWith("] Ann Bee. Page. 2025.", StringComparison.Ordinal)) entries++;
+                if (lines[i].StartsWith("Literatūros sąrašas") && lines[i] != "Literatūros sąrašas") firstContents++;
+                if (lines[i].StartsWith("Literatūra ir šaltiniai") && lines[i] != "Literatūra ir šaltiniai") secondContents++;
+            }
+            t.Check(first >= 0 && second > first && entries == 2, $"both lists are printed, each under its own heading: {string.Join(" / ", lines)}");
+            t.Check(firstContents == 1 && secondContents == 0, $"only the bibintoc list is a contents entry, tocbibind or not: {string.Join(" / ", lines)}");
+            t.Check(errors.Count == 0, $"no errors: {string.Join("; ", errors)}");
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.BiblatexYearCase", "Test")]
+        private static IEnumerator<int> BiblatexYearCase(TestContext t)
+        {
+            List<string> lines = BibLines("\\documentclass{article}\\usepackage{biblatex}\\addbibresource{refs.bib}\\begin{document}\\nocite{*}\\printbibliography\\end{document}",
+                "@misc{a, author = {Ann Bee}, title = {Page}, year = {Unknown}}\n", out List<TexError> errors);
+            t.Check(Entry(lines, "Ann Bee. Page. Unknown.") != null, $"a year that is a word keeps its case: {string.Join(" / ", lines)}");
+            t.Check(errors.Count == 0, $"no errors: {string.Join("; ", errors)}");
+            yield break;
+        }
+
         [A_XSDActionDependency("Tex.BiblatexOptions", "Test")]
         private static IEnumerator<int> BiblatexOptions(TestContext t)
         {
@@ -1753,6 +2277,22 @@ namespace ArctisAurora.Tests
                 $"biblatex's list hangs at the widest label measured plus \\biblabelsep: {alphaEntry.ToString(SaveOptions.DisableFormatting)}, margin {widest + 10f * px}");
             t.Check(errors.Count == 0, $"no errors: {string.Join("; ", errors)}");
             Directory.Delete(folder, true);
+            yield break;
+        }
+
+        [A_XSDActionDependency("Tex.TableWideChars", "Test")]
+        private static IEnumerator<int> TableWideChars(TestContext t)
+        {
+            TexStyle normal = new TexStyle(new TexFont(TexFamily.Roman, false, false, 10 * 65536), null, false);
+            float px = 96f / 72.27f;
+            float dash = TexLowering.TextWidth("—", normal);
+            t.Check(Near(dash, 10f * px, 0.2f), $"an em dash measures one em, not the half-em fallback: {dash}");
+
+            XElement table = TexLowering.Compile("\\begin{tabular}{|c|}Bowyer --- Watson ąčš\\end{tabular}", out List<TexError> errors).Element("Table")!;
+            float width = (float)table.Element("Column")!.Attribute("Width")!;
+            float text = TexLowering.TextWidth("Bowyer — Watson ąčš", normal) + 12f * px;
+            t.Check(width >= text - 0.5f, $"a c column holds its cell on one line: column {width}, text and \\tabcolsep {text}");
+            t.Check(errors.Count == 0, $"no errors: {string.Join("; ", errors)}");
             yield break;
         }
 
@@ -1937,8 +2477,8 @@ namespace ArctisAurora.Tests
             List<TexChar> chars = Chars("\\url{https://a.lt/x-y\\%20z}");
             StringBuilder typed = new StringBuilder();
             foreach (TexChar c in chars)
-                typed.Append(c.ch == '\u200B' ? '|' : c.ch);
-            t.Check(typed.ToString() == "https:|/|/|a.|lt/|x-|y%20z", $"\\url breaks after the url package's characters, \\% read as %: {typed}");
+                typed.Append(c.ch == '\uE005' ? '|' : c.ch == '\uE006' ? '^' : c.ch);
+            t.Check(typed.ToString() == "https:^//|a.|lt/|x-y%20z", $"\\url breaks after the url package's bin and rel atoms, not after -, \\% read as %: {typed}");
 
             IGlyphMetrics metrics = new FontAssetGlyphMetrics();
             AtlasMetaData atlas = AssetRegistries.GetRegistryByValueType<string, FontAsset>(typeof(FontAsset))["default"].atlasMetaData;

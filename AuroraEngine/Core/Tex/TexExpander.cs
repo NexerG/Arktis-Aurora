@@ -11,20 +11,20 @@ namespace ArctisAurora.Core.Tex
         {
             Relax, Par,
             Def, Gdef, Edef, Xdef, Let, Futurelet, Global, Long,
-            Chardef, Countdef, Dimendef, Skipdef, Toksdef,
-            Count, Dimen, Skip, Toks, Advance, Multiply, Divide, Catcode,
+            Chardef, Countdef, Dimendef, Skipdef, Toksdef, Muskipdef,
+            Count, Dimen, Skip, Toks, Muskip, Advance, Multiply, Divide, Catcode,
             Begingroup, Endgroup,
             Expandafter, Noexpand, Csname, Endcsname, String, The,
             If, Ifx, Ifcat, Ifnum, Ifdim, Ifodd, Ifcase, Iftrue, Iffalse, Ifdefined, Ifcsname, Else, Or, Fi,
             NewCommand, RenewCommand, ProvideCommand, NewEnvironment, RenewEnvironment, Begin, End, EndEnvironment,
             MakeAtLetter, MakeAtOther, NewIf, NewCounter, SetCounter, AddToCounter, StepCounter, Value, IfNextChar, IfStar,
-            NewLength, SetLength, AddToLength, Dimexpr, Pagetotal,
+            NewLength, NewMuskip, SetLength, AddToLength, Dimexpr, Pagetotal,
             Caller
         }
 
         private enum GroupKind { Simple, SemiSimple, Environment }
 
-        private enum RegisterKind { Count, Dimen, Skip, Toks, Char }
+        private enum RegisterKind { Count, Dimen, Skip, Toks, Char, MuSkip }
 
         // limits
         private const int MaxSteps = 1_000_000;
@@ -89,8 +89,9 @@ namespace ArctisAurora.Core.Tex
             ("relax", Op.Relax), ("par", Op.Par),
             ("def", Op.Def), ("gdef", Op.Gdef), ("edef", Op.Edef), ("xdef", Op.Xdef), ("let", Op.Let), ("futurelet", Op.Futurelet),
             ("global", Op.Global), ("long", Op.Long),
-            ("chardef", Op.Chardef), ("countdef", Op.Countdef), ("dimendef", Op.Dimendef), ("skipdef", Op.Skipdef), ("toksdef", Op.Toksdef),
-            ("count", Op.Count), ("dimen", Op.Dimen), ("skip", Op.Skip), ("toks", Op.Toks),
+            ("chardef", Op.Chardef), ("mathchardef", Op.Chardef), ("countdef", Op.Countdef), ("dimendef", Op.Dimendef), ("skipdef", Op.Skipdef), ("toksdef", Op.Toksdef),
+            ("muskipdef", Op.Muskipdef),
+            ("count", Op.Count), ("dimen", Op.Dimen), ("skip", Op.Skip), ("toks", Op.Toks), ("muskip", Op.Muskip),
             ("advance", Op.Advance), ("multiply", Op.Multiply), ("divide", Op.Divide), ("catcode", Op.Catcode),
             ("begingroup", Op.Begingroup), ("endgroup", Op.Endgroup),
             ("expandafter", Op.Expandafter), ("noexpand", Op.Noexpand), ("csname", Op.Csname), ("endcsname", Op.Endcsname),
@@ -104,7 +105,7 @@ namespace ArctisAurora.Core.Tex
             ("makeatletter", Op.MakeAtLetter), ("makeatother", Op.MakeAtOther), ("newif", Op.NewIf),
             ("newcounter", Op.NewCounter), ("setcounter", Op.SetCounter), ("addtocounter", Op.AddToCounter), ("stepcounter", Op.StepCounter), ("value", Op.Value),
             ("@ifnextchar", Op.IfNextChar), ("@ifstar", Op.IfStar),
-            ("newlength", Op.NewLength), ("setlength", Op.SetLength), ("addtolength", Op.AddToLength),
+            ("newlength", Op.NewLength), ("newmuskip", Op.NewMuskip), ("setlength", Op.SetLength), ("addtolength", Op.AddToLength),
             ("dimexpr", Op.Dimexpr), ("pagetotal", Op.Pagetotal)
         }.ToDictionary(p => p.name, p => new Primitive(p.op));
         #endregion
@@ -197,6 +198,7 @@ namespace ArctisAurora.Core.Tex
         private readonly Table<int, int> counts = new Table<int, int>(_ => 0);
         private readonly Table<int, int> dimens = new Table<int, int>(_ => 0);
         private readonly Table<int, TexGlue> skips = new Table<int, TexGlue>(_ => default);
+        private readonly Table<int, TexGlue> muskips = new Table<int, TexGlue>(_ => default);
         private readonly Table<int, TexToken[]> toks = new Table<int, TexToken[]>(_ => Array.Empty<TexToken>());
 
         // counter name -> the counters its \stepcounter zeroes
@@ -227,6 +229,7 @@ namespace ArctisAurora.Core.Tex
         private bool finished;
         private int nextCounter = 256;
         private int nextLength = 256;
+        private int nextMuskip = 256;
 
         // set when a scanned dimension read \pagetotal, which is always 0 here
         public bool pagetotalRead;
@@ -506,10 +509,10 @@ namespace ArctisAurora.Core.Tex
                 case Op.Futurelet:
                     FutureLet(global);
                     break;
-                case Op.Chardef or Op.Countdef or Op.Dimendef or Op.Skipdef or Op.Toksdef:
+                case Op.Chardef or Op.Countdef or Op.Dimendef or Op.Skipdef or Op.Toksdef or Op.Muskipdef:
                     Shorthand(p.op, global);
                     break;
-                case Op.Count or Op.Dimen or Op.Skip or Op.Toks:
+                case Op.Count or Op.Dimen or Op.Skip or Op.Toks or Op.Muskip:
                     AssignRegister(KindOf(p.op), ScanRegisterNumber(), global);
                     break;
                 case Op.Advance or Op.Multiply or Op.Divide:
@@ -563,8 +566,8 @@ namespace ArctisAurora.Core.Tex
                 case Op.StepCounter:
                     if (NameArgument(t) is string stepped) StepCounter(stepped);
                     break;
-                case Op.NewLength:
-                    NewLength(t);
+                case Op.NewLength or Op.NewMuskip:
+                    NewLength(t, p.op == Op.NewMuskip);
                     break;
                 case Op.SetLength or Op.AddToLength:
                     TexToken[]? target = Argument(t, true);
@@ -585,6 +588,7 @@ namespace ArctisAurora.Core.Tex
             Op.Dimen or Op.Dimendef => RegisterKind.Dimen,
             Op.Skip or Op.Skipdef => RegisterKind.Skip,
             Op.Toks or Op.Toksdef => RegisterKind.Toks,
+            Op.Muskip or Op.Muskipdef => RegisterKind.MuSkip,
             _ => RegisterKind.Char
         };
         #endregion
@@ -758,6 +762,7 @@ namespace ArctisAurora.Core.Tex
                 case RegisterKind.Count: counts.Set(index, ScanInt(), global, groups); break;
                 case RegisterKind.Dimen: dimens.Set(index, ScanDimen(), global, groups); break;
                 case RegisterKind.Skip: skips.Set(index, ScanGlue(), global, groups); break;
+                case RegisterKind.MuSkip: muskips.Set(index, ScanGlue(true), global, groups); break;
                 case RegisterKind.Toks:
                     TexToken[]? value = ScanToksValue();
                     if (value != null) toks.Set(index, value, global, groups);
@@ -797,7 +802,7 @@ namespace ArctisAurora.Core.Tex
                     kind = r.kind;
                     index = r.index;
                     return true;
-                case Primitive { op: Op.Count or Op.Dimen or Op.Skip or Op.Toks } p:
+                case Primitive { op: Op.Count or Op.Dimen or Op.Skip or Op.Toks or Op.Muskip } p:
                     kind = KindOf(p.op);
                     index = ScanRegisterNumber();
                     return true;
@@ -837,12 +842,13 @@ namespace ArctisAurora.Core.Tex
                         else dimens.Set(index, (int)result, global, groups);
                         break;
                     }
-                case RegisterKind.Skip:
+                case RegisterKind.Skip or RegisterKind.MuSkip:
                     {
-                        TexGlue now = skips.Get(index);
+                        Table<int, TexGlue> table = kind == RegisterKind.Skip ? skips : muskips;
+                        TexGlue now = table.Get(index);
                         if (op == Op.Advance)
                         {
-                            TexGlue add = ScanGlue();
+                            TexGlue add = ScanGlue(kind == RegisterKind.MuSkip);
                             now.width += add.width;
                             (now.stretch, now.stretchOrder) = AddOrdered(now.stretch, now.stretchOrder, add.stretch, add.stretchOrder);
                             (now.shrink, now.shrinkOrder) = AddOrdered(now.shrink, now.shrinkOrder, add.shrink, add.shrinkOrder);
@@ -859,7 +865,7 @@ namespace ArctisAurora.Core.Tex
                             now.stretch = op == Op.Multiply ? now.stretch * n : now.stretch / n;
                             now.shrink = op == Op.Multiply ? now.shrink * n : now.shrink / n;
                         }
-                        skips.Set(index, now, global, groups);
+                        table.Set(index, now, global, groups);
                         break;
                     }
             }
@@ -960,8 +966,8 @@ namespace ArctisAurora.Core.Tex
             {
                 case RegisterKind.Count: value = counts.Get(index); break;
                 case RegisterKind.Dimen: value = dimens.Get(index); break;
-                case RegisterKind.Skip:
-                    glue = skips.Get(index);
+                case RegisterKind.Skip or RegisterKind.MuSkip:
+                    glue = kind == RegisterKind.Skip ? skips.Get(index) : muskips.Get(index);
                     value = glue.width;
                     break;
             }
@@ -1111,18 +1117,18 @@ namespace ArctisAurora.Core.Tex
             return -1;
         }
 
-        public int ScanDimen() => ScanDimen(false, out _);
+        public int ScanDimen(bool mu = false) => ScanDimen(false, out _, mu);
 
-        // A dimension in sp, by tex.web's arithmetic; with fil allowed, a stretch order 1-3 instead of a unit.
-        private int ScanDimen(bool fil, out byte order)
+        // A dimension in sp, by tex.web's arithmetic; with fil allowed, a stretch order 1-3 instead of a unit; with mu, in mu.
+        private int ScanDimen(bool fil, out byte order, bool mu = false)
         {
             order = 0;
             if (!ScanSigns(out TexToken t, out bool negative)) return 0;
-            return DimenAfter(t, negative, fil, out order);
+            return DimenAfter(t, negative, fil, out order, mu);
         }
 
         // The rest of a dimension, from its first token after the signs.
-        private int DimenAfter(TexToken t, bool negative, bool fil, out byte order)
+        private int DimenAfter(TexToken t, bool negative, bool fil, out byte order, bool mu = false)
         {
             order = 0;
             long whole = 0;
@@ -1130,7 +1136,11 @@ namespace ArctisAurora.Core.Tex
 
             if (Internal(t, out RegisterKind kind, out int internalValue, out _))
             {
-                if (kind is RegisterKind.Dimen or RegisterKind.Skip) return Signed(internalValue, negative, false);
+                if (kind is RegisterKind.Dimen or RegisterKind.Skip or RegisterKind.MuSkip)
+                {
+                    if ((kind == RegisterKind.MuSkip) != mu) Error("Incompatible glue units");
+                    return Signed(internalValue, negative, false);
+                }
                 whole = internalValue;
             }
             else if (Digit(t, 10) >= 0 || t.IsChar('.', TexCatcode.Other) || t.IsChar(',', TexCatcode.Other))
@@ -1155,11 +1165,11 @@ namespace ArctisAurora.Core.Tex
                 Back(t);
                 whole = ScanInt();
             }
-            return Units(whole, fraction, negative, fil, out order);
+            return Units(whole, fraction, negative, fil, out order, mu);
         }
 
-        // whole + fraction/2^16 times the unit that follows.
-        private int Units(long whole, int fraction, bool negative, bool fil, out byte order)
+        // whole + fraction/2^16 times the unit that follows; with mu, the unit must be mu.
+        private int Units(long whole, int fraction, bool negative, bool fil, out byte order, bool mu = false)
         {
             order = 0;
             bool arithError = false;
@@ -1171,7 +1181,7 @@ namespace ArctisAurora.Core.Tex
             }
 
             // an internal quantity as the unit
-            if (GetNonBlankX(out TexToken u))
+            if (!mu && GetNonBlankX(out TexToken u))
             {
                 if (Internal(u, out _, out int unit, out _))
                 {
@@ -1185,6 +1195,14 @@ namespace ArctisAurora.Core.Tex
             {
                 order = 1;
                 while (order < 3 && ScanKeyword("l")) order++;
+                value = Attach(whole, fraction, ref arithError);
+                SkipOptionalSpace();
+                return Signed(value, negative, arithError);
+            }
+
+            if (mu)
+            {
+                if (!ScanKeyword("mu")) Error("Illegal unit of measure (mu inserted)");
                 value = Attach(whole, fraction, ref arithError);
                 SkipOptionalSpace();
                 return Signed(value, negative, arithError);
@@ -1276,27 +1294,30 @@ namespace ArctisAurora.Core.Tex
             return result;
         }
 
-        public TexGlue ScanGlue()
+        // Glue in sp, or with mu, in mu as a \muskip holds it.
+        public TexGlue ScanGlue(bool mu = false)
         {
             if (!ScanSigns(out TexToken t, out bool negative)) return default;
 
             TexGlue glue = default;
             if (Internal(t, out RegisterKind kind, out int value, out TexGlue internalGlue))
             {
-                if (kind == RegisterKind.Skip)
+                if (kind is RegisterKind.Skip or RegisterKind.MuSkip)
                 {
+                    if ((kind == RegisterKind.MuSkip) != mu) Error("Incompatible glue units");
                     if (!negative) return internalGlue;
                     internalGlue.width = -internalGlue.width;
                     internalGlue.stretch = -internalGlue.stretch;
                     internalGlue.shrink = -internalGlue.shrink;
                     return internalGlue;
                 }
-                glue.width = kind == RegisterKind.Dimen ? Signed(value, negative, false) : Units(value, 0, negative, false, out _);
+                if (kind == RegisterKind.Dimen && mu) Error("Incompatible glue units");
+                glue.width = kind == RegisterKind.Dimen ? Signed(value, negative, false) : Units(value, 0, negative, false, out _, mu);
             }
-            else glue.width = DimenAfter(t, negative, false, out _);
+            else glue.width = DimenAfter(t, negative, false, out _, mu);
 
-            if (ScanKeyword("plus")) glue.stretch = ScanDimen(true, out glue.stretchOrder);
-            if (ScanKeyword("minus")) glue.shrink = ScanDimen(true, out glue.shrinkOrder);
+            if (ScanKeyword("plus")) glue.stretch = ScanDimen(true, out glue.stretchOrder, mu);
+            if (ScanKeyword("minus")) glue.shrink = ScanDimen(true, out glue.shrinkOrder, mu);
             return glue;
         }
         #endregion
@@ -1440,6 +1461,7 @@ namespace ArctisAurora.Core.Tex
                     RegisterKind.Count => Chars(Number(counts.Get(index))),
                     RegisterKind.Dimen => Chars(Scaled(dimens.Get(index)) + "pt"),
                     RegisterKind.Skip => Chars(GlueText(skips.Get(index))),
+                    RegisterKind.MuSkip => Chars(GlueText(muskips.Get(index), "mu")),
                     _ => toks.Get(index)
                 };
 
@@ -1471,15 +1493,15 @@ namespace ArctisAurora.Core.Tex
             return text.ToString();
         }
 
-        private static string GlueText(TexGlue g)
+        private static string GlueText(TexGlue g, string unit = "pt")
         {
-            string text = Scaled(g.width) + "pt";
-            if (g.stretch != 0) text += " plus " + Scaled(g.stretch) + Order(g.stretchOrder);
-            if (g.shrink != 0) text += " minus " + Scaled(g.shrink) + Order(g.shrinkOrder);
+            string text = Scaled(g.width) + unit;
+            if (g.stretch != 0) text += " plus " + Scaled(g.stretch) + Order(g.stretchOrder, unit);
+            if (g.shrink != 0) text += " minus " + Scaled(g.shrink) + Order(g.shrinkOrder, unit);
             return text;
         }
 
-        private static string Order(byte order) => order == 0 ? "pt" : "fil" + new string('l', order - 1);
+        private static string Order(byte order, string unit) => order == 0 ? unit : "fil" + new string('l', order - 1);
         #endregion
 
         #region ---- macro calls ----
@@ -1998,7 +2020,8 @@ namespace ArctisAurora.Core.Tex
         }
 
         // \newlength{\name}: a new skip register, globally zero.
-        private void NewLength(TexToken owner)
+        // \newlength, or with mu, \newmuskip.
+        private void NewLength(TexToken owner, bool mu)
         {
             TexToken[]? arg = Argument(owner, true);
             TexToken[]? names = arg?.Where(a => !IsSpace(a)).ToArray();
@@ -2012,15 +2035,15 @@ namespace ArctisAurora.Core.Tex
                 Error($"LaTeX Error: Command {names[0]} already defined");
                 return;
             }
-            if (nextLength > 32767)
+            if ((mu ? nextMuskip : nextLength) > 32767)
             {
-                Error("No room for a new \\skip");
+                Error(mu ? "No room for a new \\muskip" : "No room for a new \\skip");
                 return;
             }
 
-            int index = nextLength++;
-            skips.Set(index, default, true, groups);
-            meanings.Set(names[0].name!, new Register(RegisterKind.Skip, index), true, groups);
+            int index = mu ? nextMuskip++ : nextLength++;
+            (mu ? muskips : skips).Set(index, default, true, groups);
+            meanings.Set(names[0].name!, new Register(mu ? RegisterKind.MuSkip : RegisterKind.Skip, index), true, groups);
         }
 
         private void CounterAssign(Op op, TexToken owner)
@@ -2076,12 +2099,13 @@ namespace ArctisAurora.Core.Tex
         #endregion
 
         #region ---- typesetter interface ----
-        // A count, dimen or skip register's value by name (dimensions and glue widths in sp); null when it names none.
+        // A count, dimen or skip register's value by name (dimensions and glue widths in sp), or a \chardef's; null when it names none.
         public int? RegisterValue(string name)
         {
             switch (meanings.Get(name))
             {
                 case Register { kind: RegisterKind.Count } r: return counts.Get(r.index);
+                case Register { kind: RegisterKind.Char } r: return r.index;
                 case Register { kind: RegisterKind.Dimen } r: return dimens.Get(r.index);
                 case Register { kind: RegisterKind.Skip } r: return skips.Get(r.index).width;
                 default: return null;
@@ -2099,10 +2123,16 @@ namespace ArctisAurora.Core.Tex
             }
         }
 
+        // A \muskip register's glue by name, in mu (65536 = 1mu); null when it names none.
+        public TexGlue? RegisterMuGlue(string name) => meanings.Get(name) is Register { kind: RegisterKind.MuSkip } r ? muskips.Get(r.index) : null;
+
         // A control sequence Next hands to the caller unexpanded, under its own name.
         public void DefinePrimitive(string name) => meanings.Set(name, new Primitive(Op.Caller, name), true, groups);
 
         public bool IsDefined(string name) => meanings.Get(name) != null;
+
+        // A macro's body when it takes no parameters; null for anything else.
+        public TexToken[]? MacroBody(string name) => meanings.Get(name) is Macro { parameters.Length: 0, optional: null } m ? m.body : null;
 
         // Runs when the current group ends; never, outside any group.
         public void Save(Action restore)

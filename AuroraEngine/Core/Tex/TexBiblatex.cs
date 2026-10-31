@@ -115,7 +115,7 @@ namespace ArctisAurora.Core.Tex
             bbl.Append("\\def\\@bibsetup#1{\\labelsep\\@biblabelsep\\relax\\labelwidth0pt\\relax");
             for (int i = 0; i < items.Length; i++)
                 bbl.Append("\\settowidth\\@tempdima{\\@biblabel{").Append(items[i].label).Append("}}\\ifdim\\@tempdima>\\labelwidth\\labelwidth\\@tempdima\\fi");
-            bbl.Append("\\leftmargin\\labelwidth\\advance\\leftmargin\\labelsep\\leftskip\\leftmargin\\parindent0pt\\parskip0pt\\relax}%\n");
+            bbl.Append("\\leftmargin\\labelwidth\\advance\\leftmargin\\labelsep\\leftskip\\leftmargin\\parindent0pt\\parskip0pt\\interlinepenalty5000\\relax}%\n");
             bbl.Append("\\begin{thebibliography}{}\n\n");
             for (int i = 0; i < items.Length; i++)
             {
@@ -505,7 +505,7 @@ namespace ArctisAurora.Core.Tex
             string? year = e["year"] ?? e["date"];
             if (year == null) return null;
             int cut = year.IndexOfAny(new[] { '-', '/' }, 1);
-            return TexBibliography.Purify(cut > 0 ? year[..cut] : year).Trim();
+            return TexBibliography.Purify(cut > 0 ? year[..cut] : year, true).Trim();
         }
 
         // the date in the date option's form: year, iso, or month and year

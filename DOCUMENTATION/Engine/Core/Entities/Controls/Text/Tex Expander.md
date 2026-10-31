@@ -50,7 +50,9 @@ Lengths in `em` and `ex` are read from the `quad` and `xHeight` callbacks, which
 | `CanReadRaw`, `ReadRaw(terminator)`, `ReadRawChar(out char)` | method | Reads source characters without tokenizing, for `\verb` and similar. |
 | `Counter(name)`, `StepCounter(name)` | method | Reads and steps a LaTeX counter. |
 | `IsDefined(name)` | method | Whether a macro of that name is defined. |
-| `Error`, `ScanInt`, `ScanDimen()`, `ScanGlue`, `ScanKeyword`, `Argument`, `Optional`, `NameArgument`, `TakeStar` | method | The scanning helpers a typesetter's own commands use. |
+| `MacroBody(name)` | method | A macro's body when it takes no parameters and no optional argument, else null. |
+| `RegisterMuGlue(name)` | method | A `\muskip` register's glue (natural, stretch, shrink in mu fixed point, 65536 = 1mu); `\newmuskip`, `\muskipdef` and `\muskip` make them, numbered from 256, and `ScanGlue(mu: true)` reads one, requiring the unit `mu`. |
+| `Error`, `ScanInt`, `ScanDimen(bool mu = false)`, `ScanGlue`, `ScanKeyword`, `Argument`, `Optional`, `NameArgument`, `TakeStar` | method | The scanning helpers a typesetter's own commands use. |
 
 ## Tokens
 

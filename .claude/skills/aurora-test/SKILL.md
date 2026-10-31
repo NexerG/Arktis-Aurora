@@ -11,7 +11,7 @@ bash _Build/test.sh [Suite]
 
 - Builds Debug, runs Thorium with `--test` (or `--test=<Suite>`) and prints only `FAIL`/`NEW`/`APPROVED` lines,
   `new error:` lines and the `N passed, M failed, K skipped, J new — <results.axml>` line.
-- Runs at the plan's midpoint and at the end, not per step (CLAUDE.md §4).
+- Runs once, at the end — not per step, not at a midpoint (CLAUDE.md §4).
 - Feature work checks functionality and errors only. A bare run leaves the `Perf` suite out; perf runs only when
   measuring performance itself, through `aurora-perf` (`--test=Perf`, `_Build/PerfTests.cmd`).
 - Exit code = failed entries; 255 = the build failed, its errors printed above.

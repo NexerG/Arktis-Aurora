@@ -86,6 +86,9 @@ namespace ArctisAurora.Core.UI.Notes
         // a page break may not fall between this block and the next
         public bool keepWithNext;
 
+        // a page break may not fall between this block's lines
+        public bool keepTogether;
+
         // TeX's \strut on every line: at least 0.7 of the line box above the baseline and 0.3 below
         public bool strut;
 
@@ -134,8 +137,13 @@ namespace ArctisAurora.Core.UI.Notes
                 leaderInset = appended.fill ? appended.leaderInset : 0f,
                 note = appended.note,
                 urlStretch = appended.urlStretch,
+                urlWidth = appended.urlWidth,
+                urlShrink = appended.urlShrink,
                 urlBreakPenalty = appended.urlBreakPenalty,
-                urlBigBreakPenalty = appended.urlBigBreakPenalty
+                urlBigBreakPenalty = appended.urlBigBreakPenalty,
+                urlNumPenalty = appended.urlNumPenalty, urlNumWidth = appended.urlNumWidth, urlNumStretch = appended.urlNumStretch, urlNumShrink = appended.urlNumShrink,
+                urlUcPenalty = appended.urlUcPenalty, urlUcWidth = appended.urlUcWidth, urlUcStretch = appended.urlUcStretch, urlUcShrink = appended.urlUcShrink,
+                urlLcPenalty = appended.urlLcPenalty, urlLcWidth = appended.urlLcWidth, urlLcStretch = appended.urlLcStretch, urlLcShrink = appended.urlLcShrink
             });
 
             run.text += slice;
@@ -166,6 +174,7 @@ namespace ArctisAurora.Core.UI.Notes
                 listIndent = listIndent,
                 lineHeight = lineHeight,
                 keepWithNext = keepWithNext,
+                keepTogether = keepTogether,
                 strut = strut
             };
 
@@ -217,6 +226,7 @@ namespace ArctisAurora.Core.UI.Notes
                 listIndent = listIndent,
                 lineHeight = lineHeight,
                 keepWithNext = keepWithNext,
+                keepTogether = keepTogether,
                 strut = strut,
                 listStart = listStart,
                 isChecked = isChecked,
@@ -278,6 +288,7 @@ namespace ArctisAurora.Core.UI.Notes
             listIndent = kind.listIndent;
             lineHeight = kind.lineHeight;
             keepWithNext = kind.keepWithNext;
+            keepTogether = kind.keepTogether;
             strut = kind.strut;
             listStart = kind.listStart;
             isChecked = kind.isChecked;
@@ -316,6 +327,9 @@ namespace ArctisAurora.Core.UI.Notes
 
         // a left-aligned table's indent, px: TeX's \parindent before a tabular that opens a paragraph
         public float indent;
+
+        // the math axis above the baseline of the line a tabular is centred on, px; 0 = not set in a line
+        public float axis;
 
         // the cell inset across and down, px; null = the view's own
         public Vector2? cellPadding;

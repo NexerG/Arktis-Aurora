@@ -155,8 +155,8 @@ It never throws. Problems are collected in `errors` and the run recovers the way
 			`spaceFactor` = `code`
 		the factor is reset to 1000 when the last node is not the character that set it
 	`\@` sets the factor to 1000
-	`\frenchspacing` sets `frenchSpacing`, so every space takes factor 1000
-	`\nonfrenchspacing` clears it
+	`\frenchspacing` is `FrenchSpacing(true)`: save the outer `frenchSpacing` through `expander.Save`, then set it, so every space takes factor 1000 until the group ends
+	`\nonfrenchspacing` is `FrenchSpacing(false)`, group-local the same way
 	`Interword (factor)`
 		append a `TexGlueNode` with `spaceFactor` = `factor`   // only a source space passes the tracked factor
 	`tolerance`, `pretolerance` and `emergencyStretch` read the registers in pt, for lowering to write
@@ -212,6 +212,9 @@ Lowering also writes `AdvanceGrid` = 1000 on the document's `DocumentLayout`, so
 		an empty option becomes `tbp`, a lone `h` becomes `ht`
 	the body is redirected into `TexFloat.vlist` by pushing a frame, `openFloat` marks it
 		the float sits in the vertical list, or in the hlist when it is met mid-paragraph
+		the last thing it does is insert `\@parboxrestore` into the token stream, inside the float's group
+			the prelude's `\@arrayparboxrestore` resets `\parindent`, `\parskip`, `\leftskip`, `\rightskip` to 0pt and `\parfillskip` to 0pt plus 1fil
+			LaTeX also resets `\lineskip`, `\baselineskip` and others, which the format does not model
 	`EndFloat` closes `figure`, `table` and the starred forms
 		after a mid-paragraph float the space that follows is eaten when one preceded it (`\@esphack`)
 	a float inside a box, footnote, caption, heading, table cell or another float reports "LaTeX Error: Not in outer par mode" and stays inline
@@ -235,7 +238,10 @@ Lowering also writes `AdvanceGrid` = 1000 on the document's `DocumentLayout`, so
 	`BeginTabular`
 		if the tabular opens a paragraph in vertical mode, outside tables and boxes
 			`TexTable.indent` = `\parindent`   // TeX indents it and lets it overflow right
-			consume noIndent, afterHeading and afterEnvironment
+			`TexTable.opens` = true
+				add the space `StartParagraph` adds   // list `\parsep`, else `\parskip` when not in a list, no keepSkip and not at an environment start
+				consume noIndent, afterHeading and afterEnvironment
+				clear environmentStart
 	for each cell
 		start from the tabular's starting style, a cell is not an expander group
 		`&` ends the cell and the spaces after it are skipped
@@ -386,10 +392,12 @@ Display skips: a display that starts a paragraph (a blank line before it) gets `
 		indent unless the paragraph follows a heading and `indentFirst` is false
 		record `language` on the new `TexParagraph`
 	`\captionsetup[kind]{keys}` (`CaptionSetup`)
-		for each of the keys name, labelsep, labelfont, font, textfont
+		for each of the keys name, labelsep, labelfont, font, textfont, justification, singlelinecheck
 			store a `\caption@key` macro, or `\caption@key@kind` for one kind   // so a `\captionsetup` inside a float ends with its group
 		other keys are read and ignored
 	`Caption`
+		pick the caption's alignment from `\caption@justification`   // centering is Center, raggedright Left, raggedleft Right, anything else Justify
+		when `singlelinecheck` is false, off or no, start in that alignment, otherwise centred   // an overflowing caption takes the alignment (`captionJustify`) in `EndCaption`
 		insert `{font {lfont [\let\<kind>name\caption@name@<kind>] \fnum@<kind>{n}} sep {tfont text}} \@endcaption`
 	`\captionsenglish` defines `\fnum@figure` as "Figure~n"
 	`\captionslithuanian` defines `\fnum@figure` as "n~pav."
@@ -404,7 +412,8 @@ The lists are not formatted in C#. `TexFormat.Prelude` holds ports of latex.ltx'
 	`\leaders` sets `TexGlueNode.leader`
 	`Box` honours `\hbox to`   // `TexHBox.width`, -1 is natural
 	`\@afterindenttrue` clears afterHeading   // an entry keeps its indent box after a heading
-	`EndParagraph` records `\leftskip`, `\rightskip` and `\parfillskip` in `TexParStyle`
+	`EndParagraph` records `\leftskip`, `\rightskip`, `\parfillskip` and `\interlinepenalty` in `TexParStyle` and `TexParagraph.interlinePenalty`   // 5000 or more keeps the paragraph on one page
+	`AddChar` sets `straightQuote` on the `”` that an ASCII `"` becomes
 	`StartParagraph` records `\parindent`
 	`\tableofcontents`, `\listoffigures`, `\listoftables`
 		set the title as `\section*` of `\contentsname`, `\listfigurename` or `\listtablename`   // tocloft's [titles] mode
@@ -417,7 +426,7 @@ The lists are not formatted in C#. `TexFormat.Prelude` holds ports of latex.ltx'
 	`Caption`
 		write the lof or lot entry the same way, with `[short]`
 	`BeginBibliography`
-		when `bibInContents`, add a toc entry   // set by tocbibind unless `notbib`, or by `\printbibliography[heading=bibintoc]`
+		when `bibInContents`, add a toc entry   // set per list in `TypesetBibliography`: `\printbibliography[heading=bibintoc]`, or tocbibind unless `notbib` when biblatex is not loaded
 	`\addcontentsline{ext}{level}{text}` and `\addtocontents{ext}{text}` (`AddContentsLine`, `AddContents`)
 		`Protected (text)`   // `\protect` becomes `\noexpand`, then `Expanded`, as \protected@write does
 		append it to `contentsTokens` and record the range in `contentsEntries`
@@ -448,11 +457,18 @@ The lists are not formatted in C#. `TexFormat.Prelude` holds ports of latex.ltx'
 		store it as the settings' `nameFormat`
 	`\parencite` and `\autocite` are `\cite`
 	`\url` inside the bibliography, with biblatex loaded (`bibUrls`)
-		insert U+E006 after the big breaks `:` `-` and U+E005 after the ordinary break set
-		set the style's `urlStretch` (3mu), `urlBigBreakPenalty` (100) and `urlBreakPenalty` (200)   // `\biburlsetup`; outside the bibliography `\url` breaks freely with U+200B
+		the same atom loop as the plain `\url` below, with the big breaks `:` `-`
+		set the style's `urlWidth`, `urlStretch` and `urlShrink` from `RegisterMuGlue("biburlbigskip")` (0mu plus 3mu) through `MuToSp`, `urlBigBreakPenalty` to `Counter("biburlbigbreakpenalty")` (100) and `urlBreakPenalty` to `Counter("biburlbreakpenalty")` (200)   // `\biburlsetup`; the plain `\url` reads the document's penalties instead
+	`Packages (url, hyperref)`
+		when `\UrlBreakPenalty` is undefined, insert `\mathchardef\UrlBreakPenalty=\binoppenalty \mathchardef\UrlBigBreakPenalty=\relpenalty`   // url.sty's own lines: the penalties are captured at load, so a later `\binoppenalty` has no effect on URLs
+			when `\Urlmuskip` is undefined, insert `\newmuskip\Urlmuskip \Urlmuskip=0mu`   // url.sty's
 	`\printbibliography[opts]` (`PrintBibliography`)
 		read `heading=bibintoc` and `title=`
-		`PlaceBibliography` places the mark and records `bibLanguage`
+		`PlaceBibliography (title, inContents)` places a `TexBibliographyMark` and adds it to `bibMarks`   // one per call, each with its own title, language and contents flag
+	`\hyperref[label]{text}`
+		set the text plainly, no underline   // the four-argument URL form is not handled
+	`\ref*` and `\pageref*`
+		`Reference` takes the optional star
 	`TypesetBibliography`, under biblatex
 		`TexBiblatex.Format (cited, settings, language, title)`
 			`Sorted`   // alphabetic: label with a, b, c after equal labels; numeric: numbers; compared with the language's CompareInfo
@@ -463,6 +479,7 @@ The lists are not formatted in C#. `TexFormat.Prelude` holds ports of latex.ltx'
 	`BeginBibliography`
 		pass `{widest}` to `\@bibsetup`
 		set `\parskip` to the list's parsep
+		under biblatex `FrenchSpacing(true)`   // `\bibsetup`'s `\frenchspacing`, restored at the group end so the text after the bibliography keeps sentence spacing
 	`\@bibsetup{widest}`
 		`\settowidth\labelwidth{\@biblabel{widest}}`
 		`\leftmargin` = `\labelwidth` + `\labelsep`
@@ -480,7 +497,22 @@ The lists are not formatted in C#. `TexFormat.Prelude` holds ports of latex.ltx'
 		a label past maxalphanames shows a plain "+"
 	`\url`
 		un-escape `\%`, `\#`, `\_`, `\&`
-		insert U+200B after each character of `UrlBreaks` except the last one   // "./-_?&=:#!;,)]|@+"
+		read the sets from the document   // `UrlCharacters (macro, fallback)` reads `\UrlBreaks` and `\UrlBigBreaks` on the plain path and `\UrlNoBreaks` on both, falling back to url.sty's constants; the bibliography keeps `\biburlsetup`'s break sets
+		`AppendDoList (tokens, text, depth)`
+			for each token of the list
+				`\do\x` or `\do x` appends the character
+				a parameterless macro the list calls is read the same way   // `MacroBody`, depth up to 8
+		classify each character with `AtomOf (c, breaks, bigBreaks, noBreaks)`   // Open for `UrlNoBreaks` `([{<`, Rel for the big breaks `:` (`:-` under `[hyphens]`), Bin for `UrlBreaks` `.@\/!_|;>]),?&'+=#`, else Ord; a later list wins
+		for each character
+			a Bin becomes Ord when it is first, follows a Bin, Rel or Open (after conversion), or precedes a Rel   // `://` breaks after `:` or the second `/`, never between the slashes
+			insert U+E005 after a remaining Bin
+			insert U+E006 after a Rel that is not followed by a Rel
+			nothing after the last character
+		set the style's `urlBreakPenalty` to `RegisterValue("UrlBreakPenalty") ?? RegisterValue("binoppenalty")`
+		set `urlBigBreakPenalty` to `RegisterValue("UrlBigBreakPenalty") ?? RegisterValue("relpenalty")`
+		on the bibliography path, set `urlNum…`, `urlUc…` and `urlLc…` penalty, width, stretch and shrink from `UrlLetters(counter, skip)`   // `biburlnumpenalty` with `biburlnumskip`, and the `uc` and `lc` pairs; a class with penalty 0 or less is all zero
+		on the bibliography path, `UrlLetterMarker` appends U+E007 after a digit, U+E008 after A–Z and U+E009 after a–z when that class's penalty is above 0   // never after the URL's last character
+		set `urlWidth`, `urlStretch` and `urlShrink` from `RegisterMuGlue("Urlmuskip")` through `MuToSp`   // mu × font size / (18 × 65536); an infinite order is set as finite, with one `Log.Once().Info`
 
 #### Theorems, algorithms and the @ catcode
 `amsthm` and `algorithm` are known packages. `amsthm` is read from `TexFormat.Amsthm` as working macros: a theorem head is bold "Name N" with an optional "(note)" and a full stop, the body font comes from the theorem style (plain is italic, definition and remark are upright), `\newtheoremstyle` keeps only its body-font argument, `\swapnumbers` does nothing, `\newtheorem*` is unnumbered and `proof` sets an italic "Proof." and ends with `\qed`, which is `\nobreak\hfill$\square$`. The `algorithm` package makes a float of kind "algorithm" through the same float path as figures and tables, ruled by default, with plain and boxed as the other styles (boxed draws no frame).
@@ -556,6 +588,7 @@ A math-only command, `^` or `_` met in text mode recovers the way TeX does. The 
 			for each word, a run of letters in one style that is not monospaced
 				capitals are lowered, and the ligatures U+FB00 to U+FB04 are taken apart for lookup
 				leave the word as written when it already holds a `\-`
+				leave the word as written when the node before or after it is a `TexChar` with `straightQuote`   // LuaTeX does not hyphenate next to an ASCII `"`; one instance in the thesis
 				`TexHyphenator.Points` gives the break points: document exceptions, then the file's exceptions, then the patterns, with the minimums of the pattern file (2 and 3 for English, 2 and 2 for Lithuanian)
 				insert a U+00AD character node at each point, none inside a ligature
 	`Advance` gives U+00AD no width
@@ -566,6 +599,7 @@ A math-only command, `^` or `_` met in text mode recovers the way TeX does. The 
 			write Run attributes only where they differ from the block's TextStyle: FontName, FontSize with FontSizeAuthored
 			Bold, Italic, Underline and ColorHex are written as set
 		interword glue becomes a space, or a no-break space inside an hbox
+		`\mskip` and `\mkern` in text are set like `\hskip` and `\kern`, silently, with mu converted by `MuToSp` (1mu = font size / 18)   // `ScanGlue(true)` / `ScanDimen(true)`; a pending `\leaders` box is taken as by `\hskip`
 		`\quad`, `\hspace` and `\kern` become a spacer run of their exact width, `<Run Text=" " Space="px"/>`, which draws nothing and never breaks a line
 		penalties are dropped
 		a `Spacing` holds the pending skip, the paragraph indent and the display skips

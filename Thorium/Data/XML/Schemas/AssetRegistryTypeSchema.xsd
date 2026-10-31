@@ -124,6 +124,8 @@
     <xs:attribute name="Sup3" type="xs:float" />
     <xs:attribute name="SubDrop" type="xs:float" />
     <xs:attribute name="SupDrop" type="xs:float" />
+    <xs:attribute name="BigOpSpacing1" type="xs:float" />
+    <xs:attribute name="BigOpSpacing3" type="xs:float" />
     <xs:attribute name="BigOpSpacing5" type="xs:float" />
     <xs:attribute name="DisplayOperators" type="xs:string" />
   </xs:attributeGroup>

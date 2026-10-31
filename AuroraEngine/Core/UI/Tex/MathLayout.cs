@@ -111,9 +111,9 @@ namespace ArctisAurora.Core.UI.Tex
 
         // Lays out a parsed formula, in em at font size 1; align, flalign and multline spread over lineWidth when given.
         public static MathBox Layout(MathNode root, bool display, AtlasMetaData atlas, MathConstants constants, float lineWidth = 0f, float strut = 0f,
-            MathRules rules = MathRules.OpenType)
+            MathRules rules = MathRules.OpenType, float textPt = 0f)
         {
-            Layouter layouter = new Layouter(atlas, constants, display ? lineWidth : 0f, strut, rules == MathRules.Tfm);
+            Layouter layouter = new Layouter(atlas, constants, display ? lineWidth : 0f, strut, rules == MathRules.Tfm, textPt);
             if (root is MathError error)
             {
                 MathBox box = layouter.Text(error.source, FontStyle.Regular, 1f);
@@ -150,20 +150,23 @@ namespace ArctisAurora.Core.UI.Tex
             // what scales the array row struts: the asked strut over the default's height plus depth; classic TeX's script rules
             private readonly float strutScale;
             private readonly bool tfm;
+            // the text size in TeX points under classic rules, which picks Computer Modern's design sizes; 0 = Latin Modern's metrics
+            private readonly float textPt;
 
-            public Layouter(AtlasMetaData atlas, MathConstants constants, float lineWidth, float strut, bool tfm)
+            public Layouter(AtlasMetaData atlas, MathConstants constants, float lineWidth, float strut, bool tfm, float textPt)
             {
                 this.atlas = atlas;
                 c = constants;
                 this.lineWidth = lineWidth;
                 strutScale = strut > 0f ? strut / (strutHeight + strutDepth) : 1f;
                 this.tfm = tfm;
+                this.textPt = tfm ? textPt : 0f;
             }
 
             private float Scale(MathStyle style) => style switch
             {
-                MathStyle.Script => c.scriptPercentScaleDown / 100f,
-                MathStyle.ScriptScript => c.scriptScriptPercentScaleDown / 100f,
+                MathStyle.Script => textPt > 0f ? TexMathMetrics.ScriptPt(textPt, false) / textPt : c.scriptPercentScaleDown / 100f,
+                MathStyle.ScriptScript => textPt > 0f ? TexMathMetrics.ScriptPt(textPt, true) / textPt : c.scriptScriptPercentScaleDown / 100f,
                 _ => 1f
             };
 
@@ -181,7 +184,7 @@ namespace ArctisAurora.Core.UI.Tex
             {
                 MathList list => List(list.items, style, cramped),
                 MathSymbol symbol => Symbol(symbol, style),
-                MathText text => Text(text.text, text.face, Scale(style)),
+                MathText text => Text(text.text, text.face, Scale(style), true),
                 MathScripts scripts => Scripts(scripts, style, cramped),
                 MathFraction fraction => Fraction(fraction, style, cramped),
                 MathRadical radical => Radical(radical, style),
@@ -243,12 +246,26 @@ namespace ArctisAurora.Core.UI.Tex
                 return regular.xMin != regular.xMax || regular.yMin != regular.yMax ? FontStyle.Regular : face;
             }
 
-            public MathBox Text(string text, FontStyle face, float scale)
+            // A symbol or math letter: Computer Modern's box under classic rules, else the atlas's.
+            private MathBox Char(char ch, FontStyle face, float scale)
+            {
+                MathBox box = Glyph(ch, face, scale);
+                if (textPt > 0f && TexMathMetrics.Glyph(face, textPt * scale, ch, out (float width, float italic, float height, float depth) cm))
+                {
+                    box.width = cm.width * scale;
+                    box.italic = cm.italic * scale;
+                    box.height = cm.height * scale;
+                    box.depth = cm.depth * scale;
+                }
+                return box;
+            }
+
+            public MathBox Text(string text, FontStyle face, float scale, bool math = false)
             {
                 MathBox box = new MathBox();
                 foreach (char ch in text)
                 {
-                    MathBox glyph = Glyph(ch, face, scale);
+                    MathBox glyph = math ? Char(ch, face, scale) : Glyph(ch, face, scale);
                     box.Place(glyph, box.width, 0f);
                     box.width += glyph.width;
                 }
@@ -258,14 +275,21 @@ namespace ArctisAurora.Core.UI.Tex
             private MathBox Symbol(MathSymbol symbol, MathStyle style)
             {
                 float k = Scale(style);
-                if (!symbol.bigOp) return Glyph(symbol.ch, symbol.face, k);
+                if (!symbol.bigOp) return Char(symbol.ch, symbol.face, k);
 
                 MathBox natural = Glyph(symbol.ch, symbol.face, k);
                 float total = natural.height + natural.depth;
                 float grow = style == MathStyle.Display && total > 0f
                     ? MathF.Max(1f, c.DisplayHeight(symbol.ch) * k / total) : 1f;
                 MathBox op = grow == 1f ? natural : Glyph(symbol.ch, symbol.face, k * grow);
-                return OnAxis(op, k);
+                MathBox box = OnAxis(op, k);
+                if (textPt > 0f && TexMathMetrics.BigOp(symbol.ch, style == MathStyle.Display, out float height, out float depth))
+                {
+                    float half = (height + depth) * k * 0.5f;
+                    box.height = half + c.axisHeight * k;
+                    box.depth = half - c.axisHeight * k;
+                }
+                return box;
             }
 
             // Shifts a box so it is centred on the math axis.
@@ -365,7 +389,8 @@ namespace ArctisAurora.Core.UI.Tex
                 box.Place(nucleus, (width - nucleus.width) * 0.5f, 0f);
                 if (sup != null)
                 {
-                    float rise = MathF.Max(c.upperLimitGapMin * k + sup.depth, c.upperLimitBaselineRiseMin * k);
+                    float rise = tfm ? MathF.Max(c.bigOpSpacing1 * k + sup.depth, c.bigOpSpacing3 * k)
+                                     : MathF.Max(c.upperLimitGapMin * k + sup.depth, c.upperLimitBaselineRiseMin * k);
                     box.Place(sup, (width - sup.width) * 0.5f, nucleus.height + rise);
                 }
                 if (sub != null)
@@ -415,15 +440,25 @@ namespace ArctisAurora.Core.UI.Tex
                 }
                 if (sup != null && sub != null)
                 {
-                    float gap = (u - sup.depth) - (sub.height - v);
-                    float gapMin = c.subSuperscriptGapMin * k;
-                    if (gap < gapMin) v += gapMin - gap;
-
-                    float lift = c.superscriptBottomMaxWithSubscript * k - (u - sup.depth);
-                    if (lift > 0f)
+                    float clash = c.subSuperscriptGapMin * k - ((u - sup.depth) - (sub.height - v));
+                    if (clash > 0f)
                     {
-                        u += lift;
-                        v -= lift;
+                        float lift = c.superscriptBottomMaxWithSubscript * k - (u - sup.depth);
+                        if (tfm)
+                        {
+                            v += clash;
+                            if (lift > 0f)
+                            {
+                                u += lift;
+                                v -= lift;
+                            }
+                        }
+                        else
+                        {
+                            float raise = MathF.Max(0f, MathF.Min(lift, clash));
+                            u += raise;
+                            v += clash - raise;
+                        }
                     }
                 }
 

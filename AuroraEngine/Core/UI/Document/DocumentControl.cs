@@ -591,7 +591,8 @@ namespace ArctisAurora.Core.UI.Document
             DocumentFragment fragment = document.CaptureFragment(from, to);
             string text =string.Join(Environment.NewLine, fragment.blocks.Select(block => PlainText(block, session?.path))).Replace(TextMeasurer.SoftHyphen.ToString(), string.Empty)
                 .Replace(TextMeasurer.ZeroWidthSpace.ToString(), string.Empty).Replace(TextMeasurer.UrlBreak.ToString(), string.Empty)
-                .Replace(TextMeasurer.UrlBigBreak.ToString(), string.Empty);
+                .Replace(TextMeasurer.UrlBigBreak.ToString(), string.Empty).Replace(TextMeasurer.UrlNumBreak.ToString(), string.Empty)
+                .Replace(TextMeasurer.UrlUcBreak.ToString(), string.Empty).Replace(TextMeasurer.UrlLcBreak.ToString(), string.Empty);
 
             copiedText = text;
             copiedFragment = fragment;

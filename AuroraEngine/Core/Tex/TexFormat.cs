@@ -16,6 +16,7 @@ namespace ArctisAurora.Core.Tex
             \dimendef\paperwidth=254 \dimendef\paperheight=255 %
             \countdef\hyphenpenalty=250 \countdef\exhyphenpenalty=251 \countdef\tolerance=252 \countdef\pretolerance=253 %
             \hyphenpenalty=50 \exhyphenpenalty=50 \tolerance=200 \pretolerance=100 %
+            \countdef\binoppenalty=240 \countdef\relpenalty=241 \binoppenalty=700 \relpenalty=500 %
             \dimendef\parindent=249 \dimendef\emergencystretch=248 \skipdef\parskip=250 %
             \skipdef\topsep=246 \skipdef\partopsep=247 \skipdef\itemsep=248 \skipdef\parsep=249 %
             \parindent=15pt \parskip=0pt plus1pt\relax
@@ -67,6 +68,7 @@ namespace ArctisAurora.Core.Tex
             \def\enspace{\kern.5em}\def\thinspace{\kern.16667em}\def\negthinspace{\kern-.16667em}%
             \def~{\nobreakspace}\def\/{}%
             \skipdef\leftskip=243 \skipdef\rightskip=244 \skipdef\parfillskip=245 \dimendef\@tempdima=247 \countdef\interlinepenalty=246 %
+            \def\@arrayparboxrestore{\parindent0pt\parskip0pt\leftskip0pt\rightskip0pt\parfillskip0pt plus1fil\relax}\def\@parboxrestore{\@arrayparboxrestore}%
             \let\protect\relax\def\leavevmode{\indent}\def\null{\hbox{}}\def\nobreak{\penalty10000 }\def\normalcolor{}\def\m@th{}%
             \def\hfil{\hskip0pt plus1fil\relax}\def\hss{\hskip0pt plus1fil minus1fil\relax}\def\hb@xt@{\hbox to}%
             \def\makebox{\@ifnextchar[\@makebox\mbox}\def\@makebox[#1]{\@ifnextchar[{\@imakebox[#1]}{\@imakebox[#1][c]}}%
@@ -137,6 +139,11 @@ namespace ArctisAurora.Core.Tex
             \def\addcomma{,}\def\addsemicolon{;}\def\addcolon{:}\def\addperiod{.}\def\adddot{.}\def\addslash{/}%
             \def\addspace{\space}\def\addabbrvspace{\space}\def\adddotspace{.\space}\def\addnbspace{\nobreakspace}%
             \def\isdot{}\def\newunitpunct{.\space}\def\labelalphaothers{+}\def\mkbibemph#1{\emph{#1}}%
+            \newcounter{biburlbreakpenalty}\setcounter{biburlbreakpenalty}{200}%
+            \newcounter{biburlbigbreakpenalty}\setcounter{biburlbigbreakpenalty}{100}%
+            \newcounter{biburlnumpenalty}\newcounter{biburlucpenalty}\newcounter{biburllcpenalty}%
+            \newmuskip\biburlbigskip\newmuskip\biburlnumskip\newmuskip\biburlucskip\newmuskip\biburllcskip%
+            \biburlbigskip=0mu plus 3mu\relax\biburlnumskip=0mu\relax\biburlucskip=0mu\relax\biburllcskip=0mu\relax%
             """;
 
         // tocloft: each level's indent, number width, fonts and leader as lengths and macros, set by one entry macro

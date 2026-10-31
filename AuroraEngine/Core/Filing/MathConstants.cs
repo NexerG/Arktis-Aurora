@@ -143,6 +143,10 @@ namespace ArctisAurora.Core.Filing
         public float subDrop { get; set; }
         [A_XSDElementProperty("SupDrop", "AssetRegistry")]
         public float supDrop { get; set; }
+        [A_XSDElementProperty("BigOpSpacing1", "AssetRegistry")]
+        public float bigOpSpacing1 { get; set; }
+        [A_XSDElementProperty("BigOpSpacing3", "AssetRegistry")]
+        public float bigOpSpacing3 { get; set; }
         [A_XSDElementProperty("BigOpSpacing5", "AssetRegistry")]
         public float bigOpSpacing5 { get; set; }
 

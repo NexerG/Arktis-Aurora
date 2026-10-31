@@ -13,7 +13,7 @@ namespace ArctisAurora.Core.Filing.Serialization
         private static readonly Diagnostics.LogChannel Log = Diagnostics.LogChannel.For("Assets");
 
         // Bump to invalidate every stamp and force a re-bake.
-        private const int importerVersion = 8;
+        private const int importerVersion = 9;
 
         [A_XSDActionDependency("AssetImporter.RunImports", "Bootstrap")]
         public static bool RunImports()

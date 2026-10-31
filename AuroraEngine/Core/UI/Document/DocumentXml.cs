@@ -171,6 +171,7 @@ namespace ArctisAurora.Core.UI.Document
             block.listIndent = (float?)element.Attribute("ListIndent");
             block.lineHeight = (float?)element.Attribute("LineHeight");
             block.keepWithNext = (bool?)element.Attribute("KeepWithNext") ?? false;
+            block.keepTogether = (bool?)element.Attribute("KeepTogether") ?? false;
             block.strut = (bool?)element.Attribute("Strut") ?? false;
             block.listStart = (int?)element.Attribute("Start");
 
@@ -223,6 +224,7 @@ namespace ArctisAurora.Core.UI.Document
                 shrinkBefore = (float?)element.Attribute("ShrinkBefore") ?? 0f,
                 alignment = Enum.TryParse((string?)element.Attribute("Align"), true, out TextAlignment align) ? align : TextAlignment.Left,
                 indent = (float?)element.Attribute("Indent") ?? 0f,
+                axis = (float?)element.Attribute("Axis") ?? 0f,
                 pageBreak = ReadPageBreak(element),
                 cellPadding = ReadPadding((string?)element.Attribute("Padding"))
             };
@@ -464,6 +466,8 @@ namespace ArctisAurora.Core.UI.Document
                 element.SetAttributeValue("LineHeight", Format(block.lineHeight.Value));
             if (block.keepWithNext)
                 element.SetAttributeValue("KeepWithNext", "true");
+            if (block.keepTogether)
+                element.SetAttributeValue("KeepTogether", "true");
             if (block.strut)
                 element.SetAttributeValue("Strut", "true");
             if (block.listStart.HasValue)
@@ -495,6 +499,7 @@ namespace ArctisAurora.Core.UI.Document
             if (table.shrinkBefore > 0f) element.SetAttributeValue("ShrinkBefore", Format(table.shrinkBefore));
             if (table.alignment != TextAlignment.Left) element.SetAttributeValue("Align", table.alignment.ToString());
             if (table.indent > 0f) element.SetAttributeValue("Indent", Format(table.indent));
+            if (table.axis > 0f) element.SetAttributeValue("Axis", Format(table.axis));
             if (table.pageBreak != PageBreak.None) element.SetAttributeValue("PageBreak", table.pageBreak.ToString());
             if (table.cellPadding is Vector2 pad) element.SetAttributeValue("Padding", $"{Format(pad.X)} {Format(pad.Y)}");
             for (int c = 0; c < table.widths.Length; c++)

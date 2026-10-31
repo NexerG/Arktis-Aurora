@@ -167,6 +167,7 @@ namespace ArctisAurora.Core.UI.Document
                     listIndent = at.note.listIndent,
                     lineHeight = at.note.lineHeight,
                     keepWithNext = at.note.keepWithNext,
+                    keepTogether = at.note.keepTogether,
                     strut = at.note.strut,
                     text = clean.ToString()
                 };
@@ -205,6 +206,7 @@ namespace ArctisAurora.Core.UI.Document
                 listIndent = destination.note.listIndent,
                 lineHeight = destination.note.lineHeight,
                 keepWithNext = destination.note.keepWithNext,
+                keepTogether = destination.note.keepTogether,
                 strut = destination.note.strut,
                 isChecked = destination.isChecked,
                 text = last.text

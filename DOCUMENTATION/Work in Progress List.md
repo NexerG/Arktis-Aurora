@@ -74,12 +74,14 @@ This file holds **open work**. A landed entry moves to [[Changelog]]; one that s
 		- [x] **tables (2026-09-29)** — landed, See `ClaudeMemory/Decisions/document-tables.md`
 			- [ ] typing p95 up ~0.03 ms on the 1M-char scenario — likely `Blocks()` type-testing page panels, not pinned
 		- [ ] **math in notes, M1–M5 (2026-10-02, M5 2026-10-06)** — landed, test-verified; **NOT GUI-verified** (popup placement, live reflow, click-away, focus loss mid-edit). M5 (matrices/`cases`/`aligned`, `\tag`) landed with L6 → `math-plan`
-		- [ ] **LaTeX editor** — native route agreed 2026-10-05; L1–L6, L7a–L7g, L8, L9, L10a, L10b, L10c, L10d, L10e, L10f, L10g, L11a, L11b, L11c, L11c2, L11d, L11f, L11e, L11g, L11h and L12a landed → `ClaudeMemory/Context/tex-plan.md`
+		- [ ] **LaTeX editor** — native route agreed 2026-10-05; L1–L6, L7a–L7g, L8, L9, L10a, L10b, L10c, L10d, L10e, L10f, L10g, L11a, L11b, L11c, L11c2, L11d, L11f, L11e, L11g, L11h, L11s and L12a landed (thesis 35/35 identical; p2 and p25 closed) → `ClaudeMemory/Context/tex-plan.md`
+			- [ ] **LaTeX: Lithuanian line breaks differ from LuaTeX on the internship report (p5, p14)** — needs LuaTeX's `\tracingparagraphs`; no TeX install on the dev machine → `latex-editor`
 			- [ ] **Thesis page breaks drift from p17 and p27** — reference p17 shrinks its float gaps, ours does not; p27 holds 2 more lines than the reference, so figure 10 goes to the top of p28 (p28–29 −36 to −56 pt). The p9 drift was L12a-F1, reversed 2026-10-30 → `latex-editor`
 			- [ ] **[Nex25b] URL entry 4 lines vs 3** — TeX URL lines stand 19.1 pt apart vs our 18.1, not investigated → `latex-editor`
 			- [ ] **Table and caption gaps off by 0.6–1.8 pt** — [h] table last row→caption 1.7 pt long (fixed BaselineDepth vs array strut depth), top caption→first row 26.6 vs 27.2, p6 table 1.8 pt right (old TableControl x offset) → `latex-editor`
 			- [ ] **`\setdisplayskipstretch` and float skips** — not supported; `\textfloatsep`/`\floatsep` untouched (floatSeps uses 14 at 12pt, size12.clo may say 12, unverified) → `latex-editor`
-			- [ ] **TFM math attributes lost on font re-import** — `MathConstants.Read` + `Save` writes Sub1…BigOpSpacing5 as 0, so TFM mode puts subscripts on the baseline; the L11h, L12a, font-variants and L11d (importerVersion 8) re-bakes wiped them again (restored by hand), needs a durable home → `latex-editor`
+			- [ ] **TFM math attributes lost on font re-import** — `MathConstants.Read` + `Save` writes Sub1…BigOpSpacing5 as 0, so TFM mode puts subscripts on the baseline; the L11h, L12a, font-variants, L11d (importerVersion 8) and L11s (importerVersion 9) re-bakes wiped them again (restored by hand), needs a durable home → `latex-editor`
+			- [ ] **Math italic glyphs from the math font** — letters use LM Roman Italic, not the math font's U+1D44E+ (outside `char`), so "floor" in eq. 13/14 shows "f loor" → `latex-editor`
 			- [ ] **Thesis page 19 paragraph is 7 lines, reference 8** — glyph widths and kerns match; some TeX break rule or glue value still differs, not found → `latex-editor`
 			- [ ] **fontspec / `\fontseries` cannot choose a font variant** — `\setmainfont{Calibri Light}` draws plain Calibri → `font-variants`
 			- [ ] **GUI check of the toolbar Variant dropdown** — never clicked in the app; a Light run never looked at on screen → `font-variants`

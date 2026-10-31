@@ -92,7 +92,7 @@ namespace ArctisAurora.Core.UI.Document
                     keptFrom = -1;
                     if (placer == null || !placer.starts.TryGetValue(child, out PageFloats.Group? group)) continue;
                     float inkEnd = previous is BlockControl { Lines: { Count: > 0 } ended } endedBlock && ended[^1].pitch > 0f
-                        ? y - ended[^1].descent + ended[^1].inkDepth + endedBlock.LineSkip : y;
+                        ? y - ended[^1].descent + ended[^1].inkDepth + (group.Allows('H') ? endedBlock.LineSkip : 0f) : y;
                     float textEnd = y;
                     y = placer.Arrive(group, y, inkEnd, out int rewind);
                     if (group.where == PageFloats.Where.Here)
@@ -150,6 +150,14 @@ namespace ArctisAurora.Core.UI.Document
                 if (!atBreak && pageBreak == PageBreak.None && block is { strut: false, Lines: { Count: > 0 } below }
                     && above is { stylingType: not TextStyleType.Rule, strut: false, Lines: { Count: > 0 } over })
                     y += TextMeasurer.Interline(over[^1], below[0], block.LineSkip);
+                else if (!atBreak && pageBreak == PageBreak.None && table is { Axis: > 0f }
+                         && above is { stylingType: not TextStyleType.Rule, strut: false, Lines: { Count: > 0 } ended } && ended[^1].pitch > 0f)
+                {
+                    TextLine last = ended[^1];
+                    float rise = table.AboveAxis();
+                    float distance = last.pitch - last.inkDepth - rise >= 0f ? last.pitch : last.inkDepth + rise + above.LineSkip;
+                    y += distance - last.descent - rise;
+                }
                 else if (!atBreak && afterHere && block?.Lines is { Count: > 0 } opening && opening[0].pitch > 0f)
                     y += (opening[0].pitch >= opening[0].ink ? opening[0].pitch : opening[0].ink + block.LineSkip) - opening[0].ascent;
                 atBreak = afterHere = false;

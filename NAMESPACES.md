@@ -258,6 +258,7 @@ ArctisAurora.Core.UI.Tex -> AuroraEngine/Core/UI/Tex/MathParser.cs
 ArctisAurora.Core.UI.Tex -> AuroraEngine/Core/UI/Tex/MathSymbols.cs
 ArctisAurora.Core.UI.Tex -> AuroraEngine/Core/UI/Tex/TexEditorControl.cs
 ArctisAurora.Core.UI.Tex -> AuroraEngine/Core/UI/Tex/TexLowering.cs
+ArctisAurora.Core.UI.Tex -> AuroraEngine/Core/UI/Tex/TexMathMetrics.cs
 ArctisAurora.Core.UI.Text -> AuroraEngine/Core/UI/Text/EditableLabelControl.cs
 ArctisAurora.Core.UI.Text -> AuroraEngine/Core/UI/Text/FontLibrary.cs
 ArctisAurora.Core.UI.Text -> AuroraEngine/Core/UI/Text/FontSettings.cs
