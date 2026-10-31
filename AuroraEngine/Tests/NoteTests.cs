@@ -328,6 +328,75 @@ namespace ArctisAurora.Tests
         }
 
         // Rewrites one paragraph's text the way another program would: a whole new file.
+        [A_XSDActionDependency("Notes.HeadingFolds", "Test")]
+        private static IEnumerator<int> HeadingFolds(TestContext t)
+        {
+            string path = Path.Combine(Path.GetTempPath(), $"aurora-folds-{Guid.NewGuid():N}.axml");
+            DocumentXml.Save(DocumentXml.Parse(Outline), path);
+            DocumentEditorControl editor = new DocumentEditorControl
+            {
+                horizontalAlignment = HorizontalAlignment.Stretch,
+                verticalAlignment = VerticalAlignment.Stretch
+            };
+            t.Show(editor);
+            editor.LoadPath(path);
+            yield return 2;
+
+            RichTextDocument d = editor.activeDocument;
+            DocumentControl content = null!;
+            foreach (Entity child in editor.children)
+                if (child is DocumentControl found) content = found;
+            BlockControl[] views = new BlockControl[d.blocks.Length];
+            for (int i = 0; i < views.Length; i++)
+                views[i] = (BlockControl)content.ViewOf(d.blocks[i]);
+
+            content.ToggleFold(views[2]);
+            yield return 2;
+            t.Check(views[3].hidden && !views[2].hidden && !views[4].hidden && !views[1].hidden,
+                "a folded H2 hides its text and stops at the next H1");
+
+            content.ToggleFold(views[0]);
+            yield return 2;
+            t.Check(views[1].hidden && views[2].hidden && views[3].hidden && !views[4].hidden,
+                "a folded H1 hides the H2 inside it and stops at the next H1");
+            t.Check(content.AdjacentBlock(views[0], 1) == views[4] && content.AdjacentBlock(views[4], -1) == views[0],
+                "the caret steps over a fold both ways");
+
+            content.SetCaret(views[3], 0);
+            yield return 2;
+            t.Check(!views[0].note.folded && !views[2].note.folded && !views[3].hidden,
+                "a caret moved into a fold opens every fold above it");
+
+            content.ToggleFold(views[0]);
+            yield return 2;
+            d.ChangeBlocks(0, 0, b => b.stylingType = TextStyleType.Text);
+            yield return 2;
+            t.Check(!views[0].note.folded && !views[1].hidden && !views[3].hidden,
+                "a heading turned back into text loses its fold");
+
+            d.ChangeBlocks(0, 0, b => b.stylingType = TextStyleType.Heading1);
+            content.ToggleFold(views[2]);
+            yield return 2;
+            string copy = Path.Combine(Path.GetTempPath(), $"aurora-folds-{Guid.NewGuid():N}.axml");
+            DocumentXml.Save(d, copy);
+            RichTextDocument read = DocumentXml.Load(copy);
+            File.Delete(copy);
+            t.Check(((NoteBlock)read.blocks[2]).folded && !((NoteBlock)read.blocks[0]).folded,
+                "an .axml note writes and reads back which headings are folded");
+
+            content.SetCaret(views[2], views[2].Length);
+            content.SplitBlock();
+            yield return 2;
+            BlockControl? added = d.blocks.Length > 6 ? content.ViewOf(d.blocks[4]) as BlockControl : null;
+            t.Check(added != null && added.stylingType == TextStyleType.Heading2 && added.Length == 0 && content.caretBlock == added
+                && views[2].note.folded && views[3].hidden && !added.hidden,
+                "Enter at a folded heading's end adds an empty heading of its level after the section, still folded");
+
+            t.Show(new StackPanelControl());
+            yield return 2;
+            File.Delete(path);
+        }
+
         private static void WriteOutside(string path, string from, string to)
         {
             XDocument file = XDocument.Load(path);
@@ -409,5 +478,12 @@ namespace ArctisAurora.Tests
                     new XElement("Cell", Block("b")))),
             Block("two"),
             Block("three"));
+
+        // an H1 holding text and an H2 with its own text, then a second H1
+        private static readonly XElement Outline = new XElement("Document",
+            Heading("A", 1), Block("a1"), Heading("B", 2), Block("b1"), Heading("C", 1), Block("c1"));
+
+        private static XElement Heading(string text, int level) =>
+            new XElement("Block", new XAttribute("StylingType", "Heading" + level), new XElement("Run", new XAttribute("Text", text)));
     }
 }

@@ -47,6 +47,9 @@ namespace ArctisAurora.Core.UI.Containers.Workspace
 
         [A_XSDElementProperty("AsXml", "Settings", "Whether the tab showed the file as XML source.")]
         public bool asXml { get; set; }
+
+        [A_XSDElementProperty("Folded", "Settings", "Block indices of a Markdown note's folded headings, comma separated.")]
+        public string folded { get; set; } = "";
     }
 
     // What a SessionWindow may hold: its workspaces, or the panes a record from before workspaces held.

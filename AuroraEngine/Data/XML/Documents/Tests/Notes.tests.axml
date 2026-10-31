@@ -10,4 +10,5 @@
 	<Test Action="Notes.DiskReload"/>
 	<Test Action="Notes.LocalWins"/>
 	<Test Action="Notes.NoNamingPrompt"/>
+	<Test Action="Notes.HeadingFolds"/>
 </TestSuite>

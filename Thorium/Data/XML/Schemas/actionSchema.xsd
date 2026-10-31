@@ -371,6 +371,7 @@
           <xs:enumeration value="Notes.DiskReload" />
           <xs:enumeration value="Notes.LocalWins" />
           <xs:enumeration value="Notes.NoNamingPrompt" />
+          <xs:enumeration value="Notes.HeadingFolds" />
           <xs:enumeration value="Perf.RelayoutLabels" />
           <xs:enumeration value="Perf.TypeLargeNote" />
           <xs:enumeration value="Perf.RewrapLargeNote" />

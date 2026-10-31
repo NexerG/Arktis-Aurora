@@ -21,6 +21,7 @@ using ArctisAurora.EngineWork.Rendering;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using System.Numerics;
+using System.Text;
 
 namespace ArctisAurora.Core.UI.Document
 {
@@ -1266,6 +1267,14 @@ namespace ArctisAurora.Core.UI.Document
 
             view.scrollX = GetScrollOffset().X;
             view.propertiesOpen = content.header is ExpanderControl { expanded: true };
+            if (Kind == FileKind.Markdown)
+            {
+                List<NoteBlock> blocks = content.document.Blocks();
+                StringBuilder folded = new StringBuilder();
+                for (int i = 0; i < blocks.Count; i++)
+                    if (blocks[i].folded) folded.Append(folded.Length > 0 ? "," : "").Append(i);
+                view.folded = folded.ToString();
+            }
             return view;
         }
 
@@ -1277,6 +1286,13 @@ namespace ArctisAurora.Core.UI.Document
             content.Select(new DocumentAddress(view.anchorBlock, view.anchorOffset),
                            new DocumentAddress(view.caretBlock, view.caretOffset));
             if (content.header is ExpanderControl expander) expander.expanded = view.propertiesOpen;
+            if (Kind == FileKind.Markdown && view.folded.Length > 0)
+            {
+                List<NoteBlock> blocks = content.document.Blocks();
+                foreach (string index in view.folded.Split(','))
+                    if (int.TryParse(index, out int i) && i >= 0 && i < blocks.Count) blocks[i].folded = true;
+                content.FoldsChanged();
+            }
 
             pendingView = view;
             InvalidateArrange();

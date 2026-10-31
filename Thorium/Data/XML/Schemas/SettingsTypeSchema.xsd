@@ -389,6 +389,7 @@
     <xs:attribute name="ScrollX" type="xs:float" />
     <xs:attribute name="PropertiesOpen" type="xs:boolean" />
     <xs:attribute name="AsXml" type="xs:boolean" />
+    <xs:attribute name="Folded" type="xs:string" />
   </xs:attributeGroup>
   <xs:element name="SessionTab" type="types:SessionTab" />
   <xs:complexType name="SessionTab">

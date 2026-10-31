@@ -328,6 +328,36 @@ record one `BlockStateEdit` if anything changed
 
 Tab and Shift+Tab are `Text.Indent` and `Text.Outdent` in Thorium's input map.
 
+## Heading folds — `DocumentControl`
+
+Every top-level heading with content under it has a chevron in the left page margin, and a press folds or opens its section. A section is everything after the heading up to the next heading of the same or higher level, tables, tables of contents and sealed blocks included. The flag is `NoteBlock.folded`, written as `<Block Folded="true">` on headings only; a Markdown note cannot hold it, so its folds live in the tab session (`SessionTab.folded`). Folded blocks are hidden and skipped by pagination, hit-testing and caret movement, and the caret never sits in hidden text: placing it inside a fold opens the folds above it.
+
+#### Apply Folds ()
+
+```
+if the caret sits in a folded-away block
+	open the folds above it
+for each top-level node
+	if the node is a block that is no longer a heading
+		clear its folded flag
+	if the node lies inside a folded section
+		hide the node
+	else
+		show the node
+assign a chevron to every heading with a section
+```
+
+#### Split Block — on a folded heading
+
+```
+if the caret is at the end of a folded heading and its section ends in a plain block
+	split at the end of the section's last block
+	make the new block a heading of the same level
+	leave the fold closed and put the caret in the new heading
+else
+	open the fold and split normally
+```
+
 ## Encryption
 
 A note can be encrypted as a whole file with a password, or have runs of blocks sealed under their own password; a locked seal is a single `NoteSealed` node shown as an [ENCRYPTED] button and stored as a `<Sealed>` segment. See [[ENCRYPTION]].

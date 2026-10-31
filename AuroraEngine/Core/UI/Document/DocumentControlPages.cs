@@ -87,6 +87,7 @@ namespace ArctisAurora.Core.UI.Document
                 TableControl table = block == null ? TableIn(child) : null;
                 SealedControl locked = block == null && table == null ? child as SealedControl : null;
                 if (block == null && table == null && locked == null) continue;
+                if (((Control)child).hidden) continue;
                 if (IsInsert(child))
                 {
                     keptFrom = -1;

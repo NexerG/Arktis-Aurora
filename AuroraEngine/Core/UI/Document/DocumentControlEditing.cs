@@ -237,6 +237,7 @@ namespace ArctisAurora.Core.UI.Document
                 return;
             }
             if (TypeMarkdownLine() || EndCodeBlock()) return;
+            if (caretBlock.note.folded && SplitAfterFold()) return;
             SplitBlockAt(AddressOf(caretBlock, caretOffset));
         }
 
@@ -607,6 +608,8 @@ namespace ArctisAurora.Core.UI.Document
                     break;
             }
             RefreshTocs(change);
+            if (change.kind is NoteChangeKind.Kind or NoteChangeKind.Inserted or NoteChangeKind.Removed or NoteChangeKind.Table or NoteChangeKind.Nodes)
+                FoldsChanged();
 
             if (remap)
             {

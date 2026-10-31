@@ -305,6 +305,7 @@ namespace ArctisAurora.Core.UI.Document
         public void SetCaret(BlockControl block, int offset, bool extend = false)
         {
             if (block == null) return;
+            if (IsFoldedAway(block) && UnfoldAround(block)) FoldsChanged();
 
             if (block != caretBlock)
             {
@@ -485,7 +486,7 @@ namespace ArctisAurora.Core.UI.Document
             foreach (BlockControl candidate in Blocks())
             {
                 IReadOnlyList<TextLine> lines = candidate.Lines;
-                if (lines == null) continue;
+                if (lines == null || IsFoldedAway(candidate)) continue;
 
                 Vector2 origin = candidate.TextOrigin;
 
@@ -538,6 +539,7 @@ namespace ArctisAurora.Core.UI.Document
             if (index < 0) return null;
 
             int adjacent = index + direction;
+            while (adjacent >= 0 && adjacent < blocks.Count && IsFoldedAway(blocks[adjacent])) adjacent += direction;
             return adjacent >= 0 && adjacent < blocks.Count ? blocks[adjacent] : null;
         }
 
@@ -700,7 +702,7 @@ namespace ArctisAurora.Core.UI.Document
                     block.selectedTo = i == to.block ? to.offset : block.Length;
                     selectedBlocks.Add(block);
 
-                    used = HighlightBlock(block, block.selectedFrom, block.selectedTo, used);
+                    if (!IsFoldedAway(block)) used = HighlightBlock(block, block.selectedFrom, block.selectedTo, used);
                 }
             }
 
@@ -763,10 +765,224 @@ namespace ArctisAurora.Core.UI.Document
         }
         #endregion
 
+        #region ---- folds ----
+        // the chevron beside each heading with a section, its design size and gap to the text; folds are stale until the next measure
+        private readonly List<FoldChevron> chevrons = new List<FoldChevron>();
+        private const float chevronSize = 14f;
+        private const float chevronGap = 6f;
+        private bool foldsDirty = true;
+
+        // Folds or opens a heading's section; folding moves a caret inside it onto the heading.
+        public void ToggleFold(BlockControl heading)
+        {
+            int index = children.IndexOf(heading);
+            if (index < 0 || HeadingLevel(heading) == 0) return;
+
+            heading.note.folded = !heading.note.folded;
+            if (heading.note.folded && caretBlock != null && TopIndex(caretBlock) is int at && at > index && at < SectionEnd(index))
+                SetCaret(heading, heading.Length);
+            FoldEdited();
+            FoldsChanged();
+        }
+
+        internal void FoldsChanged()
+        {
+            foldsDirty = true;
+            InvalidateLayout();
+        }
+
+        // Hides every folded section, opening any that holds the caret, and gives each shown heading with a section its chevron.
+        private void ApplyFolds()
+        {
+            foldsDirty = false;
+            if (caretBlock != null) UnfoldAround(caretBlock);
+
+            int used = 0;
+            int hiding = 0;
+            BlockControl? open = null;
+            int openLevel = 0;
+            for (int i = 0; i < children.Count; i++)
+            {
+                Entity child = children[i];
+                if (NodeOf(child) == null || IsInsert(child)) continue;
+
+                int level = HeadingLevel(child);
+                if (open != null && (level == 0 || level > openLevel)) used = ShowChevron(open, used);
+                open = null;
+                if (level == 0 && child is BlockControl { note.folded: true } text) text.note.folded = false;
+
+                if (level > 0 && level <= hiding) hiding = 0;
+                Control view = (Control)child;
+                if (hiding > 0)
+                {
+                    view.Hide();
+                    continue;
+                }
+                view.Show();
+                if (level == 0) continue;
+
+                open = (BlockControl)child;
+                openLevel = level;
+                if (open.note.folded) hiding = level;
+            }
+
+            for (int i = chevrons.Count - 1; i >= used; i--)
+            {
+                chevrons[i].Destroy();
+                chevrons.RemoveAt(i);
+            }
+        }
+
+        private int ShowChevron(BlockControl heading, int used)
+        {
+            if (used == chevrons.Count)
+            {
+                FoldChevron added = new FoldChevron(this);
+                chevrons.Add(added);
+                AddChild(added);
+            }
+
+            FoldChevron chevron = chevrons[used];
+            chevron.heading = heading;
+            string icon = heading.note.folded ? "chevron-right" : "chevron-down";
+            if (chevron.iconName != icon) chevron.iconName = icon;
+            return used + 1;
+        }
+
+        // Each chevron in the margin left of its heading, centred on the first line.
+        private void ArrangeChevrons(float textX)
+        {
+            foreach (FoldChevron chevron in chevrons)
+            {
+                BlockControl heading = chevron.heading;
+                Vector2 size = chevron.DesiredSize;
+                if (heading.Lines is not { Count: > 0 } lines)
+                {
+                    chevron.Arrange(LayoutRect.Empty);
+                    continue;
+                }
+                TextLine first = lines[0];
+                chevron.Arrange(new LayoutRect(textX - chevronGap * zoom - size.X, heading.TextOrigin.Y + first.top + (first.height - size.Y) * 0.5f, size.X, size.Y));
+            }
+        }
+
+        // Opens every folded heading above a block whose section holds it; true when one opened.
+        private bool UnfoldAround(BlockControl block)
+        {
+            int index = TopIndex(block);
+            if (index < 0) return false;
+
+            bool opened = false;
+            int threshold = HeadingLevel(children[index]);
+            if (threshold == 0) threshold = 7;
+            for (int i = index - 1; i >= 0 && threshold > 1; i--)
+            {
+                int level = HeadingLevel(children[i]);
+                if (level == 0 || level >= threshold) continue;
+
+                threshold = level;
+                NoteBlock heading = ((BlockControl)children[i]).note;
+                if (!heading.folded) continue;
+                heading.folded = false;
+                opened = true;
+            }
+            if (opened) FoldEdited();
+            return opened;
+        }
+
+        // Enter at a folded heading's end: a heading of its level after the section; false leaves a plain split.
+        private bool SplitAfterFold()
+        {
+            BlockControl heading = caretBlock;
+            int index = children.IndexOf(heading);
+            int level = HeadingLevel(heading);
+            if (index < 0 || level == 0) return false;
+
+            int end = SectionEnd(index);
+            Entity? last = null;
+            for (int i = end - 1; i > index && last == null; i--)
+                if (NodeOf(children[i]) != null && !IsInsert(children[i])) last = children[i];
+            if (last == null) return false;
+            if (caretOffset < heading.Length || last is not BlockControl block)
+            {
+                heading.note.folded = false;
+                FoldEdited();
+                FoldsChanged();
+                return false;
+            }
+
+            SplitBlockAt(AddressOf(block, block.Length));
+            int added = Blocks().IndexOf(block) + 1;
+            TextStyleType styling = heading.stylingType;
+            SetBlockList(added, b =>
+            {
+                b.stylingType = styling;
+                b.alignment = TextAlignment.Left;
+                b.language = null;
+                b.listKind = ListKind.None;
+                b.listLevel = 0;
+                b.listMarker = null;
+                b.listStart = null;
+                b.isChecked = false;
+            });
+            SetCaret(Blocks()[added], 0);
+            return true;
+        }
+
+        // The first child after a heading that ends its section.
+        private int SectionEnd(int heading)
+        {
+            int level = HeadingLevel(children[heading]);
+            for (int i = heading + 1; i < children.Count; i++)
+                if (HeadingLevel(children[i]) is int next && next > 0 && next <= level) return i;
+            return children.Count;
+        }
+
+        // A fold lives in an .axml note's file; elsewhere only in the tab's session.
+        private void FoldEdited()
+        {
+            if (session != null && FileTypes.KindOf(session.path) == FileKind.Note) session.MarkDirty();
+        }
+
+        internal bool IsFoldedAway(Control control)
+        {
+            for (Control? at = control; at != null && at != this; at = at.parent as Control)
+                if (at.hidden) return true;
+            return false;
+        }
+
+        // The index among the children of the entry holding a block, table cells included.
+        private int TopIndex(Control control)
+        {
+            Entity at = control;
+            while (at != null && at.parent != this) at = at.parent;
+            return at == null ? -1 : children.IndexOf(at);
+        }
+
+        private static int HeadingLevel(Entity child) =>
+            child is BlockControl { insert: null } block && NoteHeadings.IsHeading(block.stylingType) ? block.stylingType - TextStyleType.Heading1 + 1 : 0;
+
+        // A heading's fold toggle.
+        public sealed class FoldChevron : IconControl
+        {
+            private readonly DocumentControl document;
+            internal BlockControl heading = null!;
+
+            internal FoldChevron(DocumentControl document) => this.document = document;
+
+            public override bool OnPointerPress(PointerEvent e)
+            {
+                document.ToggleFold(heading);
+                return true;
+            }
+        }
+        #endregion
+
         #region ---- layout ----
         protected override Vector2 MeasureCore(Vector2 availableSize)
         {
             if (listsDirty) RenumberLists();
+            if (foldsDirty) ApplyFolds();
 
             Vector2 paper = fitWidth && float.IsFinite(availableSize.X) ? new Vector2(availableSize.X, page.SizePx().Y * zoom) : page.SizePx() * zoom;
             if (isMeasureDirty || paper != measuredPaper || LayoutEngine.NoSkip)
@@ -797,6 +1013,7 @@ namespace ArctisAurora.Core.UI.Document
                     }
                     else if (child is SealedControl locked) item = locked;
                     else continue;
+                    if (item.hidden) continue;
 
                     item.Measure(new Vector2(textWidth, float.MaxValue));
                     if (item is BlockControl { stylingType: TextStyleType.Code, codeWrap: false } code)
@@ -833,6 +1050,11 @@ namespace ArctisAurora.Core.UI.Document
             }
 
             caret?.Measure(availableSize);
+            foreach (FoldChevron chevron in chevrons)
+            {
+                chevron.preferredWidth = chevron.preferredHeight = chevronSize * zoom;
+                chevron.Measure(availableSize);
+            }
             foreach (PanelControl box in highlights)
                 box.Measure(availableSize);
             foreach (PanelControl sheet in pages)
@@ -861,7 +1083,7 @@ namespace ArctisAurora.Core.UI.Document
             int index = 0;
             foreach (Entity child in children)
             {
-                if ((child is not BlockControl && child is not SealedControl && TableIn(child) == null) || IsInsert(child) || index >= blockTops.Count) continue;
+                if ((child is not BlockControl && child is not SealedControl && TableIn(child) == null) || IsInsert(child) || ((Control)child).hidden || index >= blockTops.Count) continue;
 
                 float width = child is BlockControl { stylingType: TextStyleType.Code, codeWrap: false } code ? CodeWidth(code, textWidth)
                     : child is SealedControl locked ? MathF.Min(textWidth, locked.DesiredSize.X) : textWidth;
@@ -870,6 +1092,7 @@ namespace ArctisAurora.Core.UI.Document
             }
             for (int i = 0; i < insertControls.Count; i++)
                 insertControls[i].Arrange(new LayoutRect(textX, top + insertTops[i], textWidth, insertHeights[i]));
+            ArrangeChevrons(textX);
             Profiling.Zone.End("Document.ArrangeBlocks");
 
             // after the blocks, so every line's geometry is this frame's
@@ -947,6 +1170,9 @@ namespace ArctisAurora.Core.UI.Document
             }
             for (int i = 0; i < insertControls.Count; i++)
                 if (insertTops[i] < to && insertTops[i] + insertHeights[i] > from) walked += UIEngine.Collect(insertControls[i], z);
+            if (UIEngine.recorder == null)
+                foreach (FoldChevron chevron in chevrons)
+                    walked += UIEngine.Collect(chevron, z);
 
             foreach (FloatingPicture view in frontViews)
                 walked += UIEngine.Collect(view, z);

@@ -98,6 +98,9 @@ namespace ArctisAurora.Core.UI.Notes
         // TeX's \strut on every line: at least 0.7 of the line box above the baseline and 0.3 below
         public bool strut;
 
+        // a heading whose section is folded away
+        public bool folded;
+
         // the number this item restarts its list at; null counts on from the item above
         public int? listStart;
 

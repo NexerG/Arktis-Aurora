@@ -174,6 +174,7 @@ namespace ArctisAurora.Core.UI.Document
             block.keepWithNext = (bool?)element.Attribute("KeepWithNext") ?? false;
             block.keepTogether = (bool?)element.Attribute("KeepTogether") ?? false;
             block.strut = (bool?)element.Attribute("Strut") ?? false;
+            block.folded = (bool?)element.Attribute("Folded") ?? false;
             block.listStart = (int?)element.Attribute("Start");
 
             foreach (XElement child in element.Elements())
@@ -472,6 +473,8 @@ namespace ArctisAurora.Core.UI.Document
                 element.SetAttributeValue("KeepTogether", "true");
             if (block.strut)
                 element.SetAttributeValue("Strut", "true");
+            if (block.folded && NoteHeadings.IsHeading(block.stylingType))
+                element.SetAttributeValue("Folded", "true");
             if (block.listStart.HasValue)
                 element.SetAttributeValue("Start", block.listStart.Value);
 
