@@ -94,7 +94,7 @@ namespace ArctisAurora.Core.Filing.Serialization
         }
 
         // Union of files across all mounts under relativeDir; first mount wins on name clash.
-        public static IEnumerable<string> EnumerateAll(string relativeDir, string pattern)
+        public static string[] EnumerateAll(string relativeDir, string pattern)
         {
             HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             List<string> result = new List<string>();
@@ -106,7 +106,7 @@ namespace ArctisAurora.Core.Filing.Serialization
                         result.Add(f);
                 }
             }
-            return result;
+            return result.ToArray();
         }
     }
 }

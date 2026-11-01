@@ -60,23 +60,24 @@ namespace ArctisAurora.EngineWork.Rendering.Helpers
             ClampToDevice(_image);
 
             // mip chain, each level box-filtered from the one above in linear light
-            List<Image<Rgba32>> levels = new List<Image<Rgba32>> { _image };
-            while (mipmaps && (levels[^1].Width > 1 || levels[^1].Height > 1))
+            Image<Rgba32>[] levels = new Image<Rgba32>[mipmaps ? BitOperations.Log2((uint)Math.Max(_image.Width, _image.Height)) + 1 : 1];
+            levels[0] = _image;
+            for (int level = 1; level < levels.Length; level++)
             {
-                Size half = new Size(Math.Max(1, levels[^1].Width / 2), Math.Max(1, levels[^1].Height / 2));
-                levels.Add(levels[^1].Clone(c => c.Resize(new ResizeOptions
+                Size half = new Size(Math.Max(1, levels[level - 1].Width / 2), Math.Max(1, levels[level - 1].Height / 2));
+                levels[level] = levels[level - 1].Clone(c => c.Resize(new ResizeOptions
                 {
                     Size = half,
                     Mode = ResizeMode.Stretch,
                     Sampler = KnownResamplers.Box,
                     Compand = true
-                })));
+                }));
             }
 
             int bytesPerPixel = _image.PixelType.BitsPerPixel / 8;
-            BufferImageCopy[] regions = new BufferImageCopy[levels.Count];
+            BufferImageCopy[] regions = new BufferImageCopy[levels.Length];
             ulong _imageSize = 0;
-            for (int i = 0; i < levels.Count; i++)
+            for (int i = 0; i < levels.Length; i++)
             {
                 regions[i] = new BufferImageCopy
                 {
@@ -93,18 +94,18 @@ namespace ArctisAurora.EngineWork.Rendering.Helpers
 
             void* _data;
             Renderer.vk.MapMemory(Renderer.logicalDevice, _stagingBufferMemory, 0, _imageSize, 0, &_data);
-            for (int i = 0; i < levels.Count; i++)
+            for (int i = 0; i < levels.Length; i++)
             {
                 int levelSize = levels[i].Width * levels[i].Height * bytesPerPixel;
                 levels[i].CopyPixelDataTo(new Span<byte>((byte*)_data + regions[i].BufferOffset, levelSize));
             }
             Renderer.vk.UnmapMemory(Renderer.logicalDevice, _stagingBufferMemory);
 
-            CreateImage((uint)_image.Width, (uint)_image.Height, imageFormat, ImageTiling.Optimal, ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit, MemoryPropertyFlags.DeviceLocalBit, ref _textureImage, ref _textureBufferMemory, (uint)levels.Count);
+            CreateImage((uint)_image.Width, (uint)_image.Height, imageFormat, ImageTiling.Optimal, ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit, MemoryPropertyFlags.DeviceLocalBit, ref _textureImage, ref _textureBufferMemory, (uint)levels.Length);
 
             UploadTexture(_textureImage, _stagingBuffer, regions, ref queue, ref cPool);
 
-            for (int i = 1; i < levels.Count; i++)
+            for (int i = 1; i < levels.Length; i++)
                 levels[i].Dispose();
 
             Renderer.vk.DestroyBuffer(Renderer.logicalDevice, _stagingBuffer, null);

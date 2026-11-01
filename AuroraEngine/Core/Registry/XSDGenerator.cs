@@ -115,12 +115,6 @@ namespace ArctisAurora.Core.Registry
 
         public static Type? FindType(string typeName)
         {
-            var type = Type.GetType(typeName);
-            if (type != null)
-            {
-                return type;
-            }
-
             if (xsdTypes == null)
             {
                 xsdTypes = new Dictionary<string, Type>();
@@ -135,7 +129,7 @@ namespace ArctisAurora.Core.Registry
                 }
             }
 
-            return xsdTypes.TryGetValue(typeName, out Type? found) ? found : null;
+            return xsdTypes.TryGetValue(typeName, out Type? found) ? found : Type.GetType(typeName);
         }
     }
 

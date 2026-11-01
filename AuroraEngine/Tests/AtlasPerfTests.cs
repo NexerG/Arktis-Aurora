@@ -25,7 +25,7 @@ namespace ArctisAurora.Tests
 
             string root = Path.Combine(Path.GetTempPath(), "AuroraAtlasBake");
             if (Directory.Exists(root)) Directory.Delete(root, true);
-            string[] svgs = VirtualFileSystem.EnumerateAll("Icons/default/svg", "*.svg").ToArray();
+            string[] svgs = VirtualFileSystem.EnumerateAll("Icons/default/svg", "*.svg");
             Dictionary<string, string> charsets = ReadCharsets();
 
             IconSet.GenerateIconAtlas("default", svgs, bakeSize, root);
