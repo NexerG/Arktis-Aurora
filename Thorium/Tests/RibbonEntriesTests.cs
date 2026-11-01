@@ -10,8 +10,8 @@ using ArctisAurora.Core.UI.Document;
 using ArctisAurora.Core.UI.Notes;
 using ArctisAurora.Core.UI.Sheets;
 using ArctisAurora.Core.UI.Text;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using System.Runtime.InteropServices;
+using Image = Arctis.Imaging.Image;
 
 namespace Thorium.Tests
 {
@@ -79,8 +79,9 @@ namespace Thorium.Tests
         {
             string folder = TempFolder();
             string source = Path.Combine(TempFolder(), "photo.png");
-            using (Image<Rgba32> image = new Image<Rgba32>(30, 20, new Rgba32(40, 120, 200)))
-                image.SaveAsPng(source);
+            Image image = new Image(30, 20);
+            MemoryMarshal.Cast<byte, uint>(image.Pixels.AsSpan()).Fill(0xFFC87828u);
+            image.SavePng(source);
 
             DocumentEditorControl editor = ShowNote(t, Path.Combine(folder, "pictures.axml"));
             yield return 2;

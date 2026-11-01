@@ -5,9 +5,7 @@ using ArctisAurora.Core.Registry;
 using ArctisAurora.Core.Threading;
 using ArctisAurora.Core.UI;
 using ArctisAurora.EngineWork;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
+using ArctisAurora.Core.Imaging;
 using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
@@ -269,7 +267,7 @@ namespace ArctisAurora.Core.Testing
         }
 
         // Compares a shot with its golden; writes the actual and a diff into the test's folder, or the golden under --test-approve.
-        private static void CompareShot(TestContext.Shot shot, Image<Rgba32>? frame, string? error, string action, string goldens,
+        private static void CompareShot(TestContext.Shot shot, Arctis.Imaging.Image? frame, string? error, string action, string goldens,
             string directory, List<(string message, string file, int line)> failures)
         {
             shot.golden = Path.Combine(goldens, $"{action}.{shot.name}.png");
@@ -280,102 +278,96 @@ namespace ArctisAurora.Core.Testing
                 return;
             }
 
-            using (frame)
+            if (shot.region != null)
             {
-                if (shot.region != null)
+                LayoutRect r = shot.region.arrangedRect;
+                Silk.NET.Vulkan.Extent2D size = new((uint)frame.Width, (uint)frame.Height);
+                WindowRoot root = Engine.primary.ui.uiRoot;
+                Vector2 a = root.ToWindowSpace(new Vector2(r.x, r.y), size);
+                Vector2 b = root.ToWindowSpace(new Vector2(r.x + r.width, r.y + r.height), size);
+                int left = Math.Clamp((int)MathF.Floor(a.X), 0, frame.Width), top = Math.Clamp((int)MathF.Floor(a.Y), 0, frame.Height);
+                int right = Math.Clamp((int)MathF.Ceiling(b.X), 0, frame.Width), bottom = Math.Clamp((int)MathF.Ceiling(b.Y), 0, frame.Height);
+                if (right <= left || bottom <= top)
                 {
-                    LayoutRect r = shot.region.arrangedRect;
-                    Silk.NET.Vulkan.Extent2D size = new((uint)frame.Width, (uint)frame.Height);
-                    WindowRoot root = Engine.primary.ui.uiRoot;
-                    Vector2 a = root.ToWindowSpace(new Vector2(r.x, r.y), size);
-                    Vector2 b = root.ToWindowSpace(new Vector2(r.x + r.width, r.y + r.height), size);
-                    Rectangle crop = Rectangle.FromLTRB(
-                        Math.Clamp((int)MathF.Floor(a.X), 0, frame.Width), Math.Clamp((int)MathF.Floor(a.Y), 0, frame.Height),
-                        Math.Clamp((int)MathF.Ceiling(b.X), 0, frame.Width), Math.Clamp((int)MathF.Ceiling(b.Y), 0, frame.Height));
-                    if (crop.Width == 0 || crop.Height == 0)
-                    {
-                        shot.result = "Fail";
-                        failures.Add(($"golden {shot.name}: the region is off screen or empty", shot.file, shot.line));
-                        return;
-                    }
-                    frame.Mutate(c => c.Crop(crop));
-                }
-
-                string actual = Path.Combine(action, $"{shot.name}.actual.png");
-                string diff = Path.Combine(action, $"{shot.name}.diff.png");
-                string? mismatch = null;
-                Image<Rgba32>? diffImage = null;
-                if (DataFiles.Exists(shot.golden))
-                {
-                    using Stream goldenStream = DataFiles.Open(shot.golden);
-                    using Image<Rgba32> expected = Image.Load<Rgba32>(goldenStream);
-                    mismatch = Compare(expected, frame, out diffImage);
-                    if (mismatch == null)
-                    {
-                        shot.result = "Pass";
-                        return;
-                    }
-                }
-
-                if (_approve)
-                {
-                    Directory.CreateDirectory(goldens);
-                    frame.SaveAsPng(shot.golden);
-                    diffImage?.Dispose();
-                    shot.result = "Approved";
-                    Log.Info($"APPROVED {shot.golden}");
+                    shot.result = "Fail";
+                    failures.Add(($"golden {shot.name}: the region is off screen or empty", shot.file, shot.line));
                     return;
                 }
+                frame = frame.Crop(left, top, right - left, bottom - top);
+            }
 
-                Directory.CreateDirectory(directory);
-                frame.SaveAsPng(Path.Combine(RunDirectory(), actual));
-                shot.actual = actual;
+            string actual = Path.Combine(action, $"{shot.name}.actual.png");
+            string diff = Path.Combine(action, $"{shot.name}.diff.png");
+            string? mismatch = null;
+            Arctis.Imaging.Image? diffImage = null;
+            if (DataFiles.Exists(shot.golden))
+            {
+                Arctis.Imaging.Image expected;
+                using (Stream goldenStream = DataFiles.Open(shot.golden))
+                    expected = Arctis.Imaging.Image.Load(goldenStream, Arctis.Imaging.PixelLayout.RGBA8, ImageFiles.Limits);
+                mismatch = Compare(expected, frame, out diffImage);
                 if (mismatch == null)
                 {
-                    shot.result = "New";
+                    shot.result = "Pass";
                     return;
                 }
-
-                shot.result = "Fail";
-                failures.Add(($"golden {shot.name}: {mismatch}", shot.file, shot.line));
-                if (diffImage == null) return;
-                using (diffImage) diffImage.SaveAsPng(Path.Combine(RunDirectory(), diff));
-                shot.diff = diff;
             }
+
+            if (_approve)
+            {
+                Directory.CreateDirectory(goldens);
+                frame.SavePng(shot.golden);
+                shot.result = "Approved";
+                Log.Info($"APPROVED {shot.golden}");
+                return;
+            }
+
+            Directory.CreateDirectory(directory);
+            frame.SavePng(Path.Combine(RunDirectory(), actual));
+            shot.actual = actual;
+            if (mismatch == null)
+            {
+                shot.result = "New";
+                return;
+            }
+
+            shot.result = "Fail";
+            failures.Add(($"golden {shot.name}: {mismatch}", shot.file, shot.line));
+            if (diffImage == null) return;
+            diffImage.SavePng(Path.Combine(RunDirectory(), diff));
+            shot.diff = diff;
         }
 
         // Null when the images match exactly; otherwise what differs, and a diff image when the sizes agree.
-        private static string? Compare(Image<Rgba32> expected, Image<Rgba32> actual, out Image<Rgba32>? diff)
+        private static string? Compare(Arctis.Imaging.Image expected, Arctis.Imaging.Image actual, out Arctis.Imaging.Image? diff)
         {
             diff = null;
             if (expected.Width != actual.Width || expected.Height != actual.Height)
                 return $"size {actual.Width}x{actual.Height}, golden {expected.Width}x{expected.Height}";
 
-            Image<Rgba32> image = new Image<Rgba32>(expected.Width, expected.Height);
+            Arctis.Imaging.Image image = new Arctis.Imaging.Image(expected.Width, expected.Height);
+            byte[] e = expected.Pixels, a = actual.Pixels, d = image.Pixels;
             int differ = 0, maxDelta = 0;
-            for (int y = 0; y < expected.Height; y++)
-                for (int x = 0; x < expected.Width; x++)
-                {
-                    Rgba32 e = expected[x, y], a = actual[x, y];
-                    int delta = Math.Max(Math.Max(Math.Abs(e.R - a.R), Math.Abs(e.G - a.G)), Math.Abs(e.B - a.B));
-                    if (delta > 0)
-                    {
-                        differ++;
-                        maxDelta = Math.Max(maxDelta, delta);
-                        image[x, y] = new Rgba32(255, 0, 0);
-                    }
-                    else
-                    {
-                        byte grey = (byte)(170 + (0.299f * e.R + 0.587f * e.G + 0.114f * e.B) * 0.3f);
-                        image[x, y] = new Rgba32(grey, grey, grey);
-                    }
-                }
-
-            if (differ == 0)
+            for (int i = 0; i < e.Length; i += 4)
             {
-                image.Dispose();
-                return null;
+                int delta = Math.Max(Math.Max(Math.Abs(e[i] - a[i]), Math.Abs(e[i + 1] - a[i + 1])), Math.Abs(e[i + 2] - a[i + 2]));
+                if (delta > 0)
+                {
+                    differ++;
+                    maxDelta = Math.Max(maxDelta, delta);
+                    d[i] = 255;
+                }
+                else
+                {
+                    byte grey = (byte)(170 + (0.299f * e[i] + 0.587f * e[i + 1] + 0.114f * e[i + 2]) * 0.3f);
+                    d[i] = grey;
+                    d[i + 1] = grey;
+                    d[i + 2] = grey;
+                }
+                d[i + 3] = 255;
             }
+
+            if (differ == 0) return null;
             diff = image;
             return $"{differ} px differ, max channel delta {maxDelta}";
         }
@@ -522,7 +514,7 @@ namespace ArctisAurora.Core.Testing
                 }
                 if (_context.pendingShot != null)
                 {
-                    if (!ScreenReadback.TryTake(Engine.primary, out Image<Rgba32>? frame, out string? error)) return;
+                    if (!ScreenReadback.TryTake(Engine.primary, out Arctis.Imaging.Image? frame, out string? error)) return;
                     TestContext.Shot shot = _context.pendingShot;
                     _context.pendingShot = null;
                     Engine.clockHeld = false;

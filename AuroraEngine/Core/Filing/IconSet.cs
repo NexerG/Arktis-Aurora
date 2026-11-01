@@ -1,7 +1,6 @@
 using ArctisAurora.Core.Filing.Serialization;
 using ArctisAurora.Core.Generators;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using Image = Arctis.Imaging.Image;
 
 namespace ArctisAurora.Core.Filing
 {
@@ -75,7 +74,7 @@ namespace ArctisAurora.Core.Filing
             Diagnostics.Profiling.Zone.End("Atlas.WriteMeta");
 
             int iconsPerAxis = Math.Max(1, (int)Math.Ceiling(MathF.Sqrt(icons.Count)));
-            Image<Rgba32> atlas = new Image<Rgba32>(perIconSize * iconsPerAxis, perIconSize * iconsPerAxis);
+            Image atlas = new Image(perIconSize * iconsPerAxis, perIconSize * iconsPerAxis);
             Diagnostics.Profiling.Zone.Start("Atlas.Cells");
             for (int i = 0; i < icons.Count; i++)
             {
@@ -86,7 +85,7 @@ namespace ArctisAurora.Core.Filing
             Diagnostics.Profiling.Zone.End("Atlas.Cells");
 
             Diagnostics.Profiling.Zone.Start("Atlas.SavePng");
-            atlas.Save(Path.Combine(dir, $"{setName}_atlas.png"));
+            atlas.SavePng(Path.Combine(dir, $"{setName}_atlas.png"));
             Diagnostics.Profiling.Zone.End("Atlas.SavePng");
             Log.Info($"icon set '{setName}': {icons.Count} icons at {perIconSize}px.");
         }

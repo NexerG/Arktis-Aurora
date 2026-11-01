@@ -4,8 +4,8 @@ using ArctisAurora.Core.Filing.Serialization;
 using ArctisAurora.Core.Pdf;
 using ArctisAurora.Core.Registry.Assets;
 using ArctisAurora.Core.UI.Notes;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using ArctisAurora.Core.Imaging;
+using Arctis.Imaging;
 using System.Numerics;
 using System.Text;
 using System.Xml.Linq;
@@ -280,9 +280,9 @@ namespace ArctisAurora.Core.UI.Document
                 {
                     string extension = Path.GetExtension(path).ToLowerInvariant();
                     byte[] bytes = VaultFiles.ReadBytes(path);
-                    ImageInfo info = SixLabors.ImageSharp.Image.Identify(bytes);
-                    int bits = info.PixelType.BitsPerPixel;
-                    if (extension is ".jpg" or ".jpeg" && bits is 24 or 8)
+                    bool identified = ImageCodec.TryIdentify(bytes, out ImageHeader info);
+                    int bits = info.BitsPerPixel;
+                    if (identified && info.Format == ImageFormat.Jpeg && extension is ".jpg" or ".jpeg" && bits is 24 or 8)
                         id = pdf.AddStream($"/Type /XObject /Subtype /Image /Width {info.Width} /Height {info.Height} " +
                                            $"/ColorSpace /{(bits == 8 ? "DeviceGray" : "DeviceRGB")} /BitsPerComponent 8 /Filter /DCTDecode",
                                            bytes, false);
@@ -300,27 +300,20 @@ namespace ArctisAurora.Core.UI.Document
 
             private int Decoded(byte[] bytes)
             {
-                using Image<Rgba32> image = SixLabors.ImageSharp.Image.Load<Rgba32>(bytes);
+                Arctis.Imaging.Image image = ImageFiles.Load(bytes);
                 int width = image.Width, height = image.Height;
+                byte[] pixels = image.Pixels;
                 byte[] rgb = new byte[width * height * 3];
                 byte[] alpha = new byte[width * height];
                 bool translucent = false;
-                image.ProcessPixelRows(rows =>
+                for (int i = 0; i < alpha.Length; i++)
                 {
-                    for (int y = 0; y < rows.Height; y++)
-                    {
-                        Span<Rgba32> row = rows.GetRowSpan(y);
-                        for (int x = 0; x < row.Length; x++)
-                        {
-                            int i = y * width + x;
-                            rgb[i * 3] = row[x].R;
-                            rgb[i * 3 + 1] = row[x].G;
-                            rgb[i * 3 + 2] = row[x].B;
-                            alpha[i] = row[x].A;
-                            translucent |= row[x].A != 255;
-                        }
-                    }
-                });
+                    rgb[i * 3] = pixels[i * 4];
+                    rgb[i * 3 + 1] = pixels[i * 4 + 1];
+                    rgb[i * 3 + 2] = pixels[i * 4 + 2];
+                    alpha[i] = pixels[i * 4 + 3];
+                    translucent |= pixels[i * 4 + 3] != 255;
+                }
 
                 string mask = translucent
                     ? $" /SMask {pdf.AddStream($"/Type /XObject /Subtype /Image /Width {width} /Height {height} /ColorSpace /DeviceGray /BitsPerComponent 8", alpha)} 0 R"

@@ -4,10 +4,10 @@ using ArctisAurora.Core.Registry;
 using ArctisAurora.EngineWork.Registry;
 using ArctisAurora.EngineWork.Rendering;
 using ArctisAurora.EngineWork.Rendering.Helpers;
+using ArctisAurora.Core.Imaging;
 using Silk.NET.Vulkan;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using Image = SixLabors.ImageSharp.Image;
+using System.Buffers;
+using Image = Arctis.Imaging.Image;
 
 namespace ArctisAurora.Core.Registry.Assets
 {
@@ -20,7 +20,8 @@ namespace ArctisAurora.Core.Registry.Assets
         internal ImageView textureImageView;
         internal DeviceMemory _textureBufferMemory;
         internal Sampler textureSampler;
-        internal Image<Rgba32> image = null!;
+        internal int width;
+        internal int height;
 
         #region ---- bindless texture table ----
         public static uint MaxTextures { get; internal set; } = 256;
@@ -63,9 +64,8 @@ namespace ArctisAurora.Core.Registry.Assets
 
             try
             {
-                Image<Rgba32> source = Image.Load<Rgba32>(VaultFiles.ReadBytes(full));
-                TextureAsset texture = new TextureAsset { _opaqueRows = OpaqueRowsOf(source) };
-                texture.LoadImage(source, Format.R8G8B8A8Unorm, true);
+                TextureAsset texture = new TextureAsset();
+                texture.LoadBytes(VaultFiles.ReadBytes(full), Format.R8G8B8A8Unorm, true, true);
                 _byFile.Add(full, texture);
                 return texture;
             }
@@ -80,28 +80,6 @@ namespace ArctisAurora.Core.Registry.Assets
         private (float left, float right)[]? _opaqueRows;
 
         public (float left, float right)[]? OpaqueRows() => _opaqueRows;
-
-        private static (float left, float right)[] OpaqueRowsOf(Image<Rgba32> image)
-        {
-            int width = image.Width;
-            (float left, float right)[] rows = new (float, float)[image.Height];
-            image.ProcessPixelRows(pixels =>
-            {
-                for (int y = 0; y < pixels.Height; y++)
-                {
-                    Span<Rgba32> row = pixels.GetRowSpan(y);
-                    int first = -1, last = -1;
-                    for (int x = 0; x < row.Length; x++)
-                        if (row[x].A >= 128)
-                        {
-                            if (first < 0) first = x;
-                            last = x;
-                        }
-                    rows[y] = first < 0 ? (1f, 0f) : ((float)first / width, (float)(last + 1) / width);
-                }
-            });
-            return rows;
-        }
         #endregion
 
         public TextureAsset() { }
@@ -118,15 +96,32 @@ namespace ArctisAurora.Core.Registry.Assets
             if (!DataFiles.Exists(path))
                 throw new Exception("Texture not found: " + path);
 
-            using (Stream stream = DataFiles.Open(path))
-                LoadImage(Image.Load<Rgba32>(stream), format, mipmaps);
+            using Stream stream = DataFiles.Open(path);
+            int length = (int)stream.Length;
+            byte[] bytes = ArrayPool<byte>.Shared.Rent(length);
+            try
+            {
+                stream.ReadExactly(bytes, 0, length);
+                LoadBytes(bytes.AsSpan(0, length), format, mipmaps, false);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(bytes);
+            }
         }
 
-        // Uploads a decoded image and claims a table slot; takes ownership of it.
-        public void LoadImage(Image<Rgba32> source, Format format = Format.R8G8B8A8Srgb, bool mipmaps = false)
+        // Uploads a decoded image and claims a table slot.
+        public void LoadImage(Image source, Format format = Format.R8G8B8A8Srgb, bool mipmaps = false)
         {
-            image = source;
-            AVulkanBufferHandler.CreateTextureBuffer(ref _textureImage, ref _textureBufferMemory, ref image, format, ref Renderer.transferQueue, ref Renderer.transferCommandPool, mipmaps);
+            TextureLoader.UploadImage(source, format, mipmaps, false, ref _textureImage, ref _textureBufferMemory, out width, out height, out _opaqueRows);
+            AVulkanBufferHandler.CreateImageView(Renderer.vk, ref Renderer.logicalDevice, ref _textureImage, ref textureImageView, format, ImageAspectFlags.ColorBit);
+            RegisterInTable();
+        }
+
+        // Uploads an image file's bytes and claims a table slot.
+        private void LoadBytes(ReadOnlySpan<byte> file, Format format, bool mipmaps, bool opaqueRows)
+        {
+            TextureLoader.UploadFile(file, format, mipmaps, opaqueRows, ref _textureImage, ref _textureBufferMemory, out width, out height, out _opaqueRows);
             AVulkanBufferHandler.CreateImageView(Renderer.vk, ref Renderer.logicalDevice, ref _textureImage, ref textureImageView, format, ImageAspectFlags.ColorBit);
             RegisterInTable();
         }

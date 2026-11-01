@@ -5,8 +5,7 @@ using ArctisAurora.Core.Registry;
 using ArctisAurora.Core.UI.Containers;
 using ArctisAurora.Core.UI.Controls;
 using ArctisAurora.EngineWork;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using Image = Arctis.Imaging.Image;
 using System.Numerics;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -415,7 +414,7 @@ namespace ArctisAurora.Core.UI.Text
             return true;
         }
 
-        public bool PasteImage(Image<Rgba32> image) => false;
+        public bool PasteImage(Image image) => false;
 
         private string Selected() => content[Math.Min(anchor, cursor)..Math.Max(anchor, cursor)];
 

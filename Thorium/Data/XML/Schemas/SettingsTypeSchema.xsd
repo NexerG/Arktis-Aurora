@@ -64,6 +64,7 @@
       <xs:element name="Threads" type="types:Threads" />
       <xs:element name="FrameCap" type="types:FrameCap" />
       <xs:element name="Idle" type="types:Idle" />
+      <xs:element name="ImageLimits" type="types:ImageLimits" />
       <xs:element name="LogConsole" type="types:LogConsole" />
       <xs:element name="LogFile" type="types:LogFile" />
       <xs:element name="LogRecorder" type="types:LogRecorder" />
@@ -549,6 +550,7 @@
       <xs:element name="DocumentSettings" type="types:DocumentSettings" />
       <xs:element name="Session" type="types:Session" />
       <xs:element name="Threading" type="types:Threading" />
+      <xs:element name="Imaging" type="types:Imaging" />
       <xs:element name="Logging" type="types:Logging" />
       <xs:element name="Profiling" type="types:Profiling" />
     </xs:choice>
@@ -556,6 +558,23 @@
   <xs:complexType name="UserSettings">
     <xs:sequence>
       <xs:group minOccurs="0" maxOccurs="unbounded" ref="types:ISettingsGroup.Children" />
+    </xs:sequence>
+  </xs:complexType>
+  <xs:attributeGroup name="ImageLimits.Attributes">
+    <xs:attributeGroup ref="types:Setting.Attributes" />
+    <xs:attribute name="MaxWidth" type="xs:int" />
+    <xs:attribute name="MaxHeight" type="xs:int" />
+    <xs:attribute name="MaxMegapixels" type="xs:int" />
+  </xs:attributeGroup>
+  <xs:element name="ImageLimits" type="types:ImageLimits" />
+  <xs:complexType name="ImageLimits">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:ImageLimits.Attributes" />
+  </xs:complexType>
+  <xs:element name="Imaging" type="types:Imaging" />
+  <xs:complexType name="Imaging">
+    <xs:sequence>
+      <xs:group minOccurs="0" maxOccurs="unbounded" ref="types:Setting.Children" />
     </xs:sequence>
   </xs:complexType>
   <xs:attributeGroup name="LogConsole.Attributes">

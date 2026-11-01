@@ -1,7 +1,6 @@
 using ArctisAurora.Core.Filing.Serialization;
 using ArctisAurora.Core.Generators;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using Image = Arctis.Imaging.Image;
 using System.Security.Cryptography;
 using System.Text;
 using System.Xml.Linq;
@@ -114,10 +113,10 @@ namespace ArctisAurora.Core.Filing
             Serializer.SerializeAttributed(meta, agdPath);
 
             int perAxis = (int)Math.Ceiling(MathF.Sqrt(Math.Max(1, glyphs.Length)));
-            using Image<Rgba32> image = new Image<Rgba32>(cellSize * perAxis, cellSize * perAxis);
+            Image image = new Image(cellSize * perAxis, cellSize * perAxis);
             for (int cell = 0; cell < glyphs.Length; cell++)
                 MTSDFGen.GenerateCell(glyphs[cell], image, cell % perAxis * cellSize, cell / perAxis * cellSize, cellSize, MTSDFGen.PxRange);
-            image.Save(pngPath);
+            image.SavePng(pngPath);
         }
 
         private static string Hash(IReadOnlyList<InstalledFamily> families)

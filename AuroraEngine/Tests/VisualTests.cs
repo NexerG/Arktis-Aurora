@@ -5,8 +5,7 @@ using ArctisAurora.Core.UI.Containers;
 using ArctisAurora.Core.UI.Containers.Tabs;
 using ArctisAurora.Core.UI.Controls;
 using ArctisAurora.Core.UI.Text;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using Image = Arctis.Imaging.Image;
 
 namespace ArctisAurora.Tests
 {
@@ -81,21 +80,20 @@ namespace ArctisAurora.Tests
         {
             // fixture: 1 px stripes on the left, a red-to-blue ramp on the right
             string path = Path.Combine(Path.GetTempPath(), "Aurora.Visual.ImageScaled.png");
-            using (Image<Rgba32> fixture = new Image<Rgba32>(256, 256))
+            Image fixture = new Image(256, 256);
+            for (int y = 0; y < 256; y++)
             {
-                fixture.ProcessPixelRows(rows =>
+                Span<byte> row = fixture.Row(y);
+                for (int x = 0; x < 256; x++)
                 {
-                    for (int y = 0; y < rows.Height; y++)
-                    {
-                        Span<Rgba32> row = rows.GetRowSpan(y);
-                        for (int x = 0; x < 128; x++)
-                            row[x] = x % 2 == 0 ? new Rgba32(0, 0, 0) : new Rgba32(255, 255, 255);
-                        for (int x = 128; x < 256; x++)
-                            row[x] = new Rgba32((byte)(255 - (x - 128) * 2), 0, (byte)((x - 128) * 2));
-                    }
-                });
-                fixture.SaveAsPng(path);
+                    byte stripe = x % 2 == 0 ? (byte)0 : (byte)255;
+                    row[x * 4] = x < 128 ? stripe : (byte)(255 - (x - 128) * 2);
+                    row[x * 4 + 1] = x < 128 ? stripe : (byte)0;
+                    row[x * 4 + 2] = x < 128 ? stripe : (byte)((x - 128) * 2);
+                    row[x * 4 + 3] = 255;
+                }
             }
+            fixture.SavePng(path);
 
             StackPanelControl panel = new StackPanelControl
             {

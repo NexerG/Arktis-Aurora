@@ -4,7 +4,8 @@ using ArctisAurora.Core.Testing;
 using ArctisAurora.Core.UI;
 using Silk.NET.Core.Native;
 using Silk.NET.GLFW;
-using SixLabors.ImageSharp.PixelFormats;
+using Arctis.Imaging;
+using ArctisAurora.Core.Imaging;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Silk.NET.Vulkan;
@@ -82,12 +83,18 @@ namespace ArctisAurora.EngineWork.Rendering
             List<Silk.NET.GLFW.Image> icons = new List<Silk.NET.GLFW.Image>();
             foreach (string file in VirtualFileSystem.EnumerateAll("Icons/app", "*.png"))
             {
-                using Stream iconStream = DataFiles.Open(file);
-                using SixLabors.ImageSharp.Image<Rgba32> image = SixLabors.ImageSharp.Image.Load<Rgba32>(iconStream);
-                byte[] pixels = GC.AllocateUninitializedArray<byte>(image.Width * image.Height * 4, pinned: true);
-                image.CopyPixelDataTo(pixels);
+                byte[] data;
+                using (Stream iconStream = DataFiles.Open(file))
+                {
+                    data = new byte[iconStream.Length];
+                    iconStream.ReadExactly(data);
+                }
+                if (!ImageCodec.TryIdentify(data, out ImageHeader header)) throw new ImageFormatException($"'{file}' is not an image");
+                DecodeOptions options = new DecodeOptions(PixelLayout.RGBA8, 0, ImageFiles.Limits);
+                byte[] pixels = GC.AllocateUninitializedArray<byte>(ImageCodec.RequiredBytes(header, options), pinned: true);
+                ImageCodec.Decode(data, pixels, options);
                 _appIconPixels.Add(pixels);
-                icons.Add(new Silk.NET.GLFW.Image { Width = image.Width, Height = image.Height, Pixels = (byte*)Unsafe.AsPointer(ref pixels[0]) });
+                icons.Add(new Silk.NET.GLFW.Image { Width = header.Width, Height = header.Height, Pixels = (byte*)Unsafe.AsPointer(ref pixels[0]) });
             }
             return _appIcons = icons.ToArray();
         }

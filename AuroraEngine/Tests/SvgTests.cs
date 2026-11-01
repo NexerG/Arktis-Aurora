@@ -3,9 +3,8 @@ using ArctisAurora.Core.Filing.Serialization;
 using ArctisAurora.Core.Registry;
 using ArctisAurora.Core.Generators;
 using ArctisAurora.Core.Testing;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 using System.Numerics;
+using Image = Arctis.Imaging.Image;
 
 namespace ArctisAurora.Tests
 {
@@ -194,7 +193,7 @@ namespace ArctisAurora.Tests
         {
             if (!Load(svg, out Glyph glyph, out string reason)) { t.Check(false, $"loads: {svg} ({reason})"); return; }
             MTSDFGen.ColorEdges(glyph);
-            using Image<Rgba32> cell = new Image<Rgba32>(bakeCell, bakeCell);
+            Image cell = new Image(bakeCell, bakeCell);
             MTSDFGen.GenerateCell(glyph, cell, 0, 0, bakeCell, MTSDFGen.PxRange);
 
             int inner = bakeCell - 2;
@@ -203,8 +202,9 @@ namespace ArctisAurora.Tests
             {
                 int tx = (int)MathF.Round((x / 100f + spread) / (1f + 2f * spread) * inner - 0.5f) + 1;
                 int ty = (int)MathF.Round(((100f - y) / 100f + spread) / (1f + 2f * spread) * inner - 0.5f) + 1;
-                Rgba32 texel = cell[tx, ty];
-                float median = MathF.Max(MathF.Min(texel.R, texel.G), MathF.Min(MathF.Max(texel.R, texel.G), texel.B)) / 255f;
+                int at = (ty * bakeCell + tx) * 4;
+                byte r = cell.Pixels[at], g = cell.Pixels[at + 1], b = cell.Pixels[at + 2];
+                float median = MathF.Max(MathF.Min(r, g), MathF.Min(MathF.Max(r, g), b)) / 255f;
                 t.Check(inside ? median > 0.75f : median < 0.25f, $"({x},{y}) {(inside ? "inside" : "outside")}, median {median:0.00}: {svg}");
             }
         }

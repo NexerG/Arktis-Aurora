@@ -60,7 +60,7 @@ namespace ArctisAurora.Core.UI.Controls
             float xOffset = index % k * cellUV;
             float yOffset = MathF.Floor(index / k) * cellUV;
 
-            float texelPad = 1f / set.textureAsset.image.Width;
+            float texelPad = 1f / set.textureAsset.width;
 
             SetUVRect(xOffset + texelPad, yOffset + texelPad,
                       xOffset + cellUV - texelPad, yOffset + cellUV - texelPad);

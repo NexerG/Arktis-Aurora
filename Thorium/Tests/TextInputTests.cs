@@ -12,9 +12,9 @@ using ArctisAurora.Core.UI.Menus;
 using ArctisAurora.Core.UI.Notes;
 using ArctisAurora.Core.UI.Text;
 using ArctisAurora.EngineWork;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 using System.Numerics;
+using System.Runtime.InteropServices;
+using Image = Arctis.Imaging.Image;
 using System.Xml.Linq;
 
 namespace Thorium.Tests
@@ -1747,7 +1747,7 @@ namespace Thorium.Tests
         {
             string dir = PictureFolder();
             string path = Path.Combine(dir, "float.png");
-            using (Image<Rgba32> image = new Image<Rgba32>(80, 60, new Rgba32(200, 80, 40))) image.SaveAsPng(path);
+            Solid(80, 60, Rgba(200, 80, 40)).SavePng(path);
             string words = string.Join(" ", Enumerable.Repeat("lorem ipsum dolor sit", 10));
 
             XElement block = new XElement("Block", new XAttribute("Align", "Right"), PictureRun(path, ("Wrap", "Square"), ("X", "0")), RunX(words));
@@ -2998,8 +2998,7 @@ namespace Thorium.Tests
             yield return 2;
 
             string attachments = Path.Combine(Path.GetDirectoryName(editor.session.path)!, "attachments");
-            using (Image<Rgba32> image = new Image<Rgba32>(30, 20, new Rgba32(200, 80, 40)))
-                editor.PasteImage(image);
+            editor.PasteImage(Solid(30, 20, Rgba(200, 80, 40)));
             yield return 2;
 
             BlockControl p = Paragraphs(editor)[0];
@@ -3217,20 +3216,20 @@ namespace Thorium.Tests
         {
             string dir = PictureFolder();
             string words = string.Join(" ", Enumerable.Repeat("lorem ipsum dolor sit", 24));
-            (string mode, Rgba32 colour, string x)[] modes =
+            (string mode, uint colour, string x)[] modes =
             {
-                ("Square", new Rgba32(200, 80, 40), "0"), ("TopAndBottom", new Rgba32(40, 140, 200), "120"),
-                ("Behind", new Rgba32(240, 200, 60), "60"), ("InFront", new Rgba32(60, 160, 80), "200")
+                ("Square", Rgba(200, 80, 40), "0"), ("TopAndBottom", Rgba(40, 140, 200), "120"),
+                ("Behind", Rgba(240, 200, 60), "60"), ("InFront", Rgba(60, 160, 80), "200")
             };
 
             foreach (string mode in new[] { "Pageless", "Paged" })
             {
                 XElement document = new XElement("Document",
                     new XElement("DocumentLayout", new XElement("Page", new XAttribute("Mode", mode))));
-                foreach ((string wrap, Rgba32 colour, string x) in modes)
+                foreach ((string wrap, uint colour, string x) in modes)
                 {
                     string path = Path.Combine(dir, wrap + ".png");
-                    using (Image<Rgba32> image = new Image<Rgba32>(80, 60, colour)) image.SaveAsPng(path);
+                    Solid(80, 60, colour).SavePng(path);
                     document.Add(new XElement("Block", PictureRun(path, ("Wrap", wrap), ("X", x)), RunX(words)));
                 }
                 document.Add(new XElement("Block", RunX("inline "), PictureRun(Path.Combine(dir, "Square.png"), ("Width", "40")), RunX(" after")));
@@ -3257,18 +3256,7 @@ namespace Thorium.Tests
         {
             string dir = PictureFolder();
             string path = Path.Combine(dir, "half.png");
-            using (Image<Rgba32> image = new Image<Rgba32>(100, 100))
-            {
-                image.ProcessPixelRows(rows =>
-                {
-                    for (int y = 0; y < rows.Height; y++)
-                    {
-                        Span<Rgba32> row = rows.GetRowSpan(y);
-                        for (int x = 0; x < 50; x++) row[x] = new Rgba32(40, 140, 200);
-                    }
-                });
-                image.SaveAsPng(path);
-            }
+            HalfPng(path);
 
             DocumentEditorControl editor = ShowFixture(t, DocumentXml.Parse(new XElement("Document", new XElement("Block",
                 PictureRun(path, ("Width", "100"), ("Height", "100"), ("Wrap", "Tight")), RunX(string.Join(" ", Enumerable.Repeat("lorem ipsum dolor", 60)))))));
@@ -3328,19 +3316,12 @@ namespace Thorium.Tests
         {
             string dir = PictureFolder();
             string path = Path.Combine(dir, "circle.png");
-            using (Image<Rgba32> image = new Image<Rgba32>(120, 120))
-            {
-                image.ProcessPixelRows(rows =>
-                {
-                    for (int y = 0; y < rows.Height; y++)
-                    {
-                        Span<Rgba32> row = rows.GetRowSpan(y);
-                        for (int x = 0; x < row.Length; x++)
-                            if ((x - 59.5f) * (x - 59.5f) + (y - 59.5f) * (y - 59.5f) <= 60f * 60f) row[x] = new Rgba32(200, 80, 40);
-                    }
-                });
-                image.SaveAsPng(path);
-            }
+            Image circle = new Image(120, 120);
+            Span<uint> circlePixels = MemoryMarshal.Cast<byte, uint>(circle.Pixels.AsSpan());
+            for (int y = 0; y < 120; y++)
+                for (int x = 0; x < 120; x++)
+                    if ((x - 59.5f) * (x - 59.5f) + (y - 59.5f) * (y - 59.5f) <= 60f * 60f) circlePixels[y * 120 + x] = Rgba(200, 80, 40);
+            circle.SavePng(path);
 
             ShowFixture(t, DocumentXml.Parse(new XElement("Document", new XElement("Block",
                 PictureRun(path, ("Wrap", "Tight"), ("X", "200")), RunX(string.Join(" ", Enumerable.Repeat("lorem ipsum dolor sit", 30)))))));
@@ -3435,18 +3416,7 @@ namespace Thorium.Tests
                 $"Shape lets the first line in closer, beside the diamond's tip: {firstLeft[1]} vs {firstLeft[0]}");
 
             string path = Path.Combine(dir, "half.png");
-            using (Image<Rgba32> image = new Image<Rgba32>(100, 100))
-            {
-                image.ProcessPixelRows(rows =>
-                {
-                    for (int y = 0; y < rows.Height; y++)
-                    {
-                        Span<Rgba32> row = rows.GetRowSpan(y);
-                        for (int x = 0; x < 50; x++) row[x] = new Rgba32(40, 140, 200);
-                    }
-                });
-                image.SaveAsPng(path);
-            }
+            HalfPng(path);
 
             DocumentEditorControl tight = ShowFixture(t, DocumentXml.Parse(new XElement("Document", new XElement("Block",
                 PictureRun(path, ("Width", "100"), ("Height", "100"), ("Wrap", "Tight"), ("Rotation", "90")), RunX(words)))));
@@ -3558,9 +3528,29 @@ namespace Thorium.Tests
         private static string PicturePng(string path, int width, int height)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            using Image<Rgba32> image = new Image<Rgba32>(width, height, new Rgba32(200, 80, 40));
-            image.SaveAsPng(path);
+            Solid(width, height, Rgba(200, 80, 40)).SavePng(path);
             return path;
+        }
+
+        // A picture of one colour; the colour packed by Rgba.
+        private static Image Solid(int width, int height, uint colour)
+        {
+            Image image = new Image(width, height);
+            MemoryMarshal.Cast<byte, uint>(image.Pixels.AsSpan()).Fill(colour);
+            return image;
+        }
+
+        // One RGBA8 pixel as a little-endian uint.
+        private static uint Rgba(byte r, byte g, byte b, byte a = 255) => (uint)(r | g << 8 | b << 16 | a << 24);
+
+        // The left half of a 100x100 picture filled, the right half transparent.
+        private static void HalfPng(string path)
+        {
+            Image image = new Image(100, 100);
+            Span<uint> pixels = MemoryMarshal.Cast<byte, uint>(image.Pixels.AsSpan());
+            for (int y = 0; y < 100; y++)
+                pixels.Slice(y * 100, 50).Fill(Rgba(40, 140, 200));
+            image.SavePng(path);
         }
 
         private static int PictureCount(BlockControl block) => block.spans.Count(s => s.IsPicture && s.count > 0);

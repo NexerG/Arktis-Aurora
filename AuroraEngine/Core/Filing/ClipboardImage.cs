@@ -1,7 +1,5 @@
 using ArctisAurora.Core.Diagnostics;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using System.Buffers.Binary;
+using ArctisAurora.Core.Imaging;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -18,13 +16,9 @@ namespace ArctisAurora.Core.Filing
         private const uint hDrop = 15;
         private const uint dibV5 = 17;
 
-        // BITMAPINFOHEADER fields
-        private const int fileHeaderSize = 14;
-        private const uint bitFields = 3;
-
         private static readonly string[] imageExtensions = { ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp", ".tga", ".tif", ".tiff" };
 
-        public static bool TryGet([NotNullWhen(true)] out Image<Rgba32>? image)
+        public static bool TryGet([NotNullWhen(true)] out Arctis.Imaging.Image? image)
         {
             image = null;
             if (!OperatingSystem.IsWindows()) return false;
@@ -38,13 +32,13 @@ namespace ArctisAurora.Core.Filing
             {
                 uint png = RegisterClipboardFormatW("PNG");
                 if (png != 0 && Read(png) is byte[] pngBytes)
-                    image = Image.Load<Rgba32>(pngBytes);
+                    image = ImageFiles.Load(pngBytes);
                 else if (Read(dibV5) is byte[] v5)
-                    image = FromDib(v5);
+                    image = Arctis.Imaging.Image.LoadDib(v5, Arctis.Imaging.PixelLayout.RGBA8, ImageFiles.Limits);
                 else if (Read(dib) is byte[] plain)
-                    image = FromDib(plain);
+                    image = Arctis.Imaging.Image.LoadDib(plain, Arctis.Imaging.PixelLayout.RGBA8, ImageFiles.Limits);
                 else if (DroppedImage() is string path)
-                    image = Image.Load<Rgba32>(path);
+                    image = ImageFiles.Load(path);
             }
             catch (Exception e)
             {
@@ -80,50 +74,6 @@ namespace ArctisAurora.Core.Filing
             {
                 GlobalUnlock(handle);
             }
-        }
-
-        // Prefixes a BITMAPFILEHEADER so the BMP decoder reads it.
-        private static Image<Rgba32> FromDib(byte[] packed)
-        {
-            uint headerSize = BinaryPrimitives.ReadUInt32LittleEndian(packed.AsSpan(0));
-            ushort bitCount = BinaryPrimitives.ReadUInt16LittleEndian(packed.AsSpan(14));
-            uint compression = BinaryPrimitives.ReadUInt32LittleEndian(packed.AsSpan(16));
-            uint colorsUsed = BinaryPrimitives.ReadUInt32LittleEndian(packed.AsSpan(32));
-
-            uint masks = headerSize == 40 && compression == bitFields ? 12u : 0u;
-            uint palette = colorsUsed != 0 ? colorsUsed : bitCount <= 8 ? 1u << bitCount : 0u;
-            uint pixelOffset = fileHeaderSize + headerSize + masks + palette * 4;
-
-            byte[] file = new byte[fileHeaderSize + packed.Length];
-            file[0] = (byte)'B';
-            file[1] = (byte)'M';
-            BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(2), (uint)file.Length);
-            BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(10), pixelOffset);
-            packed.CopyTo(file, fileHeaderSize);
-
-            Image<Rgba32> image = Image.Load<Rgba32>(file);
-            if (bitCount == 32) OpaqueIfAlphaUnused(image);
-            return image;
-        }
-
-        // A 32-bit DIB whose alpha is all zero means no alpha, not a transparent picture.
-        private static void OpaqueIfAlphaUnused(Image<Rgba32> image)
-        {
-            bool anyAlpha = false;
-            image.ProcessPixelRows(rows =>
-            {
-                for (int y = 0; y < rows.Height && !anyAlpha; y++)
-                    foreach (Rgba32 pixel in rows.GetRowSpan(y))
-                        if (pixel.A != 0) { anyAlpha = true; break; }
-            });
-            if (anyAlpha) return;
-
-            image.ProcessPixelRows(rows =>
-            {
-                for (int y = 0; y < rows.Height; y++)
-                    foreach (ref Rgba32 pixel in rows.GetRowSpan(y))
-                        pixel.A = 255;
-            });
         }
 
         // The first image file among copied files.

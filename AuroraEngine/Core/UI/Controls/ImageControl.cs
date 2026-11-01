@@ -32,7 +32,7 @@ namespace ArctisAurora.Core.UI.Controls
         // Sizes from Width/Height at the picture's aspect, or its native size capped to the space.
         protected override Vector2 MeasureCore(Vector2 availableSize)
         {
-            Vector2 native = sampler != null ? new Vector2(sampler.image.Width, sampler.image.Height) : Vector2.Zero;
+            Vector2 native = sampler != null ? new Vector2(sampler.width, sampler.height) : Vector2.Zero;
             float aspect = native.X > 0f ? native.Y / native.X : 0f;
 
             float w, h;

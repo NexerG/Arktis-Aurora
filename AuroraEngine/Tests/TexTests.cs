@@ -2360,12 +2360,10 @@ namespace ArctisAurora.Tests
         private static IEnumerator<int> LoweringImage(TestContext t)
         {
             string folder = Folder(("doc.pdf", ""));
-            using (SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32> png = new SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>(40, 20))
-            {
-                SixLabors.ImageSharp.ImageExtensions.SaveAsPng(png, Path.Combine(folder, "pic.png"));
-                Directory.CreateDirectory(Path.Combine(folder, "sub"));
-                SixLabors.ImageSharp.ImageExtensions.SaveAsPng(png, Path.Combine(folder, "sub", "inner.png"));
-            }
+            Arctis.Imaging.Image png = new Arctis.Imaging.Image(40, 20);
+            png.SavePng(Path.Combine(folder, "pic.png"));
+            Directory.CreateDirectory(Path.Combine(folder, "sub"));
+            png.SavePng(Path.Combine(folder, "sub", "inner.png"));
 
             List<XElement> Pictures(string source, out List<TexError> errors) =>
                 TexLowering.Compile(source, out errors, null, folder).Descendants("Run").Where(r => r.Attribute("Image") != null).ToList();

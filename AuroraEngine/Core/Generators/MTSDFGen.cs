@@ -2,8 +2,7 @@ using ArctisAurora.Core.Filing;
 using Silk.NET.Maths;
 using System.Buffers;
 using System.Numerics;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using Image = Arctis.Imaging.Image;
 
 namespace ArctisAurora.Core.Generators
 {
@@ -82,7 +81,7 @@ namespace ArctisAurora.Core.Generators
         }
 
         // Rasterizes one shape into a square cell of the atlas.
-        public static void GenerateCell(Glyph glyph, Image<Rgba32> image, int startX, int startY, int cellSize, float pxRange)
+        public static void GenerateCell(Glyph glyph, Image image, int startX, int startY, int cellSize, float pxRange)
         {
             float scale = MathF.Max(glyph.regular.xMax - glyph.regular.xMin, glyph.regular.yMax - glyph.regular.yMin);
             float normW = (glyph.regular.xMax - glyph.regular.xMin) / scale;
@@ -123,6 +122,8 @@ namespace ArctisAurora.Core.Generators
                 RunBounds(run, runBounds, r * 4);
             }
 
+            byte[] pixels = image.Pixels;
+            int atlasWidth = image.Width;
             for (int y = 0; y < innerSize; y++)
             {
                 float py = ((y + 0.5f) / innerSize) * (normH + 2 * spreadV) - spreadV;
@@ -202,7 +203,11 @@ namespace ArctisAurora.Core.Generators
                     blueDist = blueDist * 0.5f + 0.5f;
                     trueDist = trueDist * 0.5f + 0.5f;
 
-                    image[startX + pad + x, startY + pad + y] = new Rgba32(redDist, greenDist, blueDist, trueDist);
+                    int at = ((startY + pad + y) * atlasWidth + startX + pad + x) * 4;
+                    pixels[at] = ToByte(redDist);
+                    pixels[at + 1] = ToByte(greenDist);
+                    pixels[at + 2] = ToByte(blueDist);
+                    pixels[at + 3] = ToByte(trueDist);
                 }
             }
 
@@ -210,6 +215,9 @@ namespace ArctisAurora.Core.Generators
             ArrayPool<float>.Shared.Return(crossX);
             ArrayPool<int>.Shared.Return(crossSign);
         }
+
+        // A [0, 1] channel to a byte, rounded half up and clamped.
+        private static byte ToByte(float v) => (byte)Math.Clamp(v * 255f + 0.5f, 0f, 255f);
 
         // Control-polygon box of every edge, four floats each, in contour order.
         private static void FillBounds(Glyph glyph, float[] bounds)

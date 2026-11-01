@@ -18,8 +18,7 @@ using ArctisAurora.Core.UI.Text;
 using ArctisAurora.Core.UI.Windows;
 using ArctisAurora.EngineWork;
 using ArctisAurora.EngineWork.Rendering;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using Image = Arctis.Imaging.Image;
 using System.Numerics;
 using System.Text;
 
@@ -1059,13 +1058,13 @@ namespace ArctisAurora.Core.UI.Document
         public void RenameNoteLinks(Func<string, string?> rename) => content?.RenameNoteLinks(rename);
 
         // Saves the picture beside the note under attachments/ and puts it in at the caret.
-        public bool PasteImage(Image<Rgba32> image)
+        public bool PasteImage(Image image)
         {
             string? folder = AttachmentsFolder("paste");
             if (folder == null) return content != null && session != null;
 
             string file = Path.Combine(folder, $"{Path.GetFileNameWithoutExtension(session!.path)} {DateTime.Now:yyyyMMdd-HHmmss}.png");
-            image.SaveAsPng(file);
+            image.SavePng(file);
             PutPicture(file, "Paste picture");
             return true;
         }

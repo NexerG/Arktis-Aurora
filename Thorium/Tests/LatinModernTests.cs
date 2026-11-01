@@ -13,8 +13,7 @@ using ArctisAurora.Core.UI.Notes;
 using ArctisAurora.Core.UI.Tex;
 using ArctisAurora.Core.UI.Text;
 using ArctisAurora.EngineWork;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using Image = Arctis.Imaging.Image;
 using System.Numerics;
 using System.Xml.Linq;
 
@@ -138,13 +137,7 @@ namespace Thorium.Tests
         {
             string folder = Path.Combine(Path.GetTempPath(), $"aurora-tex-{Guid.NewGuid():N}");
             Directory.CreateDirectory(folder);
-            using (Image<Rgba32> picture = new Image<Rgba32>(120, 60))
-            {
-                for (int y = 0; y < 60; y++)
-                    for (int x = 0; x < 120; x++)
-                        picture[x, y] = new Rgba32((byte)(x * 2), (byte)(y * 4), 160);
-                picture.SaveAsPng(Path.Combine(folder, "gradient.png"));
-            }
+            GradientPng(Path.Combine(folder, "gradient.png"));
             File.WriteAllText(Path.Combine(folder, "refs.bib"), """
                 @book{knuth84, author = {Donald E. Knuth}, title = {The {\TeX}book}, publisher = {Addison-Wesley}, year = 1984}
                 @article{lamport86, author = {Leslie Lamport}, title = {Document Preparation}, journal = {TUGboat}, volume = 7, pages = {10--20}, year = 1986}
@@ -542,13 +535,7 @@ namespace Thorium.Tests
         {
             string folder = Path.Combine(Path.GetTempPath(), $"aurora-tex-{Guid.NewGuid():N}");
             Directory.CreateDirectory(folder);
-            using (Image<Rgba32> picture = new Image<Rgba32>(120, 60))
-            {
-                for (int y = 0; y < 60; y++)
-                    for (int x = 0; x < 120; x++)
-                        picture[x, y] = new Rgba32((byte)(x * 2), (byte)(y * 4), 160);
-                picture.SaveAsPng(Path.Combine(folder, "gradient.png"));
-            }
+            GradientPng(Path.Combine(folder, "gradient.png"));
 
             string words = string.Concat(Enumerable.Repeat("The quick brown fox jumps over the lazy dog. ", 9));
             string source = $$"""
@@ -690,14 +677,19 @@ namespace Thorium.Tests
         {
             string folder = Path.Combine(Path.GetTempPath(), $"aurora-pdf-{Guid.NewGuid():N}");
             Directory.CreateDirectory(folder);
-            using (Image<Rgba32> picture = new Image<Rgba32>(40, 20))
-            {
-                for (int y = 0; y < 20; y++)
-                    for (int x = 0; x < 40; x++)
-                        picture[x, y] = new Rgba32((byte)(x * 6), 80, 160, (byte)(x < 20 ? 255 : 0));
-                picture.SaveAsPng(Path.Combine(folder, "pic.png"));
-                picture.SaveAsJpeg(Path.Combine(folder, "photo.jpg"));
-            }
+            Image picture = new Image(40, 20);
+            for (int y = 0; y < 20; y++)
+                for (int x = 0; x < 40; x++)
+                {
+                    Span<byte> px = picture.Row(y).Slice(x * 4, 4);
+                    px[0] = (byte)(x * 6);
+                    px[1] = 80;
+                    px[2] = 160;
+                    px[3] = (byte)(x < 20 ? 255 : 0);
+                }
+            picture.SavePng(Path.Combine(folder, "pic.png"));
+            using (SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32> jpeg = SixLabors.ImageSharp.Image.LoadPixelData<SixLabors.ImageSharp.PixelFormats.Rgba32>(picture.Pixels, 40, 20))
+                SixLabors.ImageSharp.ImageExtensions.SaveAsJpeg(jpeg, Path.Combine(folder, "photo.jpg"));
             string path = Path.Combine(folder, "doc.tex");
             File.WriteAllText(path, "\\documentclass{article}\n\\begin{document}\n\\section{Export}\nHello world, a fine figure.\\label{here}\n\n" +
                                     "\\begin{figure}[h]\\centering\\includegraphics{pic}\\includegraphics{photo}\\caption{Two}\\end{figure}\n\n" +
@@ -791,5 +783,21 @@ namespace Thorium.Tests
         private static List<Control> Views(DocumentEditorControl editor) => Content(editor).children.OfType<Control>()
             .Select(c => c is ScrollableControl viewport && viewport.children.Count > 0 && viewport.children[0] is TableControl table ? table : c)
             .Where(c => c is BlockControl or TableControl).ToList();
+
+        // A 120x60 red-green ramp over constant blue.
+        private static void GradientPng(string path)
+        {
+            Image picture = new Image(120, 60);
+            for (int y = 0; y < 60; y++)
+                for (int x = 0; x < 120; x++)
+                {
+                    Span<byte> px = picture.Row(y).Slice(x * 4, 4);
+                    px[0] = (byte)(x * 2);
+                    px[1] = (byte)(y * 4);
+                    px[2] = 160;
+                    px[3] = 255;
+                }
+            picture.SavePng(path);
+        }
     }
 }

@@ -1,11 +1,7 @@
 ﻿using System.Numerics;
 using Silk.NET.Vulkan;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
 using Buffer = Silk.NET.Vulkan.Buffer;
 using Format = Silk.NET.Vulkan.Format;
-using Image = SixLabors.ImageSharp.Image;
 using ImageLayout = Silk.NET.Vulkan.ImageLayout;
 using Queue = Silk.NET.Vulkan.Queue;
 
@@ -24,106 +20,40 @@ namespace ArctisAurora.EngineWork.Rendering.Helpers
     {
         private static readonly Core.Diagnostics.LogChannel Log = Core.Diagnostics.LogChannel.For("Renderer");
 
-        internal static void CreateTextureBuffer(ref Silk.NET.Vulkan.Image _textureImage, ref DeviceMemory _textureBufferMemory, string pathToImage, Format imageFormat, ref Queue queue, ref CommandPool cPool)
+        // Host-visible staging for a texture, mapped; write it forward only, never read it.
+        internal static byte* MapStaging(ulong size, out Buffer staging, out DeviceMemory stagingMemory)
         {
-            using var _image = Image.Load<Rgba32>(pathToImage);
-            ulong _imageSize = (ulong)(_image.Width * _image.Height * _image.PixelType.BitsPerPixel / 8);
-
-            Buffer _stagingBuffer = default;
-            DeviceMemory _stagingBufferMemory = default;
-            CreateBuffer(_imageSize, ref _stagingBuffer, ref _stagingBufferMemory, BufferUsageFlags.TransferSrcBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
-
-            void* _data;
-            Renderer.vk.MapMemory(Renderer.logicalDevice, _stagingBufferMemory, 0, _imageSize, 0, &_data);
-            _image.CopyPixelDataTo(new Span<byte>(_data, (int)_imageSize));
-            Renderer.vk.UnmapMemory(Renderer.logicalDevice, _stagingBufferMemory);
-
-            CreateImage((uint)_image.Width, (uint)_image.Height, imageFormat, ImageTiling.Optimal, ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit, MemoryPropertyFlags.DeviceLocalBit, ref _textureImage, ref _textureBufferMemory);
-
-            BufferImageCopy[] regions =
-            {
-                new BufferImageCopy
-                {
-                    ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
-                    ImageExtent = new Extent3D((uint)_image.Width, (uint)_image.Height, 1)
-                }
-            };
-            UploadTexture(_textureImage, _stagingBuffer, regions, ref queue, ref cPool);
-
-            Renderer.vk.DestroyBuffer(Renderer.logicalDevice, _stagingBuffer, null);
-            Renderer.vk.FreeMemory(Renderer.logicalDevice, _stagingBufferMemory, null);
+            staging = default;
+            stagingMemory = default;
+            CreateBuffer(size, ref staging, ref stagingMemory, BufferUsageFlags.TransferSrcBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
+            void* data;
+            Renderer.vk.MapMemory(Renderer.logicalDevice, stagingMemory, 0, size, 0, &data);
+            return (byte*)data;
         }
 
-        internal static void CreateTextureBuffer(ref Silk.NET.Vulkan.Image _textureImage, ref DeviceMemory _textureBufferMemory, ref Image<Rgba32> image, Format imageFormat, ref Queue queue, ref CommandPool cPool, bool mipmaps = false)
+        // Unmaps and frees staging that will not be uploaded.
+        internal static void FreeStaging(Buffer staging, DeviceMemory stagingMemory)
         {
-            using var _image = image;
-            ClampToDevice(_image);
-
-            // mip chain, each level box-filtered from the one above in linear light
-            Image<Rgba32>[] levels = new Image<Rgba32>[mipmaps ? BitOperations.Log2((uint)Math.Max(_image.Width, _image.Height)) + 1 : 1];
-            levels[0] = _image;
-            for (int level = 1; level < levels.Length; level++)
-            {
-                Size half = new Size(Math.Max(1, levels[level - 1].Width / 2), Math.Max(1, levels[level - 1].Height / 2));
-                levels[level] = levels[level - 1].Clone(c => c.Resize(new ResizeOptions
-                {
-                    Size = half,
-                    Mode = ResizeMode.Stretch,
-                    Sampler = KnownResamplers.Box,
-                    Compand = true
-                }));
-            }
-
-            int bytesPerPixel = _image.PixelType.BitsPerPixel / 8;
-            BufferImageCopy[] regions = new BufferImageCopy[levels.Length];
-            ulong _imageSize = 0;
-            for (int i = 0; i < levels.Length; i++)
-            {
-                regions[i] = new BufferImageCopy
-                {
-                    BufferOffset = _imageSize,
-                    ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, (uint)i, 0, 1),
-                    ImageExtent = new Extent3D((uint)levels[i].Width, (uint)levels[i].Height, 1)
-                };
-                _imageSize += (ulong)(levels[i].Width * levels[i].Height * bytesPerPixel);
-            }
-
-            Buffer _stagingBuffer = default;
-            DeviceMemory _stagingBufferMemory = default;
-            CreateBuffer(_imageSize, ref _stagingBuffer, ref _stagingBufferMemory, BufferUsageFlags.TransferSrcBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
-
-            void* _data;
-            Renderer.vk.MapMemory(Renderer.logicalDevice, _stagingBufferMemory, 0, _imageSize, 0, &_data);
-            for (int i = 0; i < levels.Length; i++)
-            {
-                int levelSize = levels[i].Width * levels[i].Height * bytesPerPixel;
-                levels[i].CopyPixelDataTo(new Span<byte>((byte*)_data + regions[i].BufferOffset, levelSize));
-            }
-            Renderer.vk.UnmapMemory(Renderer.logicalDevice, _stagingBufferMemory);
-
-            CreateImage((uint)_image.Width, (uint)_image.Height, imageFormat, ImageTiling.Optimal, ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit, MemoryPropertyFlags.DeviceLocalBit, ref _textureImage, ref _textureBufferMemory, (uint)levels.Length);
-
-            UploadTexture(_textureImage, _stagingBuffer, regions, ref queue, ref cPool);
-
-            for (int i = 1; i < levels.Length; i++)
-                levels[i].Dispose();
-
-            Renderer.vk.DestroyBuffer(Renderer.logicalDevice, _stagingBuffer, null);
-            Renderer.vk.FreeMemory(Renderer.logicalDevice, _stagingBufferMemory, null);
+            Renderer.vk.UnmapMemory(Renderer.logicalDevice, stagingMemory);
+            Renderer.vk.DestroyBuffer(Renderer.logicalDevice, staging, null);
+            Renderer.vk.FreeMemory(Renderer.logicalDevice, stagingMemory, null);
         }
 
-        // Shrinks an image past the device's 2D limit, keeping its aspect.
-        private static void ClampToDevice(Image<Rgba32> image)
+        // Creates the texture image with one mip level per region, copies staging into it and frees staging.
+        internal static void UploadStaged(ref Silk.NET.Vulkan.Image textureImage, ref DeviceMemory textureMemory, uint width, uint height, Format format, BufferImageCopy[] regions,
+            Buffer staging, DeviceMemory stagingMemory, ref Queue queue, ref CommandPool cPool)
+        {
+            Renderer.vk.UnmapMemory(Renderer.logicalDevice, stagingMemory);
+            CreateImage(width, height, format, ImageTiling.Optimal, ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit, MemoryPropertyFlags.DeviceLocalBit, ref textureImage, ref textureMemory, (uint)regions.Length);
+            UploadTexture(textureImage, staging, regions, ref queue, ref cPool);
+            Renderer.vk.DestroyBuffer(Renderer.logicalDevice, staging, null);
+            Renderer.vk.FreeMemory(Renderer.logicalDevice, stagingMemory, null);
+        }
+
+        internal static uint MaxImageDimension()
         {
             Renderer.vk.GetPhysicalDeviceProperties(Renderer.gpu, out PhysicalDeviceProperties props);
-            uint limit = props.Limits.MaxImageDimension2D;
-            if (image.Width <= limit && image.Height <= limit) return;
-
-            float scale = (float)limit / Math.Max(image.Width, image.Height);
-            int width = Math.Max(1, (int)(image.Width * scale));
-            int height = Math.Max(1, (int)(image.Height * scale));
-            Log.Warn($"image {image.Width}x{image.Height} exceeds the device limit {limit}; uploading at {width}x{height}.");
-            image.Mutate(c => c.Resize(width, height));
+            return props.Limits.MaxImageDimension2D;
         }
 
         // Copies staging into a fresh image and releases it to the graphics family, in one submit.

@@ -7,8 +7,7 @@ using ArctisAurora.Core.UI.Containers.Workspace;
 using ArctisAurora.Core.UI.Document;
 using ArctisAurora.Core.UI.Menus;
 using ArctisAurora.Core.UI.Text;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using Image = Arctis.Imaging.Image;
 using System.Numerics;
 using System.Text;
 
@@ -718,7 +717,7 @@ namespace ArctisAurora.Core.UI.Sheets
             return true;
         }
 
-        public bool PasteImage(Image<Rgba32> image) => false;
+        public bool PasteImage(Image image) => false;
         #endregion
 
         #region ---- view ----

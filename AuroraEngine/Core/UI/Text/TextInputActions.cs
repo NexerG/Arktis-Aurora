@@ -5,8 +5,7 @@ using ArctisAurora.Core.UI.Menus;
 using ArctisAurora.Core.UI.Notes;
 using ArctisAurora.Core.UI.Tex;
 using ArctisAurora.EngineWork;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using Image = Arctis.Imaging.Image;
 
 namespace ArctisAurora.Core.UI.Text
 {
@@ -32,7 +31,7 @@ namespace ArctisAurora.Core.UI.Text
         bool Copy();
         bool Cut();
         bool Paste(string text);
-        bool PasteImage(Image<Rgba32> image);
+        bool PasteImage(Image image);
     }
 
     // A standalone editable field the text keybinds reach.
@@ -121,9 +120,8 @@ namespace ArctisAurora.Core.UI.Text
                 return;
             }
 
-            if (!ClipboardImage.TryGet(out Image<Rgba32>? image)) return;
-            using (image)
-                ToClipboardTarget(target => target.PasteImage(image));
+            if (!ClipboardImage.TryGet(out Image? image)) return;
+            ToClipboardTarget(target => target.PasteImage(image));
         }
 
         [A_XSDActionDependency("Text.PasteLink", "Input", "Inserts a live link to the copied sheet cells; a plain paste otherwise")]

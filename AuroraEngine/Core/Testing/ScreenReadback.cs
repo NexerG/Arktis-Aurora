@@ -2,11 +2,10 @@ using ArctisAurora.EngineWork;
 using ArctisAurora.EngineWork.Rendering;
 using ArctisAurora.EngineWork.Rendering.Helpers;
 using ArctisAurora.EngineWork.Rendering.Modules;
+using Arctis.Imaging;
 using Silk.NET.Vulkan;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 using Buffer = Silk.NET.Vulkan.Buffer;
-using Image = SixLabors.ImageSharp.Image;
+using Image = Arctis.Imaging.Image;
 
 namespace ArctisAurora.Core.Testing
 {
@@ -27,7 +26,7 @@ namespace ArctisAurora.Core.Testing
         }
 
         // The copied frame as RGBA once it has landed, or an error for a format it cannot read. Main thread.
-        internal static bool TryTake(RenderWindow window, out Image<Rgba32>? image, out string? error)
+        internal static bool TryTake(RenderWindow window, out Image? image, out string? error)
         {
             image = null;
             error = null;
@@ -40,23 +39,20 @@ namespace ArctisAurora.Core.Testing
             {
                 case Format.R8G8B8A8Unorm:
                 case Format.R8G8B8A8Srgb:
-                    image = Image.LoadPixelData<Rgba32>(pixels, width, height);
+                    image = Image.FromPixels(pixels, width, height, 0, PixelLayout.RGBA8);
                     break;
                 case Format.B8G8R8A8Unorm:
                 case Format.B8G8R8A8Srgb:
-                    using (Image<Bgra32> bgra = Image.LoadPixelData<Bgra32>(pixels, width, height))
-                        image = bgra.CloneAs<Rgba32>();
+                    image = Image.FromPixels(pixels, width, height, 0, PixelLayout.RGBA8);
+                    ImageOps.SwizzleBgraToRgba(image.Pixels);
                     break;
                 default:
                     error = $"cannot read a {window.readbackFormat} swapchain";
                     return true;
             }
 
-            image.ProcessPixelRows(rows =>
-            {
-                for (int y = 0; y < rows.Height; y++)
-                    foreach (ref Rgba32 p in rows.GetRowSpan(y)) p.A = 255;
-            });
+            byte[] rgba = image.Pixels;
+            for (int i = 3; i < rgba.Length; i += 4) rgba[i] = 255;
             return true;
         }
 

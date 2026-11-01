@@ -484,7 +484,7 @@ namespace ArctisAurora.Core.UI.Text
         // The authored size at the picture's aspect, or its own size capped to the column; zoomed.
         private (float width, float height) PictureSize(StyleSpan span, TextureAsset? picture, float wrapWidth)
         {
-            Vector2 native = picture != null ? new Vector2(picture.image.Width, picture.image.Height) : Vector2.Zero;
+            Vector2 native = picture != null ? new Vector2(picture.width, picture.height) : Vector2.Zero;
             float aspect = native.X > 0f ? native.Y / native.X : 0f;
             float w = span.imageWidth;
             float h = span.imageHeight;
@@ -1100,7 +1100,7 @@ namespace ArctisAurora.Core.UI.Text
             float cellUV = 1f / k;
             float xOffset = cell % k * cellUV;
             float yOffset = MathF.Floor(cell / k) * cellUV;
-            float texelPad = 1f / font.textureAsset.image.Width;
+            float texelPad = 1f / font.textureAsset.width;
 
             float u0 = xOffset + texelPad;
             float v0 = yOffset + texelPad;

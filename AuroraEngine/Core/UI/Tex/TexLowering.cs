@@ -6,7 +6,7 @@ using ArctisAurora.Core.Testing;
 using ArctisAurora.Core.UI.Document;
 using ArctisAurora.Core.UI.Text;
 using ArctisAurora.EngineWork.Registry;
-using SixLabors.ImageSharp;
+using ArctisAurora.Core.Imaging;
 using System.Globalization;
 using System.Text;
 using System.Xml.Linq;
@@ -884,8 +884,7 @@ namespace ArctisAurora.Core.UI.Tex
         {
             try
             {
-                ImageInfo info = Image.Identify(path);
-                return (info.Width, info.Height);
+                return ImageFiles.TryIdentify(File.ReadAllBytes(path), out int width, out int height) ? (width, height) : (0, 0);
             }
             catch (Exception)
             {

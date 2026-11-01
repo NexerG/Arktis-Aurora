@@ -4,8 +4,8 @@ using ArctisAurora.Core.Security;
 using ArctisAurora.Core.Testing;
 using ArctisAurora.Core.UI;
 using ArctisAurora.Core.UI.Document;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using System.Runtime.InteropServices;
+using Image = Arctis.Imaging.Image;
 using System.Xml.Linq;
 
 namespace ArctisAurora.Tests
@@ -154,7 +154,9 @@ namespace ArctisAurora.Tests
             File.WriteAllText(Path.Combine(vault, "note.axml"), $"<Document><Block><Run Text=\"{noteMarker}\"/></Block></Document>\n");
             File.WriteAllText(Path.Combine(vault, "page.md"), $"# Title\n\n{markdownMarker}\n");
             File.WriteAllText(Path.Combine(vault, "sub", "notes.txt"), textMarker + "\n");
-            using (Image<Rgba32> image = new Image<Rgba32>(2, 2, new Rgba32(10, 20, 30, 255))) image.SaveAsPng(Path.Combine(vault, "pic.png"));
+            Image image = new Image(2, 2);
+            MemoryMarshal.Cast<byte, uint>(image.Pixels.AsSpan()).Fill(0xFF1E140Au);
+            image.SavePng(Path.Combine(vault, "pic.png"));
 
             originals = Directory.EnumerateFiles(vault, "*", SearchOption.AllDirectories)
                 .ToDictionary(f => Path.GetRelativePath(vault, f), File.ReadAllBytes);

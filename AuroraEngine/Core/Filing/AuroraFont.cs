@@ -1,9 +1,8 @@
 ﻿using ArctisAurora.Core.Filing.Serialization;
 using ArctisAurora.Core.Generators;
 using System.Numerics;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 using System.Runtime.InteropServices;
+using Image = Arctis.Imaging.Image;
 
 namespace ArctisAurora.Core.Filing
 {
@@ -136,7 +135,7 @@ namespace ArctisAurora.Core.Filing
             // One cell per (character, face), laid out as consecutive per-face blocks.
             int cellCount = glyphs.glyphCount * faces.Length;
             int glyphsPerAxis = (int)Math.Ceiling(MathF.Sqrt(cellCount));
-            Image<Rgba32> atlasImage = new Image<Rgba32>(perGlyphSize * glyphsPerAxis, perGlyphSize * glyphsPerAxis);
+            Image atlasImage = new Image(perGlyphSize * glyphsPerAxis, perGlyphSize * glyphsPerAxis);
             Diagnostics.Profiling.Zone.Start("Atlas.Cells");
             for (int cell = 0; cell < cellCount; cell++)
             {
@@ -152,7 +151,7 @@ namespace ArctisAurora.Core.Filing
             Diagnostics.Profiling.Zone.End("Atlas.Cells");
 
             Diagnostics.Profiling.Zone.Start("Atlas.SavePng");
-            atlasImage.Save(Path.Combine(outputRoot, baseName, $"{baseName}_atlas.png"));
+            atlasImage.SavePng(Path.Combine(outputRoot, baseName, $"{baseName}_atlas.png"));
             Diagnostics.Profiling.Zone.End("Atlas.SavePng");
         }
 
