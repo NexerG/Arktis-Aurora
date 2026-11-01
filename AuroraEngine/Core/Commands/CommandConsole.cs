@@ -74,18 +74,13 @@ namespace ArctisAurora.Core.Commands
 
         private static void Build()
         {
-            foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
-                foreach (Type type in assembly.GetTypes())
-                    foreach (MethodInfo method in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static))
-                    {
-                        A_XSDActionDependencyAttribute? attr = method.GetCustomAttribute<A_XSDActionDependencyAttribute>();
-                        if (attr == null) continue;
-
-                        bool plain = Array.IndexOf(plainCategories, attr.Category) >= 0
-                            && method.ReturnType == typeof(void) && method.GetParameters().Length == 0;
-                        if (plain || attr.Category == consoleCategory)
-                            _commands.TryAdd(attr.Name, method);
-                    }
+            foreach ((MethodInfo method, A_XSDActionDependencyAttribute attr) in EngineTypes.Actions)
+            {
+                bool plain = Array.IndexOf(plainCategories, attr.Category) >= 0
+                    && method.ReturnType == typeof(void) && method.GetParameters().Length == 0;
+                if (plain || attr.Category == consoleCategory)
+                    _commands.TryAdd(attr.Name, method);
+            }
         }
 
         private static void Continue(Line line)

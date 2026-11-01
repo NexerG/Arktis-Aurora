@@ -59,11 +59,11 @@ namespace ArctisAurora.Core.Registry
             baselines.Clear();
             stored.Clear();
 
-            foreach (Type type in AppDomain.CurrentDomain.GetAssemblies().SelectMany(a => a.GetTypes())
-                .Where(t => !t.IsAbstract && !t.IsInterface
-                            && typeof(ISettingsGroup).IsAssignableFrom(t)
-                            && t.GetCustomAttribute<A_XSDTypeAttribute>(false) != null))
-                groups[type] = (ISettingsGroup)Activator.CreateInstance(type);
+            foreach (Type type in EngineTypes.All)
+                if (!type.IsAbstract && !type.IsInterface
+                    && typeof(ISettingsGroup).IsAssignableFrom(type)
+                    && type.GetCustomAttribute<A_XSDTypeAttribute>(false) != null)
+                    groups[type] = (ISettingsGroup)Activator.CreateInstance(type);
 
             IReadOnlyList<IDataMount> mounts = VirtualFileSystem.Mounts;
             for (int i = mounts.Count - 1; i >= 0; i--)
@@ -164,13 +164,9 @@ namespace ArctisAurora.Core.Registry
             if (actions != null) return actions;
 
             actions = new Dictionary<string, MethodInfo>();
-            foreach (Type type in AppDomain.CurrentDomain.GetAssemblies().SelectMany(a => a.GetTypes()))
-                foreach (MethodInfo method in type.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.NonPublic))
-                {
-                    A_XSDActionDependencyAttribute attribute = method.GetCustomAttribute<A_XSDActionDependencyAttribute>();
-                    if (attribute != null && attribute.Category == "Settings")
-                        actions[attribute.Name] = method;
-                }
+            foreach ((MethodInfo method, A_XSDActionDependencyAttribute attribute) in EngineTypes.Actions)
+                if (attribute.Category == "Settings")
+                    actions[attribute.Name] = method;
             return actions;
         }
 

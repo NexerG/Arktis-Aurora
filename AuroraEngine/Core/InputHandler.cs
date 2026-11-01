@@ -1273,12 +1273,7 @@ namespace ArctisAurora.EngineWork
         {
             InputHandler handler = new InputHandler();
 
-            (MethodInfo method, A_XSDActionDependencyAttribute attr)[] tagged = AppDomain.CurrentDomain.GetAssemblies()
-                .SelectMany(a => a.GetTypes())
-                .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly))
-                .Select(m => (method: m, attr: m.GetCustomAttribute<A_XSDActionDependencyAttribute>()))
-                .Where(x => x.attr != null)
-                .ToArray();
+            (MethodInfo method, A_XSDActionDependencyAttribute attr)[] tagged = EngineTypes.Actions;
 
             foreach (string path in VirtualFileSystem.EnumerateAll("XML/Documents/Inputs", "*.inputs.axml"))
             {

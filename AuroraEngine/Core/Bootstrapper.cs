@@ -40,19 +40,9 @@ namespace ArctisAurora.EngineWork
 
         public static void Load(string xmlPath)
         {
-            var generalAsm = AppDomain.CurrentDomain.GetAssemblies();
-            foreach (var asm in generalAsm)
-            {
-                foreach (var type in asm.GetTypes())
-                {
-                    foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.NonPublic))
-                    {
-                        var attr = method.GetCustomAttribute<A_XSDActionDependencyAttribute>();
-                        if (attr != null && attr.Category == "Bootstrap")
-                            _actions[attr.Name] = method;
-                    }
-                }
-            }
+            foreach ((MethodInfo method, A_XSDActionDependencyAttribute attr) in EngineTypes.Actions)
+                if (attr.Category == "Bootstrap")
+                    _actions[attr.Name] = method;
 
             XElement root = DataFiles.LoadXml(xmlPath);
             XNamespace ns = root.GetDefaultNamespace();

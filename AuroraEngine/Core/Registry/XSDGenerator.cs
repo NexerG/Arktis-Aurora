@@ -124,7 +124,7 @@ namespace ArctisAurora.Core.Registry
             if (xsdTypes == null)
             {
                 xsdTypes = new Dictionary<string, Type>();
-                foreach (Type t in AppDomain.CurrentDomain.GetAssemblies().SelectMany(a => a.GetTypes()))
+                foreach (Type t in EngineTypes.All)
                 {
                     object[] attributes = t.GetCustomAttributes(typeof(A_XSDTypeAttribute), false);
                     if (attributes.Length == 0) continue;
@@ -327,7 +327,7 @@ namespace ArctisAurora.Core.Registry
         public static void GenerateXSD()
         {
             if (Paths.packed) return;
-            Type[] allTypes = AppDomain.CurrentDomain.GetAssemblies().SelectMany(a => a.GetTypes()).ToArray();
+            Type[] allTypes = EngineTypes.All;
             LoadHashes();
             GenerateDependencyXSD(allTypes);
             SaveHashes();
@@ -996,14 +996,6 @@ namespace ArctisAurora.Core.Registry
         #region MapBuilders
         private static Dictionary<Type, string> BuildTypeMap()
         {
-            var generalAsm = AppDomain.CurrentDomain.GetAssemblies();
-            var types = generalAsm.SelectMany(asm => asm.GetTypes()
-                .Where(t => t.GetCustomAttributes(typeof(A_XSDTypeAttribute), true).Any())
-                .Select(t => new
-                {
-                    Type = t,
-                    Attribute = (A_XSDTypeAttribute)t.GetCustomAttributes(typeof(A_XSDTypeAttribute), true).First()
-                })).ToList();
             Dictionary<Type, string> map = new Dictionary<Type, string>();
             /*{
                 { typeof(string),     "xs:string" },
@@ -1024,28 +1016,21 @@ namespace ArctisAurora.Core.Registry
                 { typeof(Type),       "Type" },
                 { typeof(AnyXMLType), "types:Uncategorized" }
             };*/
-            foreach (var type in types)
+            foreach (Type type in EngineTypes.All)
             {
-                map[type.Type] = type.Attribute.Name;
+                object[] attributes = type.GetCustomAttributes(typeof(A_XSDTypeAttribute), true);
+                if (attributes.Length > 0) map[type] = ((A_XSDTypeAttribute)attributes[0]).Name;
             }
             return map;
         }
 
         private static Dictionary<Type, string> BuildCategoryMap()
         {
-            var generalAsm = AppDomain.CurrentDomain.GetAssemblies();
-            var types = generalAsm.SelectMany(asm => asm.GetTypes()
-                .Where(t => t.GetCustomAttributes(typeof(A_XSDTypeAttribute), true).Any())
-                .Select(t => new
-                {
-                    Type = t,
-                    Attribute = (A_XSDTypeAttribute)t.GetCustomAttributes(typeof(A_XSDTypeAttribute), true).First()
-                })).ToList();
-
             Dictionary<Type, string> map = new Dictionary<Type, string>();
-            foreach (var type in types)
+            foreach (Type type in EngineTypes.All)
             {
-                map[type.Type] = type.Attribute.Category;
+                object[] attributes = type.GetCustomAttributes(typeof(A_XSDTypeAttribute), true);
+                if (attributes.Length > 0) map[type] = ((A_XSDTypeAttribute)attributes[0]).Category;
             }
             return map;
         }

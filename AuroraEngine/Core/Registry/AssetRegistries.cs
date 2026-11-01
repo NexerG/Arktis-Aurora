@@ -143,11 +143,8 @@ namespace ArctisAurora.EngineWork.Registry
         [A_XSDActionDependency("AssetRegistries.RegisterSerializableTypes", "Bootstrap")]
         internal static bool RegisterSerializableTypes()
         {
-            var asm = AppDomain.CurrentDomain.GetAssemblies();
-            var types = asm.SelectMany(a => a.GetTypes()).Where(t => t.GetCustomAttribute<@Serializable>() != null).ToList();
-
             Dictionary<uint, Type> serializableTypes = GetRegistryByValueType<uint, Type>(typeof(Type));
-            foreach (var t in types)
+            foreach (Type t in EngineTypes.All)
             {
                 var attr = t.GetCustomAttribute<@Serializable>();
                 if (attr != null)

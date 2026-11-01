@@ -32,9 +32,13 @@ graph TD
   Map --> Run
 ```
 
+### Discovery
+
+Step actions are found through `EngineTypes.Actions`, a lazily built index shared by every attribute scan in the engine, so `Bootstrapper.Load` does not walk every type in every loaded assembly. The index covers the engine assembly and assemblies that reference it, and is frozen at first use. See `ClaudeMemory/Decisions/engine-types-scan.md`.
+
 ### Step resolution
 `Bootstrapper.Load(xmlPath)` does two things:
-1. Reflects over every loaded assembly and collects each method tagged `[A_XSDActionDependency(name, "Bootstrap")]` into a `name â†’ MethodInfo` map.
+1. Reads `EngineTypes.Actions` and collects each method tagged `[A_XSDActionDependency(name, "Bootstrap")]` into a `name â†’ MethodInfo` map.
 2. Parses `Bootstrap.bootstrap.axml` into `phase name â†’ ordered list of step (action) names`.
 
 `RunPhase("Bootstrap")` then walks the step list in declared order, looks each name up in the map, and invokes it. An unknown step name is logged and skipped (non-fatal).

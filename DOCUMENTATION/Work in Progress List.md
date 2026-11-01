@@ -254,6 +254,8 @@ This file holds **open work**. A landed entry moves to [[Changelog]]; one that s
 - [ ] **language pack change needs a restart (2026-10-21)** — `Fonts.Rebake` re-bakes user fonts but the new atlases load next start (reloading a live `FontAsset` leaks its texture slot, leaves measure caches stale) → font-picker
 - [ ] **GUI-verify the font picker (2026-10-21)** — toolbar button click, list scroll, wait window over a real window, applying a font by mouse, Settings LanguagePacks re-bake; Linux and macOS unchecked → font-picker
 - [ ] **drop-button toggle for the remaining popup openers (2026-10-23)** — only dropdowns and menu bar buttons close their menu on a second press; formula, planner ticket and category, sheet-grow and sheet layers popups and the vault browser New button still reopen → context-menus
+- [ ] **profile `AssetRegistries.PreloadAssets` (2026-11-01)** — ~650 ms, largest bootstrap step after EngineTypes; no sub-zones yet → engine-types-scan
+- [ ] **LatinModern goldens fail on HEAD (2026-11-01)** — 7 tests, 28–61 px differences; predate EngineTypes, not investigated → engine-types-scan
 ---
 # PHASE B — ECS rework + renderer/settings foundation (~Jul–Sep 2026)
 - [ ] renderer foundation

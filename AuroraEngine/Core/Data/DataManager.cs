@@ -78,26 +78,19 @@ namespace ArctisAurora.Core.Data
         // Returns null if none is registered yet (e.g. before the UI sort provider exists).
         private static Func<DataPool, IReadOnlyList<int>> ResolveSortProvider(string actionName)
         {
-            foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
+            foreach ((MethodInfo method, A_XSDActionDependencyAttribute attr) in EngineTypes.Actions)
             {
-                foreach (Type type in asm.GetTypes())
+                if (attr.Category != "PoolSort" || attr.Name != actionName)
+                    continue;
+                try
                 {
-                    foreach (MethodInfo method in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static))
-                    {
-                        A_XSDActionDependencyAttribute attr = method.GetCustomAttribute<A_XSDActionDependencyAttribute>();
-                        if (attr == null || attr.Category != "PoolSort" || attr.Name != actionName)
-                            continue;
-                        try
-                        {
-                            return (Func<DataPool, IReadOnlyList<int>>)Delegate.CreateDelegate(
-                                typeof(Func<DataPool, IReadOnlyList<int>>), method);
-                        }
-                        catch
-                        {
-                            Log.Warn($"sort action '{actionName}' has an incompatible signature.");
-                            return null;
-                        }
-                    }
+                    return (Func<DataPool, IReadOnlyList<int>>)Delegate.CreateDelegate(
+                        typeof(Func<DataPool, IReadOnlyList<int>>), method);
+                }
+                catch
+                {
+                    Log.Warn($"sort action '{actionName}' has an incompatible signature.");
+                    return null;
                 }
             }
             Log.Warn($"sort action '{actionName}' not found — pool will keep insertion order.");

@@ -80,6 +80,7 @@ ArctisAurora.Core.Pdf -> AuroraEngine/Core/Pdf/PdfDocument.cs
 ArctisAurora.Core.Pdf -> AuroraEngine/Core/Pdf/PdfType3Font.cs
 ArctisAurora.Core.Registry -> AuroraEngine/Core/Registry/Context.cs
 ArctisAurora.Core.Registry -> AuroraEngine/Core/Registry/ContextDefinition.cs
+ArctisAurora.Core.Registry -> AuroraEngine/Core/Registry/EngineTypes.cs
 ArctisAurora.Core.Registry -> AuroraEngine/Core/Registry/EntityRegistry.cs
 ArctisAurora.Core.Registry -> AuroraEngine/Core/Registry/SettingCategory.cs
 ArctisAurora.Core.Registry -> AuroraEngine/Core/Registry/SettingsRegistry.cs

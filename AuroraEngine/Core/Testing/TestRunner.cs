@@ -131,14 +131,9 @@ namespace ArctisAurora.Core.Testing
 
         private static void Discover()
         {
-            foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
-                foreach (Type type in assembly.GetTypes())
-                    foreach (MethodInfo method in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static))
-                    {
-                        A_XSDActionDependencyAttribute? attr = method.GetCustomAttribute<A_XSDActionDependencyAttribute>();
-                        if (attr != null && attr.Category == "Test")
-                            _actions[attr.Name] = method;
-                    }
+            foreach ((MethodInfo method, A_XSDActionDependencyAttribute attr) in EngineTypes.Actions)
+                if (attr.Category == "Test")
+                    _actions[attr.Name] = method;
         }
 
         private static void Load(string? filter)

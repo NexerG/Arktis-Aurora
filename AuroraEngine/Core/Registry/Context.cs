@@ -99,31 +99,18 @@ namespace ArctisAurora.Core.Registry
         [A_XSDActionDependency("Context.LoadContexts", "Bootstrap")]
         internal static bool LoadContexts()
         {
-            var generalAsm = AppDomain.CurrentDomain.GetAssemblies();
-            var members = generalAsm.SelectMany(a => a.GetTypes())
-                .SelectMany(t => t.GetMembers(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
-                    .Where(m => m.IsDefined(typeof(A_ActiveContextAttribute), false))
-                    .Select(m => (Member: m, Attr: m.GetCustomAttribute<A_ActiveContextAttribute>()!)));
-
-            foreach (var (member, attr) in members)
+            const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly;
+            foreach (Type type in EngineTypes.All)
             {
-                if (member is PropertyInfo prop)
+                foreach (PropertyInfo prop in type.GetProperties(flags))
                 {
-                    Register(
-                        attr.name,
-                        prop.PropertyType,
-                        () => prop.GetValue(null),
-                        v => prop.SetValue(null, v)
-                    );
+                    A_ActiveContextAttribute? attr = prop.GetCustomAttribute<A_ActiveContextAttribute>(false);
+                    if (attr != null) Register(attr.name, prop.PropertyType, () => prop.GetValue(null), v => prop.SetValue(null, v));
                 }
-                else if (member is FieldInfo field)
+                foreach (FieldInfo field in type.GetFields(flags))
                 {
-                    Register(
-                        attr.name,
-                        field.FieldType,
-                        () => field.GetValue(null),
-                        v => field.SetValue(null, v)
-                    );
+                    A_ActiveContextAttribute? attr = field.GetCustomAttribute<A_ActiveContextAttribute>(false);
+                    if (attr != null) Register(attr.name, field.FieldType, () => field.GetValue(null), v => field.SetValue(null, v));
                 }
             }
 

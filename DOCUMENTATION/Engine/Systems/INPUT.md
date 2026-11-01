@@ -99,7 +99,7 @@ The tracker is purely a state machine. It doesn't know about keybinds. It conver
 ### Keybind Definitions
 A `KeybindDefinition` represents a single input binding. It has:
 - **Trigger** — the primary `Keys` value that initiates evaluation (e.g. `S`, `MouseLeft`, `F5`)
-- **Action** — the `Action` delegate to invoke when the keybind fires. Resolved at XML parse time via `[A_XSDActionDependency]` attribute scanning across all assemblies
+- **Action** — the `Action` delegate to invoke when the keybind fires. Resolved at XML parse time via `[A_XSDActionDependency]` methods from `EngineTypes.Actions`
 - **Modifiers** — a list of `KeybindModifier`, each specifying a `Keys` value that must be held simultaneously (e.g. `LeftControl`). All modifiers must be down for the keybind to be considered
 - **Conditions** — a list of `InputCondition` objects that define *when* relative to the trigger key's state the action should fire. If no conditions are specified, the default behavior is `Press` (fire on key down)
 
@@ -240,7 +240,7 @@ Structure:
 ```
 
 - `Trigger` — the `Keys` enum value string
-- `Action` — resolved by scanning `[A_XSDActionDependency]` methods across all assemblies by method name
+- `Action` — resolved by name from the `[A_XSDActionDependency]` methods in `EngineTypes.Actions`
 - Child `Modifier` elements specify required held keys
 - Child condition elements (`Press`, `Release`, `Hold`, `Repeat`, etc.) are parsed by type name and their XML attributes are reflected onto the condition object's properties/fields
 - If no condition elements are present, `Press` is the implicit default

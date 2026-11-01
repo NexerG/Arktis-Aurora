@@ -139,6 +139,7 @@ Standing constraints (ECS storage, Vulkan internals, physics, XSD-not-JSON) are 
 | ^ part B of [[axml-file-types]] | OS default-app registration (Windows HKCU ProgIDs, Linux `.desktop` + mime) from a Settings "File types" category; a file on the command line opens in a new standalone process with a bare tab window | `FileAssociations` (`Claim`, `ClaimAll`), `RegistryEntry`, `SettingsWindow.FillFileTypes`, `Background.standalone` |
 | [[xml-save-skips-defaults]] | a value equal to its default is not written, and that is intended | `XmlReflection.ScalarMembers` |
 | [[xsd-generator-cross-category]] | cross-category type refs need `xs:import`; a dangling ref voids the whole schema | `XSDGenerator` |
+| [[engine-types-scan]] | every attribute reflection scan reads one shared lazy index of the engine assembly and assemblies referencing it, not the whole AppDomain; assembly set frozen at first use | `EngineTypes`, `EngineTypes.All`, `EngineTypes.Actions`, `Context.LoadContexts`, `AnyXMLType.FindType` |
 
 ## Engine core and lifecycle
 

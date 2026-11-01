@@ -12,16 +12,8 @@ namespace ArctisAurora.Core.UI
 {
     public partial class Control
     {
-        private static (MethodInfo method, A_XSDActionDependencyAttribute attr)[] _taggedActions = null!;
-
         // Every [A_XSDActionDependency] in the process, scanned once and shared by every load.
-        private static (MethodInfo method, A_XSDActionDependencyAttribute attr)[] TaggedActions =>
-            _taggedActions ??= AppDomain.CurrentDomain.GetAssemblies()
-                .SelectMany(a => a.GetTypes())
-                .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly))
-                .Select(m => (method: m, attr: m.GetCustomAttribute<A_XSDActionDependencyAttribute>()))
-                .Where(x => x.attr != null)
-                .ToArray();
+        private static (MethodInfo method, A_XSDActionDependencyAttribute attr)[] TaggedActions => EngineTypes.Actions;
 
         // Builds a tree from a document named in the uiDocuments registry.
         public static Control ParseXML(string document)
