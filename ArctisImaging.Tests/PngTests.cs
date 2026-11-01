@@ -62,6 +62,61 @@ namespace Arctis.Imaging.Tests
         }
 
         [Theory]
+        [InlineData(0, 8)]
+        [InlineData(0, 16)]
+        [InlineData(2, 8)]
+        [InlineData(2, 16)]
+        [InlineData(4, 8)]
+        [InlineData(4, 16)]
+        [InlineData(6, 8)]
+        [InlineData(6, 16)]
+        public void EveryDepthDecodesUnderEveryFilter(byte colorType, byte depth)
+        {
+            const int width = 37, height = 11;
+            int channels = colorType switch { 2 => 3, 4 => 2, 6 => 4, _ => 1 };
+            int sampleBytes = depth / 8;
+            byte[] samples = Pattern(width * height * channels * sampleBytes, colorType + depth);
+
+            byte[] expected = new byte[width * height * 4];
+            Span<int> v = stackalloc int[4];
+            for (int i = 0; i < width * height; i++)
+            {
+                for (int k = 0; k < channels; k++)
+                {
+                    int at = (i * channels + k) * sampleBytes;
+                    int s = depth == 16 ? samples[at] << 8 | samples[at + 1] : samples[at];
+                    v[k] = depth == 16 ? (s * 255 + 32895) >> 16 : s;
+                }
+                bool colour = colorType == 2 || colorType == 6;
+                bool alpha = colorType == 4 || colorType == 6;
+                expected[i * 4] = (byte)v[0];
+                expected[i * 4 + 1] = (byte)(colour ? v[1] : v[0]);
+                expected[i * 4 + 2] = (byte)(colour ? v[2] : v[0]);
+                expected[i * 4 + 3] = (byte)(alpha ? v[channels - 1] : 255);
+            }
+
+            for (byte filter = 0; filter <= 4; filter++)
+            {
+                for (int interlace = 0; interlace < 2; interlace++)
+                {
+                    byte[] png = PngBuilder.Build(width, height, colorType, depth, samples, filter, interlaced: interlace == 1);
+                    byte[] rgba = new byte[width * height * 4];
+                    byte[] bgra = new byte[width * height * 4];
+                    ImageCodec.Decode(png, rgba, new DecodeOptions(PixelLayout.RGBA8));
+                    ImageCodec.Decode(png, bgra, new DecodeOptions(PixelLayout.BGRA8));
+                    Assert.Equal(expected, rgba);
+                    for (int i = 0; i < width * height; i++)
+                    {
+                        Assert.Equal(expected[i * 4 + 2], bgra[i * 4]);
+                        Assert.Equal(expected[i * 4 + 1], bgra[i * 4 + 1]);
+                        Assert.Equal(expected[i * 4], bgra[i * 4 + 2]);
+                        Assert.Equal(expected[i * 4 + 3], bgra[i * 4 + 3]);
+                    }
+                }
+            }
+        }
+
+        [Theory]
         [InlineData(1)]
         [InlineData(2)]
         [InlineData(4)]

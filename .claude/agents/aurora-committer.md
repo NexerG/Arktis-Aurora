@@ -108,7 +108,7 @@ Any `FAIL-` line: fix the message and run the check again. Then:
 
 ```bash
 git add -A
-git commit -F "$msg"
+git -c user.name=NexerG -c user.email=68482683+NexerG@users.noreply.github.com commit -F "$msg"
 git log -1 --format=%B | grep -iE 'co-authored-by|generated with' && echo FAIL-TRAILER-COMMITTED
 git status --porcelain
 ```

@@ -2,7 +2,6 @@ using ArctisAurora.Core.Filing;
 using ArctisAurora.Core.Filing.Xml;
 using ArctisAurora.Core.Registry;
 using ArctisAurora.Core.UI.Document;
-using System.Runtime.CompilerServices;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
@@ -134,7 +133,6 @@ namespace ArctisAurora.Core.UI.Notes
         // A stretch of the old file replaced whole: from the kept element before it to the kept segment after.
         private readonly record struct Hole(long from, long to, byte[] content);
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static SegmentPatch Patch(RichTextDocument document, string path, List<NoteSegment> map, byte[] file)
         {
             XNamespace ns = XSDGenerator.NamespaceFor("UI");
@@ -217,7 +215,6 @@ namespace ArctisAurora.Core.UI.Notes
         }
 
         // The file's units in order, each holding the old segment it keeps when that segment is unchanged.
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static List<Unit> Match(RichTextDocument document, string path, List<NoteSegment> map, byte[] file)
         {
             ReadOnlySpan<byte> oldHeader = file.AsSpan(0, map[0].length);

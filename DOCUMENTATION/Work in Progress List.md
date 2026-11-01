@@ -256,6 +256,11 @@ This file holds **open work**. A landed entry moves to [[Changelog]]; one that s
 - [ ] **drop-button toggle for the remaining popup openers (2026-10-23)** — only dropdowns and menu bar buttons close their menu on a second press; formula, planner ticket and category, sheet-grow and sheet layers popups and the vault browser New button still reopen → context-menus
 - [ ] **profile `AssetRegistries.PreloadAssets` (2026-11-01)** — ~650 ms, largest bootstrap step after EngineTypes; no sub-zones yet → engine-types-scan
 - [ ] **LatinModern goldens fail on HEAD (2026-11-01)** — 7 tests, 28–61 px differences; predate EngineTypes, not investigated → engine-types-scan
+- [ ] **RGBA8 Paeth at 0.5× ImageSharp (2026-11-01)** — now ~0.76–0.80 after the managed inflater; shorter dependency chain, 2-row wavefront, fused copy → managed-inflate
+- [ ] **fuse R8/RG8 output into `PngDecoder.Expand` (2026-11-01)** — still copies through the `rgba` scratch row (and `packed` for Adam7) → png-decode-fast-paths
+- [ ] **Arctis JPEG decoder (2026-11-01)** — `ImageFiles` still falls back to ImageSharp → png-decode-fast-paths
+- [ ] **Arctis GIF decoder (2026-11-01)** — `ImageFiles` still falls back to ImageSharp → png-decode-fast-paths
+- [ ] **re-measure AggressiveOptimization removal on boot, on Windows (2026-11-01)** — `Preload`/`PreloadAssets` zones via `--profile`; Linux numbers were noisy → png-decode-fast-paths
 ---
 # PHASE B — ECS rework + renderer/settings foundation (~Jul–Sep 2026)
 - [ ] renderer foundation

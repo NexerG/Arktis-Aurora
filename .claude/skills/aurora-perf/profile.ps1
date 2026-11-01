@@ -25,14 +25,25 @@ $presets = @{
 }
 $p = $presets[$Preset]
 
-$root = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
-$bin = Join-Path $root "$HostApp\bin\Release\net10.0-windows10.0.22621.0"
-$exe = Join-Path $bin "$HostApp.exe"
-$captures = Join-Path $env:APPDATA "Arktis\$HostApp\Profiling"
+$root = (Resolve-Path (Join-Path $PSScriptRoot (Join-Path '..' (Join-Path '..' '..')))).Path
+if ($IsLinux) {
+    $bin = Join-Path $root (Join-Path $HostApp 'bin/Release/net10.0')
+    $exe = Join-Path $bin $HostApp
+}
+else {
+    $bin = Join-Path $root "$HostApp\bin\Release\net10.0-windows10.0.22621.0"
+    $exe = Join-Path $bin "$HostApp.exe"
+}
+$captures = Join-Path ([Environment]::GetFolderPath('ApplicationData')) (Join-Path 'Arktis' (Join-Path $HostApp 'Profiling'))
 $summarize = Join-Path $PSScriptRoot 'summarize.ps1'
 
 if ($Build) {
-    dotnet build (Join-Path $root 'AuroraEngine\ArctisAurora.sln') -c Release "-p:DefineConstants=TRACE%3BPROFILE" -v q -nologo
+    if ($IsLinux) {
+        dotnet build (Join-Path $root "$HostApp/$HostApp.csproj") -f net10.0 -c Release "-p:DefineConstants=TRACE%3BPROFILE" -p:EnableWindowsTargeting=true -v q -nologo
+    }
+    else {
+        dotnet build (Join-Path $root 'AuroraEngine\ArctisAurora.sln') -c Release "-p:DefineConstants=TRACE%3BPROFILE" -v q -nologo
+    }
     if ($LASTEXITCODE -ne 0) { Write-Output "build failed"; exit 1 }
 }
 if (-not (Test-Path -LiteralPath $exe)) { Write-Output "no $exe - pass -Build"; exit 1 }
@@ -42,7 +53,11 @@ for ($run = 1; $run -le $Runs; $run++) {
     $dest = Join-Path $Out "run$run"
     if (Test-Path -LiteralPath $dest) { Write-Output "$dest exists - pick another -Out"; exit 1 }
     $before =@(if (Test-Path -LiteralPath $captures) { Get-ChildItem -LiteralPath $captures -Directory | ForEach-Object Name })
-    Start-Process -FilePath $exe -ArgumentList $p.Args -WorkingDirectory $bin -Wait
+    if ($IsLinux) {
+        $env:VK_ICD_FILENAMES = '/usr/share/vulkan/icd.d/lvp_icd.json'
+        Start-Process -FilePath 'xvfb-run' -ArgumentList @('-a', '-s', '"-screen 0 1920x1080x24"', $exe, $p.Args) -WorkingDirectory $bin -Wait
+    }
+    else { Start-Process -FilePath $exe -ArgumentList $p.Args -WorkingDirectory $bin -Wait }
     $session = Get-ChildItem -LiteralPath $captures -Directory -ErrorAction SilentlyContinue |
         Where-Object { $before -notcontains $_.Name } | Sort-Object Name | Select-Object -Last 1
     if (-not $session) { Write-Output "run $run - no new session in $captures"; exit 1 }

@@ -142,6 +142,8 @@ dotnet build AuroraEngine/ArctisAurora.sln -c Release "-p:DefineConstants=TRACE%
 Thorium/bin/Release/<tfm>/Thorium.exe --profile-scenario=animation
 ```
 
+On Linux, build with `dotnet build Thorium -f net10.0 -c Release "-p:DefineConstants=TRACE%3BPROFILE" -p:EnableWindowsTargeting=true` and run under `xvfb-run` with `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json`; `_Build/PerfTests.sh` and the aurora-perf `profile.ps1` do this.
+
 One number to read carefully: `--profile=N` is N frames **per thread**, and on the main thread the bootstrap frame is one of them. A 120-frame capture writes 1 boot frame and 119 main frames, against a full 120 each from render and physics.
 
 ### A scenario

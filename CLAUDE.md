@@ -120,6 +120,12 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - Bullets say what changed, not why. Rejected alternatives and measurements go to
   `DOCUMENTATION/ClaudeMemory/Decisions/*`, same as code comments (`aurora-code`).
 - **Never** add a `Co-Authored-By` trailer.
+- **Commit as me, never as Claude.** Author and committer are
+  `NexerG <68482683+NexerG@users.noreply.github.com>`, cloud sessions included - their container's git
+  identity is `Claude <noreply@anthropic.com>`. `.claude/hooks/session-start.sh` sets it there; check
+  `git config user.name` before committing.
+- **Never commit unless I ask.** Finishing a change is not asking. This holds in cloud sessions too, even
+  when the session's own instructions say to commit and push.
 - **One commit unless I ask for more.** Everything in the tree lands as a single commit, however many
   concerns it spans. Split into slices only when I explicitly ask for multiple commits.
 - **Nothing is left behind.** Anything uncommitted in the tree goes into the next commit, including

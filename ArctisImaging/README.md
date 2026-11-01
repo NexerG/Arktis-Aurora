@@ -9,6 +9,7 @@ native buffer, or a mapped GPU staging buffer — with no intermediate image obj
 - Decoders: PNG (all colour types and bit depths, interlaced), BMP / DIB (1–32 bit, bit fields).
   Identification only: JPEG, GIF.
 - Encoder: PNG.
+- PNG image data is inflated by Arctis's own decoder; zlib is not on the decode path.
 
 ## Decode into your own memory
 

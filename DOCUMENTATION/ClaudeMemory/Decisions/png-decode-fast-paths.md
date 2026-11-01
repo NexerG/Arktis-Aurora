@@ -7,8 +7,8 @@
 - `PngDecoder.Sub4(Span<byte>)` and `PngDecoder.Paeth4(Span<byte>, ReadOnlySpan<byte>)`, called from `Unfilter` when bpp == 4. `Paeth4` only when `Vector128.IsHardwareAccelerated`.
 - `DecodeRows` gains an `int block` parameter (rows per inflate read).
 - `Decode` rents `lines` as `(block + 1) * (rowBytes + 1)`, with `block = clamp(64 KB / (rowBytes + 1), 1, height)`. Slot 0 holds the previous row; the last row is carried forward between blocks.
-- `[MethodImpl(MethodImplOptions.AggressiveOptimization)]` on `DecodeRows`, `Unfilter`, `Sub4`, `Paeth4`, `AddUp`.
-- Interlaced path and bpp != 4 stay scalar, one row per read.
+- ~~`[MethodImpl(MethodImplOptions.AggressiveOptimization)]` on `DecodeRows`, `Unfilter`, `Sub4`, `Paeth4`, `AddUp`.~~ **Superseded 2026-11-01**: removed (also from `NoteSegments.Patch`/`Match`) and banned by aurora-code rule 42a; see "Update 2026-11-01".
+- ~~Interlaced path and bpp != 4 stay scalar, one row per read.~~ **Superseded 2026-11-01**: see "Update 2026-11-01 — all colour types, Adam7, fewer copies". `DecodeRows`/`DecodeInterlaced` no longer exist (now `DecodePass`).
 - `TextureLoader.UploadFile`: permanent `Profiling.Zone` "Image.Decode" around `ImageCodec.Decode` into mapped staging. Only the fast path is zoned, not the CPU-copy path through `ImageFiles.Load`.
 - Decoded output is byte-identical to before. No data XML changed.
 
@@ -21,10 +21,10 @@ Thorium's 11 font atlases plus the default icon atlas are 15.5 MB of PNG decodin
 The left-neighbour dependency forbids going across pixels. SIMD Paeth ~130 ms vs ~200 ms scalar on these atlases.
 
 **Inflate in ~64 KB blocks of rows.**
-Per-row `ReadExactly` on `ZLibStream` had measurable call overhead.
+~~Per-row `ReadExactly` on `ZLibStream` had measurable call overhead.~~ **Superseded 2026-11-01**: the inflate stage is now [[managed-inflate]]; block reads are gone.
 
-**AggressiveOptimization on the hot loops.**
-They run once at boot, so tier-0 plus OSR cost ~90 ms of cold time. Cold-process bench: 311 -> 221 ms with that plus block inflate.
+**~~AggressiveOptimization on the hot loops.~~ Superseded 2026-11-01, see "Update 2026-11-01".**
+They run once at boot, so tier-0 plus OSR cost ~90 ms of cold time. Cold-process bench: 311 -> 221 ms with that plus block inflate (Windows).
 
 **Decoding straight into mapped staging is not the problem.**
 Decoding into a PAGE_WRITECOMBINE buffer measured 135 vs 137 ms into a normal array. Rows are still unfiltered in pooled scratch and written forward once.
@@ -50,6 +50,66 @@ Release+PROFILE, Thorium `--profile=30`, Bootstrap thread, 3 runs each side, sam
 - Earlier ImageSharp numbers: warm decode of the atlases ~205 ms, cold ~385 ms; PreloadAssets 612 ms of a ~1.1 s boot.
 - Extends the existing memory that ImageSharp is being replaced by an in-house loader for license and security reasons.
 
+## Update 2026-11-01 — AO banned, ImageSharp comparison, Linux perf setup
+
+### What changed
+- `[MethodImpl(MethodImplOptions.AggressiveOptimization)]` removed from `Arctis.Imaging.PngDecoder` (`DecodeRows`, `Unfilter`, `Sub4`, `Paeth4`, `AddUp`) and `ArctisAurora.Core.UI.Notes.NoteSegments` (`Patch`, `Match`), with their unused `using System.Runtime.CompilerServices`.
+- aurora-code SKILL.md rule 42a (numbered 42a so 43-61 keep their numbers): no AggressiveOptimization.
+- New `ArctisAurora.Tests.ImageDecodePerfTests`, actions `Perf.ImageDecode.Atlases.Arctis`, `.Atlases.ImageSharp`, `.Formats.Arctis`, `.Formats.ImageSharp`, registered in `Perf.tests.axml` (Timeout 60000 atlases / 180000 formats, NO `<Budget>`).
+	- Atlases: the 11 Thorium font atlases (`Fonts/*/*_atlas.png`) plus `Icons/default/default_atlas.png`, cycled into 64 separate `byte[]` copies; one decode per frame into one reused RGBA8 buffer; zones `Image.Decode.Arctis.Atlas` / `Image.Decode.ImageSharp.Atlas`.
+	- Formats: a 1024² crop of the arial atlas, encoded at setup by ImageSharp as RGBA8, RGB8, Grey8, RGBA16 x filters None/Sub/Up/Average/Paeth, plus RGBA8 Adam7, plus (ImageSharp only) JPEG Q90 and GIF; 64 decodes per row; zones `Image.Decode.<Arctis|ImageSharp>.Png.<Colour>.<Filter>`, `.Png.RGBA8.Adam7`, `.Jpeg.Q90`, `.Gif`.
+	- ImageSharp side is `Image.Load<Rgba32>` + `CopyPixelDataTo` into the same buffer. No warm-up pass.
+- Linux tooling: `_Build/PerfTests.sh` builds Thorium `-f net10.0` Release+PROFILE with `-p:EnableWindowsTargeting=true` and runs `--test=Perf` under `xvfb-run` with `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json` (lavapipe); its Windows branch mirrors `PerfTests.cmd`. `.claude/skills/aurora-perf/profile.ps1` is cross-platform under pwsh (`$IsLinux` picks the `net10.0` bin and Linux build line, launches via xvfb-run + lavapipe; captures from `[Environment]::GetFolderPath('ApplicationData')`, `~/.config` on Linux). `summarize.ps1` unchanged. aurora-perf SKILL.md gained the Linux build line.
+- Cloud-session rules: CLAUDE.md §7 two bullets (commit as `NexerG <68482683+NexerG@users.noreply.github.com>`; never commit unless asked). `.claude/agents/aurora-committer.md` commits with `-c user.name/-c user.email`. New `.claude/hooks/session-start.sh` + `.claude/settings.json` SessionStart hook sets that identity when `CLAUDE_CODE_REMOTE=true`.
+
+### Why
+**AggressiveOptimization is banned (user request: avoid it in general).**
+It skips tiered compilation, so a method never gets the Dynamic PGO tier-1 recompile. Cold-start cost is to be cut with data and design instead. This supersedes the section above that credited it with ~90 ms of the 311 -> 221 ms Windows cold-process win.
+
+**The comparison is an engine perf test, not a standalone bench (user choice).**
+BenchmarkDotNet rejected: a new NuGet dependency. ImageSharp is already referenced by `AuroraEngine.csproj`.
+
+**No `<Budget>` on the decode tests (user agreed).**
+One atlas decode is 20-180 ms, over the 8 ms Max cap every budget carries; they measure, not gate.
+
+**64 separate copies, so repeated files are not served from a warm cache.**
+
+**`profile.ps1` made cross-platform instead of bash/Python twins** — one script for both OSes.
+
+**`--test=` filters by suite name only,** so runs use `--test=Perf` and read the `Image.Decode.*` zones.
+
+### Measurements
+Release+PROFILE, Linux cloud container, lavapipe (CPU Vulkan) under xvfb, 3 runs with the attribute (AO) + 3 without, 2026-11-01. Per-decode zone ms, ranges across runs.
+
+| row | Arctis+AO p50 | Arctis p50 | ImageSharp p50 (6 runs) | Arctis/IS median p50 |
+|---|---|---|---|---|
+| Atlas (64, mixed 512²-2432²) | 31.2-33.7 | 31.2-37.5 | 29.6-35.7 | 1.02 |
+| Atlas total per 64 (ms) | 2994-3316 | 2974-3133 | 3190-3535 | — |
+| Atlas max | 117-183 | 122-129 | 210-486 | — |
+| Png.RGBA8.None/Sub/Up/Paeth | 11.3-16.7 | 11.3-19.7 | 11.6-16.6 | 0.92 / 0.99 / 0.93 / 1.07 |
+| Png.RGBA8.Average | 16.1-16.6 | 20.7-25.9 | 13.9-14.3 | 1.56 |
+| Png.RGBA8.Adam7 | 30.3-32.5 | 31.4-31.6 | 20.5-26.1 | 1.45 |
+| Png.RGB8 None/Sub/Up/Avg/Paeth | — | 13.2-19.4 / 17.4-26.0 / 12.5-19.1 / 19.7-32.7 / 26.5-27.9 | 10.7-12.7 / 12.2-15.0 / 10.3-11.9 / 14.1-16.7 / 25.6-32.0 | 1.14 / 1.31 / 1.22 / 1.46 / 1.00 |
+| Png.Grey8 None/Sub/Up/Avg/Paeth | — | 10.3-10.9 / 12.4-13.2 / 10.8-11.2 / 13.2-15.1 / 16.7-19.2 | 7.0-7.6 / 8.8-10.4 / 7.4-9.8 / 9.6-13.0 / 13.6-20.6 | 1.50 / 1.28 / 1.36 / 1.36 / 1.19 |
+| Png.RGBA16 None/Sub/Up/Avg/Paeth | — | 33.2-33.8 / 44.4-45.7 / 33.9-36.0 / 51.3-62.0 / 69.8-78.1 | 27.4-35.7 / 32.1-36.0 / 28.2-32.6 / 35.7-44.2 / 62.1-85.0 | 1.18 / 1.37 / 1.21 / 1.42 / 0.98 |
+| Jpeg.Q90 / Gif | unsupported | unsupported | 14.2-18.7 / 14.1-20.6 | — |
+
+- On the real atlas set Arctis ≈ ImageSharp at p50 and ~5-10% less total. Its cold max is far lower because boot already JIT-warmed Arctis (atlases are preloaded through it) while ImageSharp's first decode pays its own JIT: p50 is the fair column, max is not.
+- Off the RGBA8 fast paths (RGB8, Grey8, RGBA16, Adam7, the Average filter) Arctis is 1.2-1.56x slower.
+- Removing AO left the atlas set unchanged and showed slower p50 on some scalar rows (RGBA8/RGB8 Average, Sub; RGBA16 Sub/Average), but the without-AO ranges are wide and the CPU is shared with lavapipe's render thread: an observation, not a result.
+
+### Verification (update)
+- **Test-verified**: ArctisImaging.Tests 50/50 on Linux (net10.0). Release+PROFILE Thorium builds clean; all 4 `Perf.ImageDecode` tests PASS in all 6 runs; zero `[Vulkan]` lines in all 6 runs. Hook script run once: git identity set.
+- Other Perf tests fail their budgets here (52-55 failures): budgets are per machine and Render/Draw runs on lavapipe (CPU); not a regression signal.
+- Not checked: Windows runs of the new tests and of the `profile.ps1` Windows branch; `profile.ps1` not executed on Linux (only `PerfTests.sh` was); boot-time cost of removing AO (`Preload`/`PreloadAssets` zones via `--profile`); Debug build/test suite not rerun.
+
+### Known gaps (update)
+- JPEG and GIF decode absent in Arctis (`ImageFiles` still falls back to ImageSharp).
+- ~~No fast paths for RGB8 / Grey8 / 16-bit / interlaced / Average filter~~ — done, see "Update 2026-11-01 — all colour types, Adam7, fewer copies".
+- AO-removal effect on boot unmeasured; numbers are from a noisy CPU-rendered container and should be repeated on Windows.
+- The Linux container needed hand-installed packages (not in repo): dotnet-sdk-10.0 (Ubuntu; Microsoft's download host is blocked by the network policy), mesa-vulkan-drivers, vulkan-validationlayers (Release requests `VK_LAYER_KHRONOS_validation`; without it instance creation fails with ErrorLayerNotPresent), libminizip1t64 (libassimp.so needs libminizip.so.1, otherwise PreloadAssets crashes), pwsh via `dotnet tool install PowerShell`.
+- The planner twin in `D:\Repositories\ThoriumNotes` is not reachable from the cloud container.
+
 ## Verification
 - **Test-verified** for the decoder: ArctisImaging.Tests 50/50, including RGBA8 under every filter.
 - SHA-256 of all 12 real atlases decoded by the old build and the new one match.
@@ -61,6 +121,59 @@ Release+PROFILE, Thorium `--profile=30`, Bootstrap thread, 3 runs each side, sam
 - The 7 LatinModern golden failures and the Boot baseline error predate this change and are unexplained here.
 - No perf test with a Budget locks in the `Image.Decode` cost.
 - Atlases are still Paeth-baked by ImageSharp; the re-bake is an open option.
-- bpp != 4 (RGB8, grey, 16-bit) and interlaced images take the scalar path.
+- ~~bpp != 4 (RGB8, grey, 16-bit) and interlaced images take the scalar path.~~ Superseded 2026-11-01, see the update below.
+
+## Update 2026-11-01 — all colour types, Adam7, fewer copies
+
+### What changed
+All private, in `Arctis.Imaging.PngDecoder`; no public API change.
+- ~~Block reads / two ping-pong halves below~~ **Superseded 2026-11-01**: `DecodePass` now unfilters in place in one whole raw buffer inflated by `Inflater`; see [[managed-inflate]].
+- `DecodeRows` + `DecodeInterlaced` merged into `DecodePass(inflate, c, palette, lines, span, x0, y0, dx, dy, bpp, rgba, packed, destination, pitch, layout)`. Progressive = the single pass (0,0,1,1); interlaced = 7 Adam7 passes.
+	- Each pass inflates up to `span` bytes of rows per `ReadExactly` (`span = block * (rowBytes + 1)`, block as before from 64 KB), alternating between two halves of `lines`. A block's first row reads its previous row from the other half (no carry-row copy). A zero row sits after the two halves.
+	- `Decode` rents `lines` as `(2 * block + 1) * (rowBytes + 1)` (was `block + 1`).
+- `Expand(raw, rgba, width, c, palette)` -> `Expand(raw, output, width, step, c, palette, bgra)`: writes RGBA8 or BGRA8 directly, pixel x at `x * step * 4`.
+	- RGBA8/BGRA8 output writes straight into the destination row (Adam7: at the pass's final pixel positions via `step = dx`).
+	- R8/RG8 output still goes Expand -> `rgba` scratch -> `PixelRows.FromRgba` (Adam7: -> `packed` -> per-pixel scatter).
+	- Grey8 no-key, step 1: Vector128 shuffle widens 16 grey bytes to 64 output bytes. RGB8 no-key, step 1: shuffle 12 -> 16 bytes, OR alpha. RGBA16 step 1: 2 pixels per iteration, byte-swap shuffle, widen, `(v*255+32895)>>16` (same as `To8`), narrow. Other cases: pointer loops with depth/key tests outside the hot cases.
+	- New helpers `Store(byte*, uint)` (little-endian store) and `Big16(byte*)`.
+- Filters: new `Sub8` (64-bit SWAR), `Average4` / `Average8` (SWAR: per byte `(a & b) + ((a ^ b & 0xFE...) >> 1)`, then Sub4's bytewise add), `PaethWide` (Paeth4's 16-bit-lane SIMD on 8 lanes for bpp 3/6/8; lanes past the pixel get no prediction so they store back as read; scalar tail), `PaethScalar(cur, prev, bpp, start)`. Remaining scalar Sub/Average loops use pointers (no bounds checks). `Sub4`, `Paeth4`, `AddUp` unchanged.
+- Test: `Arctis.Imaging.Tests.PngTests.EveryDepthDecodesUnderEveryFilter(colorType, depth)`: colour types 0/2/4/6 x depth 8/16 x filters 0-4 x progressive/Adam7 x RGBA8 and BGRA8 output, width 37 x height 11, expected RGBA8 computed in the test.
+
+### Why
+**Copies are minimised (user: "if there are copies - don't, use as less as possible").**
+Each destination byte is written once and never read. The one remaining copy (unfiltered scratch row -> destination) stays because the destination may be write-combined mapped staging (`TextureLoader` decodes into it) and unfiltering needs the previous row; reading it back from the destination is the forbidden mapped readback. Copies per output byte: other colour types 2 -> 1; Adam7 3 -> 1 (RGBA8/BGRA8 output); per-block carry row 1 -> 0.
+
+**Merging `DecodeRows` and `DecodeInterlaced` gives Adam7 passes the block reads without duplicating the ping-pong loop.**
+
+**No JIT flags (rule 42a); all SIMD is portable `Vector128` behind `Vector128.IsHardwareAccelerated`, with scalar fallbacks.**
+
+**Where the time went before** (scratch Stopwatch bench, quiet CPU, 1024² crop, median of 40): inflate equal to ImageSharp's; the gap was all after inflate: span-indexed per-byte filter loops (bounds checks), per-pixel Expand with per-pixel depth/key tests plus a second copy, and Adam7's per-pixel `Span.CopyTo` and one `ReadExactly` per row.
+
+**Left out:** fusing R8/RG8 output into Expand (a third set of Expand loops, rejected), RGBA8 Paeth (`Paeth4` untouched; 1.02-1.08, within noise), inflate, palette and sub-byte depths (no perf row), JPEG/GIF.
+
+### Measurements
+Release+PROFILE, Linux container, lavapipe under xvfb, `Perf.ImageDecode` p50 ms per decode. Before = 3 runs after AO removal; after = 3 runs; ImageSharp pooled over 9 runs; ratio = median after / median ImageSharp.
+
+| row | before | after | ImageSharp | ratio |
+|---|---|---|---|---|
+| Atlas (64) | 31.2-37.5 | 30.9-38.5 | 29.0-39.5 | 0.98 |
+| Grey8 None/Sub/Up/Avg/Paeth | 10.3-19.2 | 4.5-10.6 | 6.5-20.6 | 0.87/0.65/0.58/0.71/0.72 |
+| RGB8 None/Sub/Up/Avg/Paeth | 12.5-32.7 | 9.6-17.8 | 9.7-30.9 | 0.88/0.91/0.91/0.93/0.64 |
+| RGBA16 None/Sub/Up/Avg/Paeth | 33.2-78.1 | 20.4-30.2 | 27.1-85.7 | 0.76/0.61/0.75/0.63/0.38 |
+| RGBA8 None/Sub/Up/Avg | 11.3-25.9 | 11.8-15.7 | 11.6-16.3 | 0.93/0.99/0.97/0.99 |
+| RGBA8 Adam7 | 31.4-31.6 | 21.6-26.5 | 20.6-26.9 | 0.99 |
+| RGBA8 Paeth | 16.5-19.7 | 16.7-19.8 | 15.7-16.8 | 1.08 |
+
+### Verification
+- **Test-verified**: ArctisImaging.Tests 58/58 (50 old + 8 new theory cases).
+- Byte-identical: SHA-256 of decoded output for 61 images (RGBA8/RGB8/Grey8/RGBA16/RGB16/GreyA8/GreyA16/Grey16 x 5 filters, every type Adam7, 12 atlases) x 4 layouts (RGBA8, BGRA8, R8, RG8) = 244 hashes identical before vs after.
+- Perf: all 4 `Perf.ImageDecode` tests PASS in 3 runs, zero `[Vulkan]` lines.
+- Not checked: Windows; big-endian; ARM; engine Debug suite; boot-time Preload zones.
+
+### Known gaps
+- RGBA8 Paeth still ~1.02-1.08x ImageSharp.
+- R8/RG8 output still copies through the `rgba` scratch row (and `packed` for Adam7).
+- JPEG/GIF decoders still absent.
+- Numbers from a noisy CPU-rendered container; repeat on Windows.
 
 Related: [[atlas-bake-one-edge-pass]], [[asset-manifest-and-import]], [[engine-profiling]]

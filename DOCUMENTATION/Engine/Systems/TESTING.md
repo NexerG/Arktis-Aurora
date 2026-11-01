@@ -223,6 +223,8 @@ _Build/PerfTests.cmd [Host]
 
 `PerfTests.cmd` builds the solution in Release with `PROFILE` defined, runs `<Host>.exe --test=Perf` from its Release folder, and exits with the run's exit code. The host defaults to Thorium.
 
+On Linux, `_Build/PerfTests.sh` does the same: it builds Thorium for `net10.0` in Release with `PROFILE`, then runs `--test=Perf` under `xvfb-run` with the lavapipe (CPU) Vulkan driver. Render and Draw run on the CPU there, so the other Perf budgets, which are per machine, fail on it; only the unbudgeted `Perf.ImageDecode` tests are meaningful.
+
 The Perf suite's targets, each 30 warm-up ticks then 120 measured ticks:
 
 | Test | Fixture | Work per tick | Budgeted zones |
@@ -235,6 +237,10 @@ The Perf suite's targets, each 30 warm-up ticks then 120 measured ticks:
 | `Perf.AnimationLayoutClip` | 5,000 buttons in rows of 100 | `profile-margin` playing on every button, a relayout every tick | `Step.Animation.Step`, `Step.Main.Layout` |
 | `Perf.Controls.<Name>.Static` | 1,000 of one control in rows of 25, each a star share of a 1,000-wide grid and 16 tall | nothing changes — the cost of having them on screen | `Step.Main.Input`, `Step.Main.Layout`, `Step.Main.DrawLists`, `Draw` on Render |
 | `Perf.Controls.<Name>.Relayout` | the same grid | the grid's width flips 1000/1001, so every control re-lays out | the same four |
+| `Perf.ImageDecode.Atlases.Arctis` / `.ImageSharp` | the 11 Thorium font atlases and the default icon atlas, cycled into 64 separate copies | one decode per tick into one reused RGBA8 buffer | none — no `<Budget>`, the zones `Image.Decode.<Arctis\|ImageSharp>.Atlas` are read from the capture |
+| `Perf.ImageDecode.Formats.Arctis` / `.ImageSharp` | a 1024² crop of the arial atlas encoded as RGBA8, RGB8, Grey8 and RGBA16 under every PNG filter, RGBA8 Adam7, and for ImageSharp only JPEG and GIF | 64 decodes per row | none — zones `Image.Decode.<Arctis\|ImageSharp>.Png.<Colour>.<Filter>` |
+
+The four `Perf.ImageDecode` tests carry no budget because one atlas decode takes 20 to 180 ms, over the 8 ms roof every budget has; they measure rather than gate. See `ClaudeMemory/Decisions/png-decode-fast-paths.md` for the numbers.
 
 The controls measured are Panel, Button, CheckBox, Slider, Dropdown, Expander, KeyCapture, Icon, Label, TextBox, EditableLabel, a nested StackPanel, GridList, Scrollable, SplitView and TabView. `Perf.Controls.Table.*` shows 100 small tables in a note instead, and its Relayout flips the page width by 1 mm.
 

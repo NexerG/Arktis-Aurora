@@ -18,6 +18,13 @@ dotnet build AuroraEngine/ArctisAurora.sln -c Release "-p:DefineConstants=TRACE%
 Run the host from `Thorium/bin/Release/net10.0-windows10.0.22621.0/` (same shape for Carbon). Output goes to
 `bin/Release`, so the Debug bin is untouched.
 
+On Linux (cloud sessions included) build the host project for `net10.0` and run it under `xvfb-run` with lavapipe;
+`profile.ps1` (run with `pwsh`) and `_Build/PerfTests.sh` do both, and captures land under `~/.config/Arktis/`:
+
+```bash
+dotnet build Thorium/Thorium.csproj -f net10.0 -c Release "-p:DefineConstants=TRACE%3BPROFILE" -p:EnableWindowsTargeting=true
+```
+
 - **A Debug number is not a measurement.** Debug never lets the JIT optimize — about 5× slow in the animation
   step. Every Debug table from 2026-09-19 to 09-24 was wrong for this reason (`Mistakes/profiling-unoptimized-jit.md`).
 - Plain Release compiles the profiler **out**: no zones, no capture, and a perf test reports `SKIP — profiler not

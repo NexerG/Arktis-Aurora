@@ -84,6 +84,7 @@ buffers), Logging, Threading, XSD. The evidence and measurements behind the rule
 40. Reject the cheapest case first — O(1) tests before O(n) scans.
 41. Shrink the data before the expensive stage; emit only what the next stage needs.
 42. A loop whose end depends on data the code doesn't control has an iteration cap that logs where it fired and on what input — through `Log.Once()` inside the frame loop. A loop bounded by construction has no cap.
+42a. No `[MethodImpl(MethodImplOptions.AggressiveOptimization)]`. It skips tiered compilation, so the method never gets the PGO recompile; hot code is left to the tiered JIT, and cold-start cost is cut with data and design, not JIT flags.
 
 ## Naming
 43. PascalCase for types, methods, properties and constants; camelCase for fields, public and private, parameters and locals; no underscore prefix. Interfaces `IName`, attributes `A_NameAttribute`, a subsystem's channel `static readonly LogChannel Log`. Win32 and Vulkan constants keep their C header names.
