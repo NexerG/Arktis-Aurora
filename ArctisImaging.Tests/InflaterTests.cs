@@ -181,12 +181,12 @@ namespace Arctis.Imaging.Tests
         }
 
         [Fact]
-        public void BadChecksumIsRejected()
+        public void BadChecksumIsIgnored()
         {
             byte[] data = Text(5000, 6);
             byte[] zlib = Compress(data, CompressionLevel.Optimal);
             zlib[^1] ^= 1;
-            Assert.Throws<ImageFormatException>(() => Inflate(Chunked(zlib, 1 << 16), data.Length));
+            Assert.Equal(data, Inflate(Chunked(zlib, 1 << 16), data.Length));
         }
 
         [Fact]
@@ -213,6 +213,47 @@ namespace Arctis.Imaging.Tests
                 }
                 for (int i = data.Length; i < buffer.Length; i++) Assert.Equal(0xA5, buffer[i]);
             }
+        }
+
+        [Fact]
+        public void CorruptStreamsThrowOnlyFormatErrorsAcrossSmallWindows()
+        {
+            const int guard = 64, width = 399, height = 100;
+            byte[][] sources = { Runs((width + 1) * height, 7), Text((width + 1) * height, 8) };
+            for (int k = 0; k < sources.Length; k++)
+                for (int y = 0; y < height; y++) sources[k][y * (width + 1)] = (byte)(y % 5);
+            uint s = 54321;
+            for (int round = 0; round < 2000; round++)
+            {
+                byte[] zlib = Compress(sources[round & 1], round % 3 == 0 ? CompressionLevel.Fastest : CompressionLevel.Optimal);
+                int flips = 1 + (int)(Next(ref s) % 3);
+                for (int f = 0; f < flips; f++) zlib[2 + Next(ref s) % (uint)(zlib.Length - 2)] ^= (byte)(1 + Next(ref s) % 255);
+
+                byte[] buffer = new byte[width * height * 4 + guard];
+                buffer.AsSpan(width * height * 4).Fill(0xA5);
+                try
+                {
+                    PngDecoder.Decode(GreyPng(width, height, zlib), buffer.AsSpan(0, width * height * 4), width * 4, PixelLayout.RGBA8, 7);
+                }
+                catch (ImageFormatException)
+                {
+                }
+                for (int i = width * height * 4; i < buffer.Length; i++) Assert.Equal(0xA5, buffer[i]);
+            }
+        }
+
+        private static byte[] GreyPng(int width, int height, byte[] zlib)
+        {
+            MemoryStream png = new MemoryStream();
+            png.Write(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A });
+            byte[] ihdr = new byte[13];
+            BinaryPrimitives.WriteInt32BigEndian(ihdr, width);
+            BinaryPrimitives.WriteInt32BigEndian(ihdr.AsSpan(4), height);
+            ihdr[8] = 8;
+            PngBuilder.Chunk(png, "IHDR", ihdr);
+            PngBuilder.Chunk(png, "IDAT", zlib);
+            PngBuilder.Chunk(png, "IEND", Array.Empty<byte>());
+            return png.ToArray();
         }
     }
 }

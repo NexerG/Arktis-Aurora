@@ -1,16 +1,17 @@
 using System;
 using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
-using System.Runtime.Intrinsics;
 
 namespace Arctis.Imaging
 {
-    // zlib (RFC 1950) and DEFLATE (RFC 1951) decoding of a PNG's IDAT chunks into one whole buffer.
+    // zlib (RFC 1950) and DEFLATE (RFC 1951) decoding of a PNG's IDAT chunks, a window at a time.
     internal static unsafe class Inflater
     {
+        internal const int MaxMatch = 258, History = 32768;
         private const int LitlenBits = 11, DistBits = 8, CodeBits = 7;
-        private const uint Literal = 0, Length = 1, End = 2, Sub = 3, Invalid = 4, Distance = 5;
+        private const uint Literal = 0, Length = 1, End = 2, Sub = 3, Invalid = 4, Distance = 5, Literal2 = 6;
         private const int LitlenMode = 0, DistMode = 1, CodeMode = 2;
+        private const int NeedHeader = 0, InStored = 1, InCodes = 2;
 
         private static ReadOnlySpan<ushort> LengthBase => new ushort[] { 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258 };
         private static ReadOnlySpan<byte> LengthExtra => new byte[] { 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0 };
@@ -20,23 +21,33 @@ namespace Arctis.Imaging
 
         // decode tables; an entry is value << 16 | kind << 8 | extra bits << 4 | code length
         [InlineArray(2342)]
-        private struct LitlenTable { private uint e; }
+        internal struct LitlenTable { private uint e; }
 
         [InlineArray(402)]
-        private struct DistTable { private uint e; }
+        internal struct DistTable { private uint e; }
 
         [InlineArray(128)]
-        private struct CodeTable { private uint e; }
+        internal struct CodeTable { private uint e; }
 
-        private struct Tables
+        internal struct Tables
         {
             public LitlenTable litlen;
             public DistTable dist;
             public CodeTable code;
         }
 
+        // where a stream stands between fills: cursor, tables, block, stored bytes left
+        internal struct State
+        {
+            public Bits s;
+            public Tables t;
+            public int block;
+            public bool final, done;
+            public uint storedLeft;
+        }
+
         // the bit cursor over consecutive IDAT chunk bodies, read in place
-        private struct Bits
+        internal struct Bits
         {
             public byte* data;
             public int length;
@@ -45,6 +56,7 @@ namespace Arctis.Imaging
             public int count, overread;
 
             // Tops the buffer up to at least 56 bits a byte at a time, stepping into the next IDAT chunk.
+            [MethodImpl(MethodImplOptions.AggressiveOptimization)]
             public void Refill()
             {
                 while (count <= 55)
@@ -96,49 +108,82 @@ namespace Arctis.Imaging
             fixed (byte* data = png)
             fixed (byte* start = output)
             {
-                Bits s = new Bits { data = data, length = png.Length, end = data + firstIdat - 4 };
-                if (!s.NextChunk()) throw new ImageFormatException("PNG has no image data");
-                uint cmf = s.Take(8), flg = s.Take(8);
-                if ((cmf & 15) != 8 || cmf >> 4 > 7 || (cmf << 8 | flg) % 31 != 0 || (flg & 0x20) != 0)
-                    throw new ImageFormatException("PNG image data has an invalid zlib header");
-
-                Tables t = default;
-                byte* o = start, outEnd = start + output.Length;
-                uint final;
-                do
-                {
-                    final = s.Take(1);
-                    uint type = s.Take(2);
-                    if (type == 0) o = Stored(ref s, o, outEnd);
-                    else
-                    {
-                        if (type == 1) BuildFixed(ref t);
-                        else if (type == 2) ReadDynamic(ref s, ref t);
-                        else throw new ImageFormatException("PNG image data has an invalid block type");
-                        o = Codes(ref s, ref t, o, start, outEnd);
-                    }
-                }
-                while (final == 0);
-                if (o != outEnd) throw new ImageFormatException("PNG image data ends early");
-
-                s.AlignToByte();
-                uint stored = s.Take(8) << 24 | s.Take(8) << 16 | s.Take(8) << 8 | s.Take(8);
-                if (s.overread * 8 > s.count) throw new ImageFormatException("PNG image data ends early");
-                if (Adler32(start, output.Length) != stored) throw new ImageFormatException("PNG image data checksum does not match");
+                State st = default;
+                Begin(ref st, data, png.Length, firstIdat);
+                byte* outEnd = start + output.Length;
+                if (Fill(ref st, start, start, outEnd, true) != outEnd) throw new ImageFormatException("PNG image data ends early");
+                Finish(ref st);
             }
         }
 
-        #region blocks
-        // Decodes one Huffman-coded block; one refill per symbol covers the longest match (48 bits).
-        private static byte* Codes(ref Bits s, ref Tables t, byte* o, byte* start, byte* outEnd)
+        // Opens the zlib stream in the IDAT chunks starting at firstIdat; png stays pinned until Finish.
+        internal static void Begin(ref State st, byte* png, int length, int firstIdat)
         {
-            fixed (uint* lit = &t.litlen[0])
-            fixed (uint* dist = &t.dist[0])
+            st.s = new Bits { data = png, length = length, end = png + firstIdat - 4 };
+            if (!st.s.NextChunk()) throw new ImageFormatException("PNG has no image data");
+            uint cmf = st.s.Take(8), flg = st.s.Take(8);
+            if ((cmf & 15) != 8 || cmf >> 4 > 7 || (cmf << 8 | flg) % 31 != 0 || (flg & 0x20) != 0)
+                throw new ImageFormatException("PNG image data has an invalid zlib header");
+        }
+
+        // Inflates from o toward outEnd: to within MaxMatch of it, or on the last window to the stream's end.
+        // Matches reach back no further than start. Returns where the output stopped.
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        internal static byte* Fill(ref State st, byte* start, byte* o, byte* outEnd, bool last)
+        {
+            byte* limit = last ? outEnd + 1 : outEnd - MaxMatch;
+            while (o < limit && !st.done)
+            {
+                if (st.block == NeedHeader)
+                {
+                    st.final = st.s.Take(1) != 0;
+                    uint type = st.s.Take(2);
+                    if (type == 0)
+                    {
+                        st.s.AlignToByte();
+                        uint len = st.s.Take(16), nlen = st.s.Take(16);
+                        if (len != (~nlen & 0xFFFF)) throw new ImageFormatException("PNG image data has an invalid stored block");
+                        st.storedLeft = len;
+                        st.block = InStored;
+                    }
+                    else
+                    {
+                        if (type == 1) BuildFixed(ref st.t);
+                        else if (type == 2) ReadDynamic(ref st.s, ref st.t);
+                        else throw new ImageFormatException("PNG image data has an invalid block type");
+                        st.block = InCodes;
+                    }
+                }
+                o = st.block == InStored ? Stored(ref st, o, outEnd, last) : Codes(ref st, o, start, limit, outEnd);
+                if (st.block == NeedHeader && st.final) st.done = true;
+            }
+            return o;
+        }
+
+        // Checks the stream ended and its trailer is present; the trailer's Adler-32 is not compared.
+        internal static void Finish(ref State st)
+        {
+            if (!st.done) throw new ImageFormatException("PNG image data ends early");
+            ref Bits s = ref st.s;
+            s.AlignToByte();
+            s.Take(16);
+            s.Take(16);
+            if (s.overread * 8 > s.count) throw new ImageFormatException("PNG image data ends early");
+        }
+
+        #region blocks
+        // Decodes a Huffman block until its end or until o reaches limit; a refill per symbol covers the longest match.
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private static byte* Codes(ref State st, byte* o, byte* start, byte* limit, byte* outEnd)
+        {
+            ref Bits s = ref st.s;
+            fixed (uint* lit = &st.t.litlen[0])
+            fixed (uint* dist = &st.t.dist[0])
             {
                 ulong bits = s.bits;
                 int count = s.count;
                 byte* p = s.p, end = s.end;
-                while (true)
+                while (o < limit)
                 {
                     if (p + 8 <= end)
                     {
@@ -165,13 +210,25 @@ namespace Arctis.Imaging
                     bits >>= used;
                     count -= used;
                     uint kind = e >> 8 & 0xFF;
+                    if (kind == Literal2)
+                    {
+                        if (outEnd - o < 2) throw new ImageFormatException("PNG image data is longer than the image");
+                        o[0] = (byte)(e >> 16);
+                        o[1] = (byte)(e >> 24);
+                        o += 2;
+                        continue;
+                    }
                     if (kind == Literal)
                     {
                         if (o == outEnd) throw new ImageFormatException("PNG image data is longer than the image");
                         *o++ = (byte)(e >> 16);
                         continue;
                     }
-                    if (kind == End) break;
+                    if (kind == End)
+                    {
+                        st.block = NeedHeader;
+                        break;
+                    }
                     if (kind != Length) throw new ImageFormatException("PNG image data has an invalid code");
 
                     int extra = (int)(e >> 4 & 15);
@@ -204,6 +261,7 @@ namespace Arctis.Imaging
         }
 
         // Copies a match: eight bytes at a time when the source is at least eight back and there is room to overshoot.
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static void Copy(byte* o, int distance, int length, byte* outEnd)
         {
             byte* src = o - distance;
@@ -223,34 +281,37 @@ namespace Arctis.Imaging
                 for (int i = 0; i < length; i++) o[i] = src[i];
         }
 
-        private static byte* Stored(ref Bits s, byte* o, byte* outEnd)
+        // Copies what of a stored block fits before outEnd; the rest waits for the next window.
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private static byte* Stored(ref State st, byte* o, byte* outEnd, bool last)
         {
-            s.AlignToByte();
-            uint len = s.Take(16), nlen = s.Take(16);
-            if (len != (~nlen & 0xFFFF)) throw new ImageFormatException("PNG image data has an invalid stored block");
-            if (len > outEnd - o) throw new ImageFormatException("PNG image data is longer than the image");
-            while (len > 0 && s.count >= 8)
+            ref Bits s = ref st.s;
+            uint len = st.storedLeft;
+            if (last && len > outEnd - o) throw new ImageFormatException("PNG image data is longer than the image");
+            while (len > 0 && s.count >= 8 && o < outEnd)
             {
                 *o++ = (byte)s.bits;
                 s.bits >>= 8;
                 s.count -= 8;
                 len--;
             }
-            if (len == 0) return o;
 
-            s.bits = 0;
-            while (len > 0)
+            if (s.count == 0) s.bits = 0;
+            while (len > 0 && o < outEnd)
             {
                 if (s.p == s.end && !s.NextChunk()) throw new ImageFormatException("PNG image data ends early");
-                int n = (int)Math.Min(len, (uint)(s.end - s.p));
+                int n = (int)Math.Min(Math.Min(len, (uint)(s.end - s.p)), outEnd - o);
                 Buffer.MemoryCopy(s.p, o, n, n);
                 s.p += n;
                 o += n;
                 len -= (uint)n;
             }
+            st.storedLeft = len;
+            if (len == 0) st.block = NeedHeader;
             return o;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static void ReadDynamic(ref Bits s, ref Tables t)
         {
             int hlit = (int)s.Take(5) + 257, hdist = (int)s.Take(5) + 1, hclen = (int)s.Take(4) + 4;
@@ -323,6 +384,7 @@ namespace Arctis.Imaging
 
         #region tables
         // Builds a canonical Huffman decode table: a primary table of root bits, sub-tables sized as zlib sizes them.
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static void Build(ReadOnlySpan<byte> lens, uint* table, int capacity, int root, int mode)
         {
             Span<int> remaining = stackalloc int[16];
@@ -389,6 +451,23 @@ namespace Arctis.Imaging
                 remaining[len]--;
                 code++;
             }
+            if (mode == LitlenMode) Pair(table, root);
+        }
+
+        // Turns each root entry whose literal is followed, within the root bits, by a second literal into one
+        // two-literal entry; top down, so the entry for the second code is still unpaired when it is read.
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private static void Pair(uint* table, int root)
+        {
+            for (int i = (1 << root) - 1; i >= 0; i--)
+            {
+                uint e = table[i];
+                if ((e >> 8 & 0xFF) != Literal) continue;
+                int len = (int)(e & 15);
+                uint f = table[i >> len];
+                if ((f >> 8 & 0xFF) != Literal || (int)(f & 15) > root - len) continue;
+                table[i] = (e >> 16 | (f >> 16) << 8) << 16 | Literal2 << 8 | (uint)len + (f & 15);
+            }
         }
 
         private static uint Leaf(int mode, int symbol, int len)
@@ -410,44 +489,5 @@ namespace Arctis.Imaging
             return r;
         }
         #endregion
-
-        // Adler-32 in runs of up to 5552 bytes, sixteen bytes per step: byte sums, sums of sums, and position-weighted sums.
-        private static uint Adler32(byte* p, int n)
-        {
-            ulong a = 1, b = 0;
-            while (n > 0)
-            {
-                int run = Math.Min(n, 5552);
-                int i = 0;
-                if (Vector128.IsHardwareAccelerated && run >= 16)
-                {
-                    Vector128<uint> s1 = Vector128<uint>.Zero, s1s = Vector128<uint>.Zero, s2 = Vector128<uint>.Zero;
-                    Vector128<ushort> wLow = Vector128.Create((ushort)16, 15, 14, 13, 12, 11, 10, 9);
-                    Vector128<ushort> wHigh = Vector128.Create((ushort)8, 7, 6, 5, 4, 3, 2, 1);
-                    int blocks = run >> 4;
-                    for (int k = 0; k < blocks; k++, i += 16)
-                    {
-                        s1s += s1;
-                        (Vector128<ushort> lo, Vector128<ushort> hi) = Vector128.Widen(Vector128.Load(p + i));
-                        (Vector128<uint> l0, Vector128<uint> l1) = Vector128.Widen(lo + hi);
-                        s1 += l0 + l1;
-                        (Vector128<uint> w0, Vector128<uint> w1) = Vector128.Widen(lo * wLow + hi * wHigh);
-                        s2 += w0 + w1;
-                    }
-                    b += 16ul * (ulong)blocks * a + 16ul * Vector128.Sum(Vector128.WidenLower(s1s)) + 16ul * Vector128.Sum(Vector128.WidenUpper(s1s)) + Vector128.Sum(s2);
-                    a += Vector128.Sum(s1);
-                }
-                for (; i < run; i++)
-                {
-                    a += p[i];
-                    b += a;
-                }
-                a %= 65521;
-                b %= 65521;
-                p += run;
-                n -= run;
-            }
-            return (uint)(b << 16 | a);
-        }
     }
 }

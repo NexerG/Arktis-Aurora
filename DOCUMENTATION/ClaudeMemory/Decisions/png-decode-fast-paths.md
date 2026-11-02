@@ -176,4 +176,21 @@ Release+PROFILE, Linux container, lavapipe under xvfb, `Perf.ImageDecode` p50 ms
 - JPEG/GIF decoders still absent.
 - Numbers from a noisy CPU-rendered container; repeat on Windows.
 
+## Update 2026-11-02 — RGBA8 unfilter stores straight to the destination
+
+### What changed
+- `PngDecoder.Unfilter(type, src, cur, prev, dst, bpp)` gains `dst`; `Sub4`, `Average4`, `Paeth4`, `AddUp` take `Span<byte> dst` and store every finished word to both `cur` and `dst`; the None filter copies to `dst` too; non-accelerated Paeth at 4 bpp copies `cur` to `dst` after `PaethScalar`.
+- `DecodeRow` passes the destination row as `dst` when `p.direct && layout == RGBA8` (colour type 6, depth 8, non-interlaced pass, 4 bytes per pixel) and returns without `PixelRows.FromRgba`; otherwise it passes `cur` as `dst`, so the second store lands on the same address and there is no per-word branch.
+- The decode loops here also carry `AggressiveOptimization`, see [[managed-inflate]].
+
+### Why
+**One pass per row instead of two.** The atlas path unfiltered into `cur`, then `FromRgba` copied `cur` to the destination. The destination is mapped staging memory: the extra stores are whole 32-bit / 128-bit words, ascending, never read back, the same pattern as the copy they replace.
+Left out: BGRA8 fusing (swizzle on store) and the 8 bpp kernels, since no direct path uses 8 bpp.
+
+### Verification
+- **Test-verified**: ArctisImaging.Tests 79/79. Byte-identical: SHA-256 of 356 decodes (89 PNGs x RGBA8 / BGRA8 / R8 / RG8) identical to the `ZLibStream`-era decoder. No timings taken.
+
+### Known gaps
+- Effect on boot time unmeasured. BGRA8 not fused.
+
 Related: [[atlas-bake-one-edge-pass]], [[asset-manifest-and-import]], [[engine-profiling]]

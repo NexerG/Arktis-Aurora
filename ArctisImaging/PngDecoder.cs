@@ -1,6 +1,7 @@
 using System;
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
 
 namespace Arctis.Imaging
@@ -12,6 +13,7 @@ namespace Arctis.Imaging
         // Adam7 passes: x start, y start, x step, y step
         private static ReadOnlySpan<byte> Adam7 => new byte[] { 0, 0, 8, 8, 4, 0, 8, 8, 0, 4, 4, 8, 2, 0, 4, 4, 0, 2, 2, 4, 1, 0, 2, 2, 0, 1, 1, 2 };
         private static ReadOnlySpan<byte> Progressive => new byte[] { 0, 0, 1, 1 };
+        internal const int DefaultFill = 1 << 18;
 
         // what the chunk walk collects
         private struct Chunks
@@ -21,6 +23,13 @@ namespace Arctis.Imaging
             public int firstIdat;
             public bool hasKey;
             public ushort keyR, keyG, keyB;
+        }
+
+        // where the row walk stands: the pass's table offset and geometry, and its next row
+        private struct Pass
+        {
+            public int index, x0, y0, dx, dy, pw, ph, stride, j;
+            public bool direct;
         }
 
         internal static bool TryReadHeader(ReadOnlySpan<byte> data, out ImageHeader header)
@@ -36,7 +45,12 @@ namespace Arctis.Imaging
             return true;
         }
 
-        internal static void Decode(ReadOnlySpan<byte> data, Span<byte> destination, int pitch, PixelLayout layout)
+        internal static void Decode(ReadOnlySpan<byte> data, Span<byte> destination, int pitch, PixelLayout layout) => Decode(data, destination, pitch, layout, DefaultFill);
+
+        // Inflates into a window of history plus fill bytes, writes out each row as it completes, then slides the
+        // window down to the history and the unfinished row.
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        internal static void Decode(ReadOnlySpan<byte> data, Span<byte> destination, int pitch, PixelLayout layout, int fill)
         {
             Chunks c = default;
             uint[] palette = new uint[256];
@@ -50,22 +64,64 @@ namespace Arctis.Imaging
                 total += PassBytes(in c, passes[pass], passes[pass + 1], passes[pass + 2], passes[pass + 3]);
             if (total > Array.MaxLength) throw new ImageFormatException("PNG image is too large to decode");
 
-            byte[] raw = ArrayPool<byte>.Shared.Rent((int)total);
-            byte[] zero = ArrayPool<byte>.Shared.Rent(rowBytes + 1);
+            int window = (int)Math.Min(total, (long)Math.Max(Inflater.History, rowBytes + 1) + fill + Inflater.MaxMatch);
+            byte[] raw = ArrayPool<byte>.Shared.Rent(window);
+            byte[] cur = ArrayPool<byte>.Shared.Rent(rowBytes + 1);
+            byte[] prev = ArrayPool<byte>.Shared.Rent(rowBytes + 1);
             byte[] rgba = ArrayPool<byte>.Shared.Rent(c.width * 4);
             byte[] packed = ArrayPool<byte>.Shared.Rent(c.width * 4);
             try
             {
-                Inflater.Inflate(data, c.firstIdat, raw.AsSpan(0, (int)total));
-                zero.AsSpan(0, rowBytes + 1).Clear();
-                int at = 0;
-                for (int pass = 0; pass < passes.Length; pass += 4)
-                    at += DecodePass(raw.AsSpan(at), zero, in c, palette, passes[pass], passes[pass + 1], passes[pass + 2], passes[pass + 3], bpp, rgba, packed, destination, pitch, layout);
+                fixed (byte* png = data)
+                fixed (byte* start = raw)
+                {
+                    Inflater.State st = default;
+                    Inflater.Begin(ref st, png, data.Length, c.firstIdat);
+                    Pass p = new Pass { index = -4 };
+                    bool more = NextPass(ref p, passes, in c);
+                    prev.AsSpan(0, rowBytes + 1).Clear();
+                    byte* o = start, row = start;
+                    long left = total;
+                    while (true)
+                    {
+                        bool last = left <= window - (o - start);
+                        byte* outEnd = last ? o + left : start + window;
+                        byte* end = Inflater.Fill(ref st, start, o, outEnd, last);
+                        left -= end - o;
+                        o = end;
+
+                        // every row now whole in the window
+                        while (more && o - row >= p.stride)
+                        {
+                            DecodeRow(new ReadOnlySpan<byte>(row, p.stride), cur, prev, in c, palette, in p, bpp, rgba, packed, destination, pitch, layout);
+                            (cur, prev) = (prev, cur);
+                            row += p.stride;
+                            if (++p.j < p.ph) continue;
+                            more = NextPass(ref p, passes, in c);
+                            if (more) prev.AsSpan(0, p.stride).Clear();
+                        }
+
+                        if (last)
+                        {
+                            if (o != outEnd) throw new ImageFormatException("PNG image data ends early");
+                            break;
+                        }
+                        if (st.done) throw new ImageFormatException("PNG image data ends early");
+
+                        long slide = Math.Min(row - start, o - start - Inflater.History);
+                        if (slide <= 0) continue;
+                        Buffer.MemoryCopy(start + slide, start, window, o - start - slide);
+                        o -= slide;
+                        row -= slide;
+                    }
+                    Inflater.Finish(ref st);
+                }
             }
             finally
             {
                 ArrayPool<byte>.Shared.Return(raw);
-                ArrayPool<byte>.Shared.Return(zero);
+                ArrayPool<byte>.Shared.Return(cur);
+                ArrayPool<byte>.Shared.Return(prev);
                 ArrayPool<byte>.Shared.Return(rgba);
                 ArrayPool<byte>.Shared.Return(packed);
             }
@@ -174,40 +230,55 @@ namespace Arctis.Imaging
             return pw <= 0 || ph <= 0 ? 0 : ph * ((pw * c.channels * c.bitDepth + 7) / 8 + 1);
         }
 
-        // Unfilters one pass, or the whole image as the pass (0, 0, 1, 1), in place in the inflated rows and writes
-        // it out; a row's previous row is the one above it. Returns the bytes the pass took.
-        private static int DecodePass(Span<byte> raw, ReadOnlySpan<byte> zero, in Chunks c, uint[] palette, int x0, int y0, int dx, int dy, int bpp, byte[] rgba, byte[] packed, Span<byte> destination, int pitch, PixelLayout layout)
+        // Moves to the next pass that has rows; false once every pass is done.
+        private static bool NextPass(ref Pass p, ReadOnlySpan<byte> passes, in Chunks c)
         {
-            int pw = (c.width - x0 + dx - 1) / dx, ph = (c.height - y0 + dy - 1) / dy;
-            if (pw <= 0 || ph <= 0) return 0;
-            int stride = (int)(((long)pw * c.channels * c.bitDepth + 7) / 8) + 1;
-            int outBpp = ImageCodec.BytesPerPixel(layout);
-            bool direct = c.colorType == 6 && c.bitDepth == 8 && dx == 1;
-            bool wide = layout == PixelLayout.RGBA8 || layout == PixelLayout.BGRA8;
-            for (int j = 0; j < ph; j++)
+            for (p.index += 4; p.index < passes.Length; p.index += 4)
             {
-                Span<byte> cur = raw.Slice(j * stride, stride);
-                ReadOnlySpan<byte> prev = j > 0 ? raw.Slice((j - 1) * stride, stride) : zero.Slice(0, stride);
-                Unfilter(cur[0], cur.Slice(1), prev.Slice(1), bpp);
-                Span<byte> row = destination.Slice((y0 + j * dy) * pitch);
-                if (direct) PixelRows.FromRgba(cur.Slice(1), row.Slice(x0 * outBpp), pw, layout);
-                else if (wide) Expand(cur.Slice(1), row.Slice(x0 * 4), pw, dx, in c, palette, layout == PixelLayout.BGRA8);
+                p.x0 = passes[p.index];
+                p.y0 = passes[p.index + 1];
+                p.dx = passes[p.index + 2];
+                p.dy = passes[p.index + 3];
+                p.pw = (c.width - p.x0 + p.dx - 1) / p.dx;
+                p.ph = (c.height - p.y0 + p.dy - 1) / p.dy;
+                if (p.pw <= 0 || p.ph <= 0) continue;
+                p.stride = (int)(((long)p.pw * c.channels * c.bitDepth + 7) / 8) + 1;
+                p.direct = c.colorType == 6 && c.bitDepth == 8 && p.dx == 1;
+                p.j = 0;
+                return true;
+            }
+            return false;
+        }
+
+        // Unfilters row j of pass p, or of the whole image as the pass (0, 0, 1, 1), from its filter byte and bytes in
+        // src into cur against the unfiltered row above it, and writes it out.
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private static void DecodeRow(ReadOnlySpan<byte> src, Span<byte> cur, ReadOnlySpan<byte> prev, in Chunks c, uint[] palette, in Pass p, int bpp, byte[] rgba, byte[] packed, Span<byte> destination, int pitch, PixelLayout layout)
+        {
+            int outBpp = ImageCodec.BytesPerPixel(layout);
+            bool wide = layout == PixelLayout.RGBA8 || layout == PixelLayout.BGRA8;
+            bool fused = p.direct && layout == PixelLayout.RGBA8;
+            Span<byte> line = cur.Slice(0, src.Length - 1);
+            Span<byte> row = destination.Slice((p.y0 + p.j * p.dy) * pitch);
+            Unfilter(src[0], src.Slice(1), line, prev.Slice(0, line.Length), fused ? row.Slice(p.x0 * 4, line.Length) : line, bpp);
+            if (fused) return;
+            if (p.direct) PixelRows.FromRgba(line, row.Slice(p.x0 * outBpp), p.pw, layout);
+            else if (wide) Expand(line, row.Slice(p.x0 * 4), p.pw, p.dx, in c, palette, layout == PixelLayout.BGRA8);
+            else
+            {
+                Expand(line, rgba, p.pw, 1, in c, palette, false);
+                if (p.dx == 1) PixelRows.FromRgba(rgba, row.Slice(p.x0 * outBpp), p.pw, layout);
                 else
                 {
-                    Expand(cur.Slice(1), rgba, pw, 1, in c, palette, false);
-                    if (dx == 1) PixelRows.FromRgba(rgba, row.Slice(x0 * outBpp), pw, layout);
-                    else
-                    {
-                        PixelRows.FromRgba(rgba, packed, pw, layout);
-                        for (int i = 0; i < pw; i++)
-                            packed.AsSpan(i * outBpp, outBpp).CopyTo(row.Slice((x0 + i * dx) * outBpp));
-                    }
+                    PixelRows.FromRgba(rgba, packed, p.pw, layout);
+                    for (int i = 0; i < p.pw; i++)
+                        packed.AsSpan(i * outBpp, outBpp).CopyTo(row.Slice((p.x0 + i * p.dx) * outBpp));
                 }
             }
-            return ph * stride;
         }
 
         // Converts one unfiltered row of any colour type and depth to RGBA8 or BGRA8, pixel x landing at x * step * 4.
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static void Expand(ReadOnlySpan<byte> raw, Span<byte> output, int width, int step, in Chunks c, uint[] palette, bool bgra)
         {
             int depth = c.bitDepth, stride = step * 4, rs = bgra ? 16 : 0, bs = bgra ? 0 : 16;
@@ -349,38 +420,52 @@ namespace Arctis.Imaging
         #endregion
 
         #region filters
-        private static void Unfilter(byte type, Span<byte> cur, ReadOnlySpan<byte> prev, int bpp)
+        // Unfilters the filtered row src into cur against prev, the unfiltered row above; at four bytes per pixel each
+        // finished word also goes to dst, which is cur itself when the row is not stored straight out.
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private static void Unfilter(byte type, ReadOnlySpan<byte> src, Span<byte> cur, ReadOnlySpan<byte> prev, Span<byte> dst, int bpp)
         {
             int n = cur.Length;
             switch (type)
             {
                 case 0:
+                    src.CopyTo(cur);
+                    if (dst != cur) src.CopyTo(dst);
                     break;
                 case 1:
-                    if (bpp == 4) Sub4(cur);
-                    else if (bpp == 8) Sub8(cur);
+                    if (bpp == 4) Sub4(src, cur, dst);
+                    else if (bpp == 8) Sub8(src, cur);
                     else
+                        fixed (byte* s = src)
                         fixed (byte* p = cur)
-                            for (int i = bpp; i < n; i++) p[i] += p[i - bpp];
+                        {
+                            for (int i = 0; i < bpp && i < n; i++) p[i] = s[i];
+                            for (int i = bpp; i < n; i++) p[i] = (byte)(s[i] + p[i - bpp]);
+                        }
                     break;
                 case 2:
-                    AddUp(cur, prev);
+                    AddUp(src, cur, prev, dst);
                     break;
                 case 3:
-                    if (bpp == 4) Average4(cur, prev);
-                    else if (bpp == 8) Average8(cur, prev);
+                    if (bpp == 4) Average4(src, cur, prev, dst);
+                    else if (bpp == 8) Average8(src, cur, prev);
                     else
+                        fixed (byte* s = src)
                         fixed (byte* p = cur)
                         fixed (byte* q = prev)
                         {
-                            for (int i = 0; i < bpp && i < n; i++) p[i] += (byte)(q[i] >> 1);
-                            for (int i = bpp; i < n; i++) p[i] += (byte)((p[i - bpp] + q[i]) >> 1);
+                            for (int i = 0; i < bpp && i < n; i++) p[i] = (byte)(s[i] + (q[i] >> 1));
+                            for (int i = bpp; i < n; i++) p[i] = (byte)(s[i] + ((p[i - bpp] + q[i]) >> 1));
                         }
                     break;
                 case 4:
-                    if (bpp == 4 && Vector128.IsHardwareAccelerated) Paeth4(cur, prev);
-                    else if (bpp >= 3 && Vector128.IsHardwareAccelerated) PaethWide(cur, prev, bpp);
-                    else PaethScalar(cur, prev, bpp, 0);
+                    if (bpp == 4 && Vector128.IsHardwareAccelerated) Paeth4(src, cur, prev, dst);
+                    else if (bpp >= 3 && Vector128.IsHardwareAccelerated) PaethWide(src, cur, prev, bpp);
+                    else
+                    {
+                        PaethScalar(src, cur, prev, bpp, 0);
+                        if (dst != cur) cur.CopyTo(dst);
+                    }
                     break;
                 default:
                     throw new ImageFormatException($"PNG row filter {type} is invalid");
@@ -388,51 +473,62 @@ namespace Arctis.Imaging
         }
 
         // Sub at four bytes per pixel: a bytewise add of the left pixel, one 32-bit word at a time.
-        private static void Sub4(Span<byte> cur)
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private static void Sub4(ReadOnlySpan<byte> src, Span<byte> cur, Span<byte> dst)
         {
+            fixed (byte* s = src)
             fixed (byte* p = cur)
+            fixed (byte* d = dst)
             {
                 uint a = 0;
                 for (int i = 0; i + 4 <= cur.Length; i += 4)
                 {
-                    uint x = *(uint*)(p + i);
+                    uint x = *(uint*)(s + i);
                     a = ((x & 0x7F7F7F7Fu) + (a & 0x7F7F7F7Fu)) ^ ((x ^ a) & 0x80808080u);
                     *(uint*)(p + i) = a;
+                    *(uint*)(d + i) = a;
                 }
             }
         }
 
         // Paeth at four bytes per pixel: a pixel's four channels widened to 16-bit lanes and predicted together.
-        private static void Paeth4(Span<byte> cur, ReadOnlySpan<byte> prev)
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private static void Paeth4(ReadOnlySpan<byte> src, Span<byte> cur, ReadOnlySpan<byte> prev, Span<byte> dst)
         {
+            fixed (byte* pSrc = src)
             fixed (byte* pCur = cur)
             fixed (byte* pPrev = prev)
+            fixed (byte* pDst = dst)
             {
                 Vector128<short> a = Vector128<short>.Zero, c = Vector128<short>.Zero;
                 Vector128<short> low = Vector128.Create((short)0xFF);
                 for (int i = 0; i + 4 <= cur.Length; i += 4)
                 {
                     Vector128<short> b = Vector128.WidenLower(Vector128.CreateScalarUnsafe(*(uint*)(pPrev + i)).AsByte()).AsInt16();
-                    Vector128<short> x = Vector128.WidenLower(Vector128.CreateScalarUnsafe(*(uint*)(pCur + i)).AsByte()).AsInt16();
+                    Vector128<short> x = Vector128.WidenLower(Vector128.CreateScalarUnsafe(*(uint*)(pSrc + i)).AsByte()).AsInt16();
                     Vector128<short> pa = Vector128.Abs(b - c), pb = Vector128.Abs(a - c), pc = Vector128.Abs(a + b - c - c);
                     Vector128<short> useA = Vector128.LessThanOrEqual(pa, pb) & Vector128.LessThanOrEqual(pa, pc);
                     Vector128<short> useB = Vector128.LessThanOrEqual(pb, pc);
                     a = (x + Vector128.ConditionalSelect(useA, a, Vector128.ConditionalSelect(useB, b, c))) & low;
-                    *(uint*)(pCur + i) = Vector128.Narrow(a.AsUInt16(), a.AsUInt16()).AsUInt32().ToScalar();
+                    uint word = Vector128.Narrow(a.AsUInt16(), a.AsUInt16()).AsUInt32().ToScalar();
+                    *(uint*)(pCur + i) = word;
+                    *(uint*)(pDst + i) = word;
                     c = b;
                 }
             }
         }
 
         // Sub at eight bytes per pixel: Sub4's bytewise add on one 64-bit word.
-        private static void Sub8(Span<byte> cur)
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private static void Sub8(ReadOnlySpan<byte> src, Span<byte> cur)
         {
+            fixed (byte* s = src)
             fixed (byte* p = cur)
             {
                 ulong a = 0;
                 for (int i = 0; i + 8 <= cur.Length; i += 8)
                 {
-                    ulong x = *(ulong*)(p + i);
+                    ulong x = *(ulong*)(s + i);
                     a = ((x & 0x7F7F7F7F7F7F7F7Ful) + (a & 0x7F7F7F7F7F7F7F7Ful)) ^ ((x ^ a) & 0x8080808080808080ul);
                     *(ulong*)(p + i) = a;
                 }
@@ -440,32 +536,38 @@ namespace Arctis.Imaging
         }
 
         // Average at four bytes per pixel: per byte (a & b) + ((a ^ b) >> 1), then a bytewise add, one 32-bit word at a time.
-        private static void Average4(Span<byte> cur, ReadOnlySpan<byte> prev)
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private static void Average4(ReadOnlySpan<byte> src, Span<byte> cur, ReadOnlySpan<byte> prev, Span<byte> dst)
         {
+            fixed (byte* s = src)
             fixed (byte* p = cur)
             fixed (byte* q = prev)
+            fixed (byte* d = dst)
             {
                 uint a = 0;
                 for (int i = 0; i + 4 <= cur.Length; i += 4)
                 {
-                    uint b = *(uint*)(q + i), x = *(uint*)(p + i);
+                    uint b = *(uint*)(q + i), x = *(uint*)(s + i);
                     uint m = (a & b) + (((a ^ b) & 0xFEFEFEFEu) >> 1);
                     a = ((x & 0x7F7F7F7Fu) + (m & 0x7F7F7F7Fu)) ^ ((x ^ m) & 0x80808080u);
                     *(uint*)(p + i) = a;
+                    *(uint*)(d + i) = a;
                 }
             }
         }
 
         // Average4 on one 64-bit word.
-        private static void Average8(Span<byte> cur, ReadOnlySpan<byte> prev)
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private static void Average8(ReadOnlySpan<byte> src, Span<byte> cur, ReadOnlySpan<byte> prev)
         {
+            fixed (byte* s = src)
             fixed (byte* p = cur)
             fixed (byte* q = prev)
             {
                 ulong a = 0;
                 for (int i = 0; i + 8 <= cur.Length; i += 8)
                 {
-                    ulong b = *(ulong*)(q + i), x = *(ulong*)(p + i);
+                    ulong b = *(ulong*)(q + i), x = *(ulong*)(s + i);
                     ulong m = (a & b) + (((a ^ b) & 0xFEFEFEFEFEFEFEFEul) >> 1);
                     a = ((x & 0x7F7F7F7F7F7F7F7Ful) + (m & 0x7F7F7F7F7F7F7F7Ful)) ^ ((x ^ m) & 0x8080808080808080ul);
                     *(ulong*)(p + i) = a;
@@ -474,9 +576,11 @@ namespace Arctis.Imaging
         }
 
         // Paeth at three to eight bytes per pixel: Paeth4 over eight lanes, lanes past the pixel unpredicted so they store back as read.
-        private static void PaethWide(Span<byte> cur, ReadOnlySpan<byte> prev, int bpp)
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private static void PaethWide(ReadOnlySpan<byte> src, Span<byte> cur, ReadOnlySpan<byte> prev, int bpp)
         {
             int i = 0;
+            fixed (byte* pSrc = src)
             fixed (byte* pCur = cur)
             fixed (byte* pPrev = prev)
             {
@@ -486,7 +590,7 @@ namespace Arctis.Imaging
                 for (; i + 8 <= cur.Length; i += bpp)
                 {
                     Vector128<short> b = Vector128.WidenLower(Vector128.CreateScalarUnsafe(*(ulong*)(pPrev + i)).AsByte()).AsInt16();
-                    Vector128<short> x = Vector128.WidenLower(Vector128.CreateScalarUnsafe(*(ulong*)(pCur + i)).AsByte()).AsInt16();
+                    Vector128<short> x = Vector128.WidenLower(Vector128.CreateScalarUnsafe(*(ulong*)(pSrc + i)).AsByte()).AsInt16();
                     Vector128<short> pa = Vector128.Abs(b - c), pb = Vector128.Abs(a - c), pc = Vector128.Abs(a + b - c - c);
                     Vector128<short> useA = Vector128.LessThanOrEqual(pa, pb) & Vector128.LessThanOrEqual(pa, pc);
                     Vector128<short> useB = Vector128.LessThanOrEqual(pb, pc);
@@ -495,29 +599,41 @@ namespace Arctis.Imaging
                     c = b;
                 }
             }
-            PaethScalar(cur, prev, bpp, i);
+            PaethScalar(src, cur, prev, bpp, i);
         }
 
         // Paeth one byte at a time from start.
-        private static void PaethScalar(Span<byte> cur, ReadOnlySpan<byte> prev, int bpp, int start)
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private static void PaethScalar(ReadOnlySpan<byte> src, Span<byte> cur, ReadOnlySpan<byte> prev, int bpp, int start)
         {
+            fixed (byte* s = src)
             fixed (byte* p = cur)
             fixed (byte* q = prev)
                 for (int i = start; i < cur.Length; i++)
                 {
                     int a = i >= bpp ? p[i - bpp] : 0, b = q[i], cc = i >= bpp ? q[i - bpp] : 0;
                     int pa = Math.Abs(b - cc), pb = Math.Abs(a - cc), pc = Math.Abs(a + b - 2 * cc);
-                    p[i] += (byte)(pa <= pb && pa <= pc ? a : pb <= pc ? b : cc);
+                    p[i] = (byte)(s[i] + (pa <= pb && pa <= pc ? a : pb <= pc ? b : cc));
                 }
         }
 
-        private static void AddUp(Span<byte> cur, ReadOnlySpan<byte> prev)
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private static void AddUp(ReadOnlySpan<byte> src, Span<byte> cur, ReadOnlySpan<byte> prev, Span<byte> dst)
         {
             int i = 0;
             if (Vector128.IsHardwareAccelerated)
                 for (; i + 16 <= cur.Length; i += 16)
-                    (Vector128.Create((ReadOnlySpan<byte>)cur.Slice(i, 16)) + Vector128.Create(prev.Slice(i, 16))).CopyTo(cur.Slice(i));
-            for (; i < cur.Length; i++) cur[i] += prev[i];
+                {
+                    Vector128<byte> v = Vector128.Create(src.Slice(i, 16)) + Vector128.Create(prev.Slice(i, 16));
+                    v.CopyTo(cur.Slice(i));
+                    v.CopyTo(dst.Slice(i));
+                }
+            for (; i < cur.Length; i++)
+            {
+                byte v = (byte)(src[i] + prev[i]);
+                cur[i] = v;
+                dst[i] = v;
+            }
         }
         #endregion
     }

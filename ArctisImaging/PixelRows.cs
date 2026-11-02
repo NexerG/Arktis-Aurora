@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.CompilerServices;
 
 namespace Arctis.Imaging
 {
@@ -11,6 +12,7 @@ namespace Arctis.Imaging
         internal static byte Luma(int r, int g, int b) => (byte)((r * LumaR + g * LumaG + b * LumaB + 32768) >> 16);
 
         // Writes width RGBA8 pixels into a row of the given layout.
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         internal static void FromRgba(ReadOnlySpan<byte> rgba, Span<byte> row, int width, PixelLayout layout)
         {
             switch (layout)

@@ -6,12 +6,14 @@
 ## What changed
 - New `Arctis.Imaging.Inflater` (internal static). Entry `Inflate(ReadOnlySpan<byte> png, int firstIdat, Span<byte> output)`: fills `output` exactly or throws `ImageFormatException`.
 	- Structs only: `Bits` (cursor over consecutive IDAT chunk bodies read in place, 64-bit bit buffer, steps into the next IDAT chunk in its slow `Refill`); `Tables` holding `LitlenTable` `[InlineArray(2342)]`, `DistTable` `[InlineArray(402)]`, `CodeTable` `[InlineArray(128)]`, as a stack local.
-	- Private: `Codes` (hot loop), `Copy`, `Stored`, `ReadDynamic`, `BuildFixed`, `Build` (canonical Huffman; 11-bit litlen root, 8-bit distance root, 7-bit code-length root, sub-tables sized as zlib sizes them), `Leaf`, `Reverse`, `Adler32` (Vector128).
-- `PngDecoder.Decode` rents one raw buffer of the sum over passes of height x (rowBytes + 1) and calls `Inflater.Inflate`.
-- `PngDecoder.DecodePass(raw, zero, c, palette, x0, y0, dx, dy, bpp, rgba, packed, destination, pitch, layout)` returns the bytes its pass took and unfilters in place (prev = row above, or a zero row for a pass's first row). New `PassBytes`, new `Progressive` pass table `{0,0,1,1}`.
+	- Private: `Codes` (hot loop), `Copy`, `Stored`, `ReadDynamic`, `BuildFixed`, `Build` (canonical Huffman; 11-bit litlen root, 8-bit distance root, 7-bit code-length root, sub-tables sized as zlib sizes them), `Leaf`, `Reverse`, ~~`Adler32` (Vector128)~~ (removed 2026-11-02, see "Adler-32 dropped").
+- **Windowed (2026-11-02, supersedes the first landing's whole buffer).** `Inflater` is resumable: `internal struct State` (`s` Bits, `t` Tables, `block`, `final`, `done`, `storedLeft`, `adler`), `Begin(ref State, byte* png, int length, int firstIdat)`, `byte* Fill(ref State, byte* start, byte* o, byte* outEnd, bool last)`, `Finish(ref State)`; consts `MaxMatch = 258`, `History = 32768`. `Bits`, `Tables` and the table types are internal (nested in `State`). `Codes` stops when `o` reaches a limit; `Stored` copies what fits and carries `storedLeft`; `Adler32(uint adler, byte*, int)` is running. `Inflate(png, firstIdat, output)` stays as Begin, one Fill over the whole output, Finish.
+- `PngDecoder.Decode(data, destination, pitch, layout, int fill)` (internal; the 4-arg overload forwards with `DefaultFill = 1 << 18`) rents a window of max(`History`, rowBytes + 1) + fill + `MaxMatch`, clamped to the image's total inflated size (small images: one window, no slides). A fill stops within `MaxMatch` of the window end so a match is never split; on the last window the fill runs to the stream's end so the "longer than the image" / "ends early" checks keep their meaning. The slide keeps max(32 KB history, the unfinished row).
+- `PngDecoder`: private `struct Pass` (index, x0, y0, dx, dy, pw, ph, stride, j, direct) and `NextPass(ref Pass, passes, in Chunks)`; `DecodePass` became `DecodeRow(src, cur, prev, in Chunks, palette, in Pass, bpp, rgba, packed, destination, pitch, layout)`; the `zero` buffer is gone (prev is cleared at each pass start). `Unfilter(type, src, cur, prev, bpp)` and every kernel (`Sub4`, `Sub8`, `Average4`, `Average8`, `Paeth4`, `PaethWide`, `PaethScalar`, `AddUp`) read the filtered row from `src` and write `cur`; filter 0 copies. New `PassBytes`, new `Progressive` pass table `{0,0,1,1}`.
+- Tests added 2026-11-02: `PngTests.SmallWindowsMatchOneWholeWindow` (301x233, RGBA8 / RGB8 / Grey8 / RGBA16 / RGBA8 Adam7 / Grey8 Adam7, filters 0-4, fills 1 / 7 / 4096 / rowBytes vs one whole window); `InflaterTests.CorruptStreamsThrowOnlyFormatErrorsAcrossSmallWindows` (2,000 byte-flip rounds, 399x100 Grey8, fill 7, only `ImageFormatException`, guard bytes untouched).
 - Removed: `PngDecoder.IdatStream`, the `ZLibStream` on the decode path, the `InvalidDataException` / `EndOfStreamException` catches, block reads and the two-half `lines` buffer, `using System.IO` / `System.IO.Compression` in `PngDecoder`.
 - Unchanged: `PngEncoder` and `ArctisAurora` `PdfDocument` still compress with `ZLibStream`.
-- Tests `InflaterTests`: matches `ZLibStream` at NoCompression / Fastest / Optimal / SmallestSize on random, text-like and run/overlap data; zlib's empty stream; a hand-built fixed-Huffman block (cross-checked against `ZLibStream`); IDAT chunk sizes 1 / 2 / 7 / 4096 for compressed and stored; every truncation offset rejected; output 1 byte short or long rejected; bad Adler rejected; 2,000 seeded byte-flip rounds throw only `ImageFormatException` and never touch 64 guard bytes after the output.
+- Tests `InflaterTests`: matches `ZLibStream` at NoCompression / Fastest / Optimal / SmallestSize on random, text-like and run/overlap data; zlib's empty stream; a hand-built fixed-Huffman block (cross-checked against `ZLibStream`); IDAT chunk sizes 1 / 2 / 7 / 4096 for compressed and stored; every truncation offset rejected; output 1 byte short or long rejected; ~~bad Adler rejected~~ (superseded 2026-11-02: `BadChecksumIsRejected` is now `BadChecksumIsIgnored`, a flipped trailer byte decodes to the original data); 2,000 seeded byte-flip rounds throw only `ImageFormatException` and never touch 64 guard bytes after the output.
 - Behaviour changes, malformed files only: extra data after the image's last row is now rejected (was ignored); a bad zlib stream raises `ImageFormatException` directly (was `InvalidDataException` wrapped into it). .NET's `ZLibStream` writes 0 bytes for empty input, which is not a valid zlib stream and is rejected.
 
 ## Why these choices
@@ -19,14 +21,20 @@
 **Reimplemented instead of "using zlib-ng more".**
 .NET's `ZLibStream` already is zlib-ng. Calling it more directly means internal `CompressionNative_*` exports (undocumented, can change per release) or shipping a native zlib-ng (breaks Arctis's managed-only, per-platform binaries). Neither is faster.
 
-**One whole buffer, not a windowed decoder (user chose).**
-No 32 KB slide copies, no resumable state, simplest loop. Cost: one pooled buffer of the raw image size (4 MB for 1024² RGBA8, ~23 MB for a 2432² atlas). A raw size above `Array.MaxLength` is rejected with `ImageFormatException`.
+**Windowed decoder, not one whole buffer (user chose 2026-11-02, reversing the 2026-11-01 choice).**
+The first landing inflated into one pooled buffer of the raw image size (~23 MB for a 2432² atlas). Boot measurement is what reversed it: `AssetRegistries.PreloadAssets` allocated 165.3 MB with it. The window (256 KB fill, rented from the 512 KB ArrayPool bucket) cut that to 50.8 MB; the rest is not decode. Harness first-pass allocation 59.5 -> 0.7 MB.
+
+**Unfilter out of place (variant B), not copy-then-in-place (variant A).**
+The window's bytes must stay the filtered stream because later matches read them. A copied each row into scratch and kept the kernels; B changed every kernel to read `src` and write `cur`. Boot indistinguishable (A 584-656 ms, B 579-655 ms, 4 alternating runs each); harness warm pass B ~207 ms vs A ~208-230 ms. B kept: no extra copy per row.
+
+**The remaining boot slowdown is tier-0 JIT, not memory; flags applied 2026-11-02, effect unmeasured.**
+Inflate and the unfilter loops run once per image so they stay tier-0 for the whole boot. Rule 42a forbade AggressiveOptimization; the exception below was applied afterwards. Still open candidates: ReadyToRun-compile Arctis.Imaging, parallel or baked atlases; none done.
 
 **Compressed bytes are read in place across IDAT chunks.**
 Atlases have 3-47 chunks of up to 64 KB; no copy of the compressed bytes, and zlib-ng's own window copy is gone too.
 
-**Adler-32 is verified (user chose).**
-CRC-32 per chunk is already checked by `Walk`; Adler catches a decoder bug.
+**~~Adler-32 is verified (user chose).~~ Superseded 2026-11-02: see "Adler-32 dropped" below.**
+CRC-32 per chunk is already checked by `Walk`; Adler caught a decoder bug.
 
 **Codes are rejected when over-subscribed, or incomplete with more than one code, as zlib and libdeflate do.**
 That keeps the table bounds at 2342 / 402 (libdeflate's ENOUGH values for these roots).
@@ -34,7 +42,19 @@ That keeps the table bounds at 2342 / 402 (libdeflate's ENOUGH values for these 
 **Hot loop: one branchless 8-byte refill per symbol.**
 At least 56 bits covers the longest match (48 bits). Matches are copied 8 bytes at a time when the distance is >= 8 and the output has room to overshoot; distance 1 is a fill.
 
-**No JIT flags (rule 42a); portable `Vector128` only.**
+**~~No JIT flags (rule 42a)~~ superseded 2026-11-02 by the AggressiveOptimization exception below; portable `Vector128` only.**
+
+**AggressiveOptimization in Arctis.Imaging, an exception to rule 42a (user chose 2026-11-02).**
+`[MethodImpl(MethodImplOptions.AggressiveOptimization)]` on `Inflater` `Fill`, `Codes`, `Copy`, `Stored`, `ReadDynamic`, `Build`, `Bits.Refill`; `PngDecoder` `Decode(…, int fill)`, `DecodeRow`, `Expand`, `Unfilter`, `Sub4`, `Sub8`, `Average4`, `Average8`, `Paeth4`, `PaethWide`, `PaethScalar`, `AddUp`; `Crc32.Update`; `PixelRows.FromRgba`; `ImageOps.CopySwizzled`.
+These loops run once per image, so under tiering they stay tier-0 for the whole boot; the cold cost measured earlier on 2026-11-02 was ~120 ms of PreloadAssets, shrinking to ~20 ms with `DOTNET_TieredCompilation=0`.
+Cost accepted: these methods never get the tier-1 PGO recompile.
+Rejected: `<TieredCompilationQuickJitForLoops>false</…>` in each host csproj, the same PGO loss but app-wide and unmeasured elsewhere. ReadyToRun was also on the table (publish-only, dev runs unaffected); not done.
+Effect on boot time is unmeasured (user said don't profile).
+
+**Adler-32 dropped rather than folded into the row loop (user chose 2026-11-02).**
+`PngDecoder.Walk` already verifies CRC-32 over every chunk including IDAT, so the Adler pass was a second checksum over all inflated bytes (126 MB per boot for the 11 font atlases), and the most Vector128-heavy loop, worst at tier-0. Folding it into the row loop would only improve cache use; the per-byte work stays. stb_image, wuffs and libspng skip it by default, and .NET's `DeflateStream` (ImageSharp's path) never sees it.
+`Inflater.Adler32` and `State.adler` are removed; `Finish` still reads the 4 trailer bytes and keeps the overread ("ends early") check but does not compare them.
+Behaviour change, malformed files only: a stream whose chunk CRCs pass but whose Adler is wrong now decodes instead of throwing "checksum does not match".
 
 ## Measurements
 Same container, Release. Decodebench is a scratchpad Stopwatch bench: 32 decodes per row, median of 3 runs, ms per decode; ImageSharp median over 6 runs. zlib-ng's inflate alone on RGBA8 was 9.7-11 ms; Arctis's whole decode is now 7.6.
@@ -60,13 +80,42 @@ Engine `Perf.ImageDecode` (Release+PROFILE, lavapipe, 3 runs each side, p50 medi
 - **Test-verified**: ArctisImaging.Tests 72/72 (58 earlier + 14 `InflaterTests` cases).
 - Byte-identical: 244 SHA-256 hashes (61 images x RGBA8 / BGRA8 / R8 / RG8) match the pre-change baseline.
 - Perf: all 4 `Perf.ImageDecode` tests PASS in 3 runs, zero `[Vulkan]` lines. Builds clean for net8.0 and net10.0.
-- Not checked: Windows, ARM, big-endian, engine Debug suite, boot Preload zones, palette / sub-byte PNG speed.
+- Not checked (first landing): Windows, ARM, big-endian, engine Debug suite, boot Preload zones, palette / sub-byte PNG speed.
+- **Test-verified** (windowed, 2026-11-02): ArctisImaging.Tests 79/79 (72 earlier + 7 new). Byte-identical: SHA-256 of 356 decodes (all 89 PNGs under Thorium's Data x RGBA8 / BGRA8 / R8 / RG8) identical across `ZLibStream`, whole-buffer and windowed. Engine solution builds clean Release+PROFILE; 16 Thorium `--profile` boots ran and exited 0.
+- **Test-verified** (AggressiveOptimization, Adler-32 dropped, fused RGBA8 unfilter, 2026-11-02): ArctisImaging.Tests 79/79. Byte-identical: SHA-256 of 356 decodes (89 PNGs x RGBA8 / BGRA8 / R8 / RG8, so both the fused RGBA8 path and the unfused layouts) identical to the `ZLibStream`-era decoder. Engine solution builds clean Release+PROFILE. No timings taken. Not checked: boot or harness timing, Debug engine suite, `--test=Perf`, Linux, ARM, GUI.
+- Not checked (windowed): Debug engine test suite, `--test=Perf` (`Perf.ImageDecode.*`), Linux, ARM, big-endian, palette / sub-byte PNG speed, GUI. Boot Preload zones and Windows are now checked.
+
+## Two literals per lookup (2026-11-02, uncommitted)
+- `Inflater` entry kind `Literal2 = 6`: value holds `lit1 | lit2 << 8`, length is the combined code length (<= 11, the root bits).
+- `private static void Pair(uint* table, int root)` (AggressiveOptimization) runs at the end of `Build` when `mode == LitlenMode`, for dynamic and fixed blocks. It walks the 2,048 root entries top down; where entry i is a literal of length len1 and `table[i >> len1]` is a literal of length <= root - len1, entry i becomes `Literal2`. Top down so the second code's entry is still unpaired when read.
+- `Codes` has a `Literal2` branch ahead of `Literal`: needs 2 bytes of room or throws "PNG image data is longer than the image"; writes the two bytes separately (endian-neutral).
+- Sub-table entries, lengths and distances are unchanged. No new tests: `MatchesZlibOnEveryKindOfData`, `DecodesAFixedHuffmanBlock`, the small-window test and both fuzz tests cover the path.
+- **Kept without a measured gain, by the user's choice.** Boot `PreloadAssets` (5 runs alternating, swapping only Arctis.Imaging.dll): previous build 483-502 ms, two-literal 483-503 ms, 50.8 MB both. Scratch harness (13 boot images, Release, 4 runs each): first pass 231-242 vs 237-255 ms, warm passes 207-224 vs 211-229 ms (previous vs two-literal), so slightly slower if anything.
+- Likely reason, not measured: a pair needs both codes to total <= 11 bits (about 5 bits each) and font-atlas literal codes are probably longer, so few pairs form, while every Huffman block pays an extra 2,048-entry pass in `Pair`. Pair formation was not counted.
+- Not done: three or more literals per refill, a larger root table.
+
+## Boot measurements (Windows, Release+PROFILE, `--profile`, zone `AssetRegistries.PreloadAssets`: 11 font atlases up to 2432² / 22.6 MB inflated each, plus 2 masks)
+
+| decoder | time ms | allocated MB | runs |
+|---|---|---|---|
+| ImageSharp (61ac31d, last ImageSharp commit) | 618-631 | 36.3 | 5 alternating |
+| `ZLibStream` (bd268a3) | 459-497 | 50.6 | 12 |
+| `ZLibStream` (bd268a3), re-measured 2026-11-02 | 467-493 | 50.6 | 5 alternating |
+| tree before two-literal (AggressiveOptimization, no Adler) | 491-511 | 50.8 | 5 alternating |
+| two-literal pairing | 483-503 | 50.8 | 5 alternating (previous build 483-502 ms) |
+| whole-buffer managed (0c3746d) | 560-627 | 165.3 | 4 |
+| windowed (final) | 579-655 | 50.8 | 4, alternating with variant A |
+
+Scratch harness, same 13 images decoded cold: first pass 213-234 ms with `ZLibStream`, 330-357 ms with the managed inflater (whole-buffer and windowed alike); 235-242 ms with `DOTNET_TieredCompilation=0`; warm passes ~198-220 ms for all versions. The 25% decode win measured in the Linux container did not reproduce on Windows: warm, the managed inflater is within a few percent of `ZLibStream` (198-210 vs 203-220 ms).
 
 ## Known gaps
 - RGBA8 Paeth ~0.76-0.80 vs ImageSharp; the user's target is 0.5. The Paeth plan (shorter dependency chain, 2-row wavefront, fused copy) is next and not done.
-- Literal-heavy streams decode one symbol per refill (no multi-literal fast path yet).
+- Two-literal pairing landed (2026-11-02) but measured no gain, possibly a small loss on warm decode; pair formation rate unknown. Three-or-more literals per refill not done.
+- Two-literal verification: **Test-verified**, ArctisImaging.Tests 79/79; byte-identical SHA-256 of 356 decodes (89 PNGs x RGBA8 / BGRA8 / R8 / RG8); engine solution builds clean Release+PROFILE. Not checked: Debug engine suite, `--test=Perf`, Linux, ARM, big-endian.
 - R8/RG8 output still copies through the `rgba` scratch row.
 - `PngEncoder` / PDF still use `ZLibStream` for compression.
-- Numbers from a noisy CPU-rendered Linux container.
+- Numbers in the Measurements section are from a noisy CPU-rendered Linux container.
+- Boot PreloadAssets still ~100-150 ms slower than `ZLibStream` (tier-0 JIT) as measured before the AggressiveOptimization flags; the flags' effect is unmeasured.
+- Perf suite not rerun after the windowed change.
 
 Related: [[png-decode-fast-paths]]

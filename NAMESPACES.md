@@ -4,12 +4,14 @@ Arctis.Imaging -> ArctisImaging/Crc32.cs
 Arctis.Imaging -> ArctisImaging/Image.cs
 Arctis.Imaging -> ArctisImaging/ImageCodec.cs
 Arctis.Imaging -> ArctisImaging/ImageOps.cs
+Arctis.Imaging -> ArctisImaging/Inflater.cs
 Arctis.Imaging -> ArctisImaging/PixelRows.cs
 Arctis.Imaging -> ArctisImaging/PngDecoder.cs
 Arctis.Imaging -> ArctisImaging/PngEncoder.cs
 Arctis.Imaging -> ArctisImaging/SrgbTable.cs
 Arctis.Imaging -> ArctisImaging/Types.cs
 Arctis.Imaging.Tests -> ArctisImaging.Tests/BmpTests.cs
+Arctis.Imaging.Tests -> ArctisImaging.Tests/InflaterTests.cs
 Arctis.Imaging.Tests -> ArctisImaging.Tests/OpsAndHeaderTests.cs
 Arctis.Imaging.Tests -> ArctisImaging.Tests/PngBuilder.cs
 Arctis.Imaging.Tests -> ArctisImaging.Tests/PngTests.cs
@@ -358,6 +360,7 @@ ArctisAurora.Tests -> AuroraEngine/Tests/CryptoTests.cs
 ArctisAurora.Tests -> AuroraEngine/Tests/FileAssociationTests.cs
 ArctisAurora.Tests -> AuroraEngine/Tests/FontPickerTests.cs
 ArctisAurora.Tests -> AuroraEngine/Tests/FontTests.cs
+ArctisAurora.Tests -> AuroraEngine/Tests/ImageDecodePerfTests.cs
 ArctisAurora.Tests -> AuroraEngine/Tests/InputTests.cs
 ArctisAurora.Tests -> AuroraEngine/Tests/LayoutTests.cs
 ArctisAurora.Tests -> AuroraEngine/Tests/MathTests.cs

@@ -1,5 +1,6 @@
 using System;
 using System.Buffers.Binary;
+using System.Runtime.CompilerServices;
 
 namespace Arctis.Imaging
 {
@@ -8,6 +9,7 @@ namespace Arctis.Imaging
     {
         private static readonly uint[] table = Build();
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         internal static uint Update(uint crc, ReadOnlySpan<byte> data)
         {
             uint[] t = table;

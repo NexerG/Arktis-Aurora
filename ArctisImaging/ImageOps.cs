@@ -1,5 +1,6 @@
 using System;
 using System.Buffers;
+using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
 
 namespace Arctis.Imaging
@@ -23,6 +24,7 @@ namespace Arctis.Imaging
         public static void SwizzleBgraToRgba(Span<byte> pixels) => CopySwizzled(pixels, pixels);
 
         // Swizzled copy that writes the destination without reading it; the two may be the same span.
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         internal static void CopySwizzled(ReadOnlySpan<byte> source, Span<byte> destination)
         {
             int i = 0;

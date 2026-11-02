@@ -66,6 +66,9 @@ The example was adapted from `_layeredHulls[layer][submesh][point]` to flat arra
 **The data pool rules restate existing decisions; nothing new is decided there.**
 Sources: [[ecs-rework-data-pools]], [[cross-system-change-notification]], [[layout-refs-across-children]], [[pool-shrink]], [[frame-scheduler]]. Layout's row `ref` held across child calls is named as the one accepted exception to "hold a row ref only where nothing can grow the pool".
 
+**Rule 42a has one exception: Arctis.Imaging decode loops (user, 2026-11-02).**
+They run once per image, so under tiering they stay tier-0 for the whole boot. Evidence: ~120 ms of boot `PreloadAssets` cold, ~20 ms with `DOTNET_TieredCompilation=0` (see [[managed-inflate]]). Cost accepted: no tier-1 PGO recompile for those methods. Effect of the applied flags is unmeasured. Rule text in the skill now ends "Exception: Arctis.Imaging decode loops, which run once per image (see managed-inflate)."
+
 **Error handling is deferred** (user). "No exceptions for control flow" was dropped with it.
 
 **Four rules were set by measurement.**

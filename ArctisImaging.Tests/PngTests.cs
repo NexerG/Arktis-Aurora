@@ -203,6 +203,35 @@ namespace Arctis.Imaging.Tests
         }
 
         [Theory]
+        [InlineData(6, 8, false)]
+        [InlineData(2, 8, false)]
+        [InlineData(0, 8, false)]
+        [InlineData(6, 16, false)]
+        [InlineData(6, 8, true)]
+        [InlineData(0, 8, true)]
+        public void SmallWindowsMatchOneWholeWindow(byte colorType, byte depth, bool interlaced)
+        {
+            int width = 301, height = 233;
+            int channels = colorType == 6 ? 4 : colorType == 2 ? 3 : 1;
+            int rowBytes = width * channels * depth / 8;
+            byte[] samples = Pattern(rowBytes * height, colorType + depth);
+            for (int i = samples.Length / 2; i < samples.Length; i++) samples[i] = samples[i - 5003];
+            int[] fills = { 1, 7, 4096, rowBytes };
+            for (byte filter = 0; filter <= 4; filter++)
+            {
+                byte[] png = PngBuilder.Build(width, height, colorType, depth, samples, filter, null, null, interlaced);
+                byte[] whole = new byte[width * height * 4];
+                PngDecoder.Decode(png, whole, width * 4, PixelLayout.RGBA8, 1 << 30);
+                for (int f = 0; f < fills.Length; f++)
+                {
+                    byte[] windowed = new byte[whole.Length];
+                    PngDecoder.Decode(png, windowed, width * 4, PixelLayout.RGBA8, fills[f]);
+                    Assert.Equal(whole, windowed);
+                }
+            }
+        }
+
+        [Theory]
         [InlineData(PixelLayout.RGBA8)]
         [InlineData(PixelLayout.BGRA8)]
         [InlineData(PixelLayout.R8)]
