@@ -109,13 +109,52 @@ Engine `Perf.ImageDecode` (Release+PROFILE, lavapipe, 3 runs each side, p50 medi
 Scratch harness, same 13 images decoded cold: first pass 213-234 ms with `ZLibStream`, 330-357 ms with the managed inflater (whole-buffer and windowed alike); 235-242 ms with `DOTNET_TieredCompilation=0`; warm passes ~198-220 ms for all versions. The 25% decode win measured in the Linux container did not reproduce on Windows: warm, the managed inflater is within a few percent of `ZLibStream` (198-210 vs 203-220 ms).
 
 ## Known gaps
-- RGBA8 Paeth ~0.76-0.80 vs ImageSharp; the user's target is 0.5. The Paeth plan (shorter dependency chain, 2-row wavefront, fused copy) is next and not done.
-- Two-literal pairing landed (2026-11-02) but measured no gain, possibly a small loss on warm decode; pair formation rate unknown. Three-or-more literals per refill not done.
+- RGBA8 Paeth ~0.76-0.80 vs ImageSharp; the user's target is 0.5. Partly done 2026-11-04: shorter chain and 4-row wavefront landed (see [[png-decode-fast-paths]]); ratio vs ImageSharp not re-measured.
+- Two-literal pairing landed (2026-11-02) but measured no gain, possibly a small loss on warm decode; the 2026-11-04 histogram explains it (0.02 M pairs formed). More literals per refill rejected on data: literals are 3.1% of output bytes.
 - Two-literal verification: **Test-verified**, ArctisImaging.Tests 79/79; byte-identical SHA-256 of 356 decodes (89 PNGs x RGBA8 / BGRA8 / R8 / RG8); engine solution builds clean Release+PROFILE. Not checked: Debug engine suite, `--test=Perf`, Linux, ARM, big-endian.
 - R8/RG8 output still copies through the `rgba` scratch row.
 - `PngEncoder` / PDF still use `ZLibStream` for compression.
 - Numbers in the Measurements section are from a noisy CPU-rendered Linux container.
 - Boot PreloadAssets still ~100-150 ms slower than `ZLibStream` (tier-0 JIT) as measured before the AggressiveOptimization flags; the flags' effect is unmeasured.
 - Perf suite not rerun after the windowed change.
+
+## Update 2026-11-04 — Codes fast loop
+
+### What changed
+- `Arctis.Imaging.Inflater.Codes` — new fast loop at the top of the outer loop, entered while `o < fastLimit` (`fastLimit = outEnd - MaxMatch - 8`) and `p + 16 <= end`.
+- It drops the per-literal `outEnd` checks, the `length > outEnd - o` check and `Copy`'s room check. It keeps `distance > o - start` and the invalid-code / invalid-distance throws.
+- The next lit/len entry is looked up right after a literal (>= 41 bits remain) or after a second branchless refill following a match's length+distance decode.
+- Matches with distance >= 8 are copied inline in 8-byte words; shorter ones call `Copy`.
+- The existing loop body stays as the careful path (tail, last window, IDAT chunk boundaries).
+- No data XML touched, no public API change.
+
+### Why
+**Fast loop plus careful loop, libdeflate's fastloop/slowloop structure.** `p + 16 <= end` keeps two branchless 8-byte refills per iteration inside the current IDAT chunk; `fastLimit` guarantees a literal, a <=258-byte match and the copy's 8-byte overshoot fit.
+
+**Measured the symbol mix before choosing what to optimise.** Scratch counted copy of the inflater on the 12 atlases: literal bytes 3.1% of output, match bytes 96.9%; 4.12 M single literals, 0.02 M paired literals, 5.45 M matches, average match 23.7 B. Fast refills 9.59 M, slow 1.3 K.
+
+| distance | share of matches | length | share of matches |
+|---|---|---|---|
+| 1 | 9.0% | 3-7 | 58.4% |
+| 4 | 3.6% | 8-15 | 19.7% |
+| 2-7 other | ~0.1% | 16-63 | 12.1% |
+| 8-15 | 1.7% | 64+ | 9.9% |
+| 16-63 | 2.9% | | |
+| 64+ | 82.7% | | |
+
+Rejected on this data: a second literal per refill (literals are 3% of bytes), and a short-distance (2-7) pattern copy (3.7% of matches). It also explains why two-literal pairing measured no gain.
+
+**`AggressiveOptimization` on the new Paeth kernel follows the rule-42a exception** already used for Arctis.Imaging decode loops.
+
+### Measurements
+Inflate (whole-buffer `Inflater.Inflate`, 12 atlases, Linux container, 5 alternating processes): HEAD 163.9-183.3 ms, new 152.0-159.3 ms. Whole-decode table is in [[png-decode-fast-paths]]. The Ubuntu .NET `ZLibStream` reference measured 316-394 ms for inflate, but Ubuntu's build likely links stock zlib rather than the zlib-ng of the Windows .NET bundles, so it is not a valid Windows reference.
+
+### Verification
+- **Test-verified**: ArctisImaging.Tests 80/80, Release, net10.0, Linux. Byte-identical SHA-256 across 476 decodes (119 PNGs x 4 layouts) between HEAD and new `Arctis.Imaging.dll`.
+- Not checked: Windows, boot PreloadAssets (`--profile`), engine `Perf.ImageDecode`, Debug engine suite, ARM/big-endian.
+
+### Known gaps
+- Inflate is still ~3x cycles/byte of libdeflate-class decoders per the earlier estimate; match-path branch mispredicts not investigated.
+- Boot effect on Windows unmeasured.
 
 Related: [[png-decode-fast-paths]]

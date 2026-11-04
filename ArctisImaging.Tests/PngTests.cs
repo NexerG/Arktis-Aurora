@@ -231,6 +231,23 @@ namespace Arctis.Imaging.Tests
             }
         }
 
+        [Fact]
+        public void MixedFiltersMatchReference()
+        {
+            int width = 301, height = 233;
+            byte[] pixels = Pattern(width * height * 4, width);
+            for (int i = pixels.Length / 2; i < pixels.Length; i++) pixels[i] = pixels[i - 5003];
+            byte[] rowFilters = { 4, 4, 4, 4, 4, 1, 4, 4, 2, 4, 4, 4, 4, 4, 4, 4, 4, 3, 0, 4, 4, 4 };
+            byte[] png = PngBuilder.Build(width, height, 6, 8, pixels, 0, null, null, false, rowFilters);
+            int[] fills = { 1, 7, 4096, width * 4, 1 << 30 };
+            for (int f = 0; f < fills.Length; f++)
+            {
+                byte[] decoded = new byte[pixels.Length];
+                PngDecoder.Decode(png, decoded, width * 4, PixelLayout.RGBA8, fills[f]);
+                Assert.Equal(pixels, decoded);
+            }
+        }
+
         [Theory]
         [InlineData(PixelLayout.RGBA8)]
         [InlineData(PixelLayout.BGRA8)]

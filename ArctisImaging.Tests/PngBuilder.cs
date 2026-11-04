@@ -10,7 +10,8 @@ namespace Arctis.Imaging.Tests
     internal static class PngBuilder
     {
         // rows: unfiltered packed rows, rowBytes each
-        internal static byte[] Build(int width, int height, byte colorType, byte depth, byte[] rows, byte filter, byte[]? plte = null, byte[]? trns = null, bool interlaced = false)
+        // rowFilters, when given, replaces filter: row y takes rowFilters[y % rowFilters.Length]
+        internal static byte[] Build(int width, int height, byte colorType, byte depth, byte[] rows, byte filter, byte[]? plte = null, byte[]? trns = null, bool interlaced = false, byte[]? rowFilters = null)
         {
             int channels = colorType switch { 2 => 3, 4 => 2, 6 => 4, _ => 1 };
             int bitsPerPixel = channels * depth;
@@ -20,7 +21,7 @@ namespace Arctis.Imaging.Tests
             if (!interlaced)
             {
                 int rowBytes = (width * bitsPerPixel + 7) / 8;
-                WriteFiltered(raw, rows, rowBytes, height, bpp, filter);
+                WriteFiltered(raw, rows, rowBytes, height, bpp, filter, rowFilters);
             }
             else
             {
@@ -36,7 +37,7 @@ namespace Arctis.Imaging.Tests
                     for (int j = 0; j < ph; j++)
                         for (int i = 0; i < pw; i++)
                             Array.Copy(rows, (y0 + j * dy) * rowBytes + (x0 + i * dx) * bpp, pass, (j * pw + i) * bpp, bpp);
-                    WriteFiltered(raw, pass, pw * bpp, ph, bpp, filter);
+                    WriteFiltered(raw, pass, pw * bpp, ph, bpp, filter, rowFilters);
                 }
             }
 
@@ -91,11 +92,12 @@ namespace Arctis.Imaging.Tests
             return ~c;
         }
 
-        private static void WriteFiltered(Stream raw, byte[] rows, int rowBytes, int height, int bpp, byte filter)
+        private static void WriteFiltered(Stream raw, byte[] rows, int rowBytes, int height, int bpp, byte rowFilter, byte[]? rowFilters)
         {
             byte[] prev = new byte[rowBytes];
             for (int y = 0; y < height; y++)
             {
+                byte filter = rowFilters != null ? rowFilters[y % rowFilters.Length] : rowFilter;
                 raw.WriteByte(filter);
                 for (int i = 0; i < rowBytes; i++)
                 {

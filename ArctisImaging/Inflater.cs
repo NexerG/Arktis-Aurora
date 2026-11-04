@@ -183,8 +183,88 @@ namespace Arctis.Imaging
                 ulong bits = s.bits;
                 int count = s.count;
                 byte* p = s.p, end = s.end;
+                byte* fastLimit = outEnd - MaxMatch - 8;
                 while (o < limit)
                 {
+                    // fast loop: no output checks, two refills of input in reach, the next entry looked up early
+                    if (o < fastLimit && p + 16 <= end)
+                    {
+                        bits |= (BitConverter.IsLittleEndian ? *(ulong*)p : BinaryPrimitives.ReverseEndianness(*(ulong*)p)) << count;
+                        p += (63 - count) >> 3;
+                        count |= 56;
+                        uint next = lit[bits & ((1u << LitlenBits) - 1)];
+                        do
+                        {
+                            bits |= (BitConverter.IsLittleEndian ? *(ulong*)p : BinaryPrimitives.ReverseEndianness(*(ulong*)p)) << count;
+                            p += (63 - count) >> 3;
+                            count |= 56;
+                            uint f = next;
+                            if ((f >> 8 & 0xFF) == Sub) f = lit[(f >> 16) + (uint)((bits >> LitlenBits) & ((1u << (int)(f >> 4 & 15)) - 1))];
+                            int consumed = (int)(f & 15);
+                            bits >>= consumed;
+                            count -= consumed;
+                            uint fkind = f >> 8 & 0xFF;
+                            if (fkind == Literal2)
+                            {
+                                o[0] = (byte)(f >> 16);
+                                o[1] = (byte)(f >> 24);
+                                o += 2;
+                                next = lit[bits & ((1u << LitlenBits) - 1)];
+                                continue;
+                            }
+                            if (fkind == Literal)
+                            {
+                                *o++ = (byte)(f >> 16);
+                                next = lit[bits & ((1u << LitlenBits) - 1)];
+                                continue;
+                            }
+                            if (fkind == End)
+                            {
+                                st.block = NeedHeader;
+                                break;
+                            }
+                            if (fkind != Length) throw new ImageFormatException("PNG image data has an invalid code");
+
+                            int fextra = (int)(f >> 4 & 15);
+                            int flength = (int)(f >> 16) + (int)(bits & ((1ul << fextra) - 1));
+                            bits >>= fextra;
+                            count -= fextra;
+                            uint g = dist[bits & ((1u << DistBits) - 1)];
+                            if ((g >> 8 & 0xFF) == Sub) g = dist[(g >> 16) + (uint)((bits >> DistBits) & ((1u << (int)(g >> 4 & 15)) - 1))];
+                            consumed = (int)(g & 15);
+                            bits >>= consumed;
+                            count -= consumed;
+                            if ((g >> 8 & 0xFF) != Distance) throw new ImageFormatException("PNG image data has an invalid distance code");
+                            fextra = (int)(g >> 4 & 15);
+                            int fdistance = (int)(g >> 16) + (int)(bits & ((1ul << fextra) - 1));
+                            bits >>= fextra;
+                            count -= fextra;
+                            if (fdistance > o - start) throw new ImageFormatException("PNG image data refers before its start");
+
+                            bits |= (BitConverter.IsLittleEndian ? *(ulong*)p : BinaryPrimitives.ReverseEndianness(*(ulong*)p)) << count;
+                            p += (63 - count) >> 3;
+                            count |= 56;
+                            next = lit[bits & ((1u << LitlenBits) - 1)];
+                            if (fdistance >= 8)
+                            {
+                                byte* from = o - fdistance, stop = o + flength;
+                                byte* to = o;
+                                do
+                                {
+                                    *(ulong*)to = *(ulong*)from;
+                                    to += 8;
+                                    from += 8;
+                                }
+                                while (to < stop);
+                            }
+                            else Copy(o, fdistance, flength, outEnd);
+                            o += flength;
+                        }
+                        while (o < fastLimit && p + 16 <= end);
+                        if (st.block == NeedHeader) break;
+                        continue;
+                    }
+
                     if (p + 8 <= end)
                     {
                         ulong word = *(ulong*)p;

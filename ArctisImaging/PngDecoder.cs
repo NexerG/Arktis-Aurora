@@ -80,6 +80,7 @@ namespace Arctis.Imaging
                     Pass p = new Pass { index = -4 };
                     bool more = NextPass(ref p, passes, in c);
                     prev.AsSpan(0, rowBytes + 1).Clear();
+                    bool grouped = layout == PixelLayout.RGBA8 && Vector128.IsHardwareAccelerated;
                     byte* o = start, row = start;
                     long left = total;
                     while (true)
@@ -93,10 +94,20 @@ namespace Arctis.Imaging
                         // every row now whole in the window
                         while (more && o - row >= p.stride)
                         {
-                            DecodeRow(new ReadOnlySpan<byte>(row, p.stride), cur, prev, in c, palette, in p, bpp, rgba, packed, destination, pitch, layout);
-                            (cur, prev) = (prev, cur);
-                            row += p.stride;
-                            if (++p.j < p.ph) continue;
+                            if (grouped && p.direct && p.ph - p.j >= 4 && o - row >= 4L * p.stride && row[0] == 4 && row[p.stride] == 4 && row[2 * p.stride] == 4 && row[3 * p.stride] == 4)
+                            {
+                                Paeth4Rows(new ReadOnlySpan<byte>(row, 4 * p.stride), p.stride, prev.AsSpan(0, p.stride - 1), destination.Slice((p.y0 + p.j * p.dy) * pitch), p.dy * pitch);
+                                row += 4 * p.stride;
+                                p.j += 4;
+                            }
+                            else
+                            {
+                                DecodeRow(new ReadOnlySpan<byte>(row, p.stride), cur, prev, in c, palette, in p, bpp, rgba, packed, destination, pitch, layout);
+                                (cur, prev) = (prev, cur);
+                                row += p.stride;
+                                p.j++;
+                            }
+                            if (p.j < p.ph) continue;
                             more = NextPass(ref p, passes, in c);
                             if (more) prev.AsSpan(0, p.stride).Clear();
                         }
@@ -504,19 +515,61 @@ namespace Arctis.Imaging
                 Vector128<short> low = Vector128.Create((short)0xFF);
                 for (int i = 0; i + 4 <= cur.Length; i += 4)
                 {
-                    Vector128<short> b = Vector128.WidenLower(Vector128.CreateScalarUnsafe(*(uint*)(pPrev + i)).AsByte()).AsInt16();
-                    Vector128<short> x = Vector128.WidenLower(Vector128.CreateScalarUnsafe(*(uint*)(pSrc + i)).AsByte()).AsInt16();
-                    Vector128<short> pa = Vector128.Abs(b - c), pb = Vector128.Abs(a - c), pc = Vector128.Abs(a + b - c - c);
-                    Vector128<short> useA = Vector128.LessThanOrEqual(pa, pb) & Vector128.LessThanOrEqual(pa, pc);
-                    Vector128<short> useB = Vector128.LessThanOrEqual(pb, pc);
-                    a = (x + Vector128.ConditionalSelect(useA, a, Vector128.ConditionalSelect(useB, b, c))) & low;
-                    uint word = Vector128.Narrow(a.AsUInt16(), a.AsUInt16()).AsUInt32().ToScalar();
+                    Vector128<short> b = Widen4(pPrev + i);
+                    a = PaethStep(a, b, c, Widen4(pSrc + i), low);
+                    uint word = Narrow4(a);
                     *(uint*)(pCur + i) = word;
                     *(uint*)(pDst + i) = word;
                     c = b;
                 }
             }
         }
+
+        // Paeth at four bytes per pixel on four rows at once; the last row overwrites prev.
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private static void Paeth4Rows(ReadOnlySpan<byte> src, int stride, Span<byte> prev, Span<byte> dst, int pitch)
+        {
+            fixed (byte* pSrc = src)
+            fixed (byte* pPrev = prev)
+            fixed (byte* pDst = dst)
+            {
+                byte* s0 = pSrc + 1, s1 = s0 + stride, s2 = s1 + stride, s3 = s2 + stride;
+                byte* d0 = pDst, d1 = d0 + pitch, d2 = d1 + pitch, d3 = d2 + pitch;
+                Vector128<short> a0 = Vector128<short>.Zero, a1 = a0, a2 = a0, a3 = a0, c0 = a0, c1 = a0, c2 = a0, c3 = a0;
+                Vector128<short> low = Vector128.Create((short)0xFF);
+                for (int i = 0; i + 4 <= prev.Length; i += 4)
+                {
+                    Vector128<short> b0 = Widen4(pPrev + i);
+                    Vector128<short> n0 = PaethStep(a0, b0, c0, Widen4(s0 + i), low);
+                    Vector128<short> n1 = PaethStep(a1, n0, c1, Widen4(s1 + i), low);
+                    Vector128<short> n2 = PaethStep(a2, n1, c2, Widen4(s2 + i), low);
+                    Vector128<short> n3 = PaethStep(a3, n2, c3, Widen4(s3 + i), low);
+                    c0 = b0; c1 = n0; c2 = n1; c3 = n2;
+                    a0 = n0; a1 = n1; a2 = n2; a3 = n3;
+                    *(uint*)(d0 + i) = Narrow4(n0);
+                    *(uint*)(d1 + i) = Narrow4(n1);
+                    *(uint*)(d2 + i) = Narrow4(n2);
+                    uint word = Narrow4(n3);
+                    *(uint*)(d3 + i) = word;
+                    *(uint*)(pPrev + i) = word;
+                }
+            }
+        }
+
+        // One pixel's prediction added to its filtered value, all four channels in 16-bit lanes.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static Vector128<short> PaethStep(Vector128<short> a, Vector128<short> b, Vector128<short> c, Vector128<short> x, Vector128<short> low)
+        {
+            Vector128<short> bc = b - c, ac = a - c;
+            Vector128<short> pa = Vector128.Abs(bc), pb = Vector128.Abs(ac), pc = Vector128.Abs(ac + bc);
+            Vector128<short> useA = Vector128.LessThanOrEqual(pa, pb) & Vector128.LessThanOrEqual(pa, pc);
+            Vector128<short> useB = Vector128.LessThanOrEqual(pb, pc);
+            return (x + Vector128.ConditionalSelect(useA, a, Vector128.ConditionalSelect(useB, b, c))) & low;
+        }
+
+        private static Vector128<short> Widen4(byte* p) => Vector128.WidenLower(Vector128.CreateScalarUnsafe(*(uint*)p).AsByte()).AsInt16();
+
+        private static uint Narrow4(Vector128<short> v) => Vector128.Narrow(v.AsUInt16(), v.AsUInt16()).AsUInt32().ToScalar();
 
         // Sub at eight bytes per pixel: Sub4's bytewise add on one 64-bit word.
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]

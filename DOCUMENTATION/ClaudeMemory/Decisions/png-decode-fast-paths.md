@@ -15,7 +15,7 @@
 ## Why these choices
 
 **Paeth undo is the cost, so it got SIMD.**
-Thorium's 11 font atlases plus the default icon atlas are 15.5 MB of PNG decoding to 127 MB of RGBA8. ImageSharp baked them with Paeth on all 18,304 rows. Paeth has a serial dependency per pixel (the left neighbour must be finished first): ~130-200 ms scalar. Inflate alone is ~62 ms. CRC is noise.
+Thorium's 11 font atlases plus the default icon atlas are 15.5 MB of PNG decoding to 127 MB of RGBA8. ImageSharp baked them with Paeth on all 18,304 rows. Paeth has a serial dependency per pixel (the left neighbour must be finished first): ~130-200 ms scalar. Inflate alone was estimated at ~62 ms; superseded by the 2026-11-04 split below (inflate ~47% of decode in the Linux container). CRC is noise.
 
 **The SIMD is across one pixel's 4 channels (16-bit lanes), not across pixels.**
 The left-neighbour dependency forbids going across pixels. SIMD Paeth ~130 ms vs ~200 ms scalar on these atlases.
@@ -192,5 +192,61 @@ Left out: BGRA8 fusing (swizzle on store) and the 8 bpp kernels, since no direct
 
 ### Known gaps
 - Effect on boot time unmeasured. BGRA8 not fused.
+
+## Update 2026-11-04 — Paeth shorter chain and 4-row wavefront
+
+### What changed
+- `PngDecoder.Paeth4Rows(src, stride, prev, dst, pitch)` — new. Unfilters four rows at once from `src` (each row starts with its filter byte). `prev` is the unfiltered row above the group and is overwritten in place with the group's 4th row; `dst` is the first destination row, `pitch` the destination row step. Row k+1's upper and upper-left neighbours come from row k's registers, not memory.
+- `PngDecoder.PaethStep(a, b, c, x, low)` — new, `AggressiveInlining`. Paeth predict + add on one pixel's 4 channels in 16-bit lanes; `pa = |b-c|` and `b-c` are computed off the left-neighbour dependency chain.
+- `PngDecoder.Widen4(byte*)`, `PngDecoder.Narrow4(Vector128<short>)` — new helpers.
+- `PngDecoder.Paeth4` — body now uses `PaethStep`/`Widen4`/`Narrow4` (shorter chain); signature unchanged.
+- `PngDecoder.Decode` drain loop: new local `grouped = layout == RGBA8 && Vector128.IsHardwareAccelerated`. Takes `Paeth4Rows` when `grouped && p.direct && p.ph - p.j >= 4`, 4 rows whole in the window, and all 4 filter bytes == 4. Destination is `(p.y0 + p.j * p.dy) * pitch`, step `p.dy * pitch` (Adam7's last pass is `direct` too). Advances `p.j += 4` with no cur/prev swap. Otherwise the existing `DecodeRow` path.
+- `Paeth4Rows` carries `AggressiveOptimization` under the rule-42a exception for Arctis.Imaging decode loops, see [[managed-inflate]].
+- Tests: `PngBuilder.Build` gains optional `byte[]? rowFilters` (row y uses `rowFilters[y % length]`); new `PngTests.MixedFiltersMatchReference` (301x233 RGBA8, mixed filter pattern, fills 1 / 7 / 4096 / rowBytes / 1<<30, compared to the source pixels).
+- No data XML touched, no public API change.
+
+### Why
+**Measure first: Paeth is latency-bound, not throughput-bound.** Scratch bench (Release, net10.0, Linux container, shared 4-core Xeon 2.8 GHz, 12 atlases = 16.3 MB PNG to 133.2 MB inflated, all 18,304 rows Paeth, all RGBA8): warm whole decode ~404-422 ms = CRC ~16 (4%) + inflate ~176-207 (47%) + Paeth ~196-215 (49%); walk/slide/bookkeeping ~0. Cold first pass only 30-60 ms above warm, so tier-0 JIT is no longer significant. Paeth ran ~6 ns/px (~17 cycles/px) against ~5 cycles of work if independent.
+
+**Four rows in a wavefront beat two.** Variants in a scratch bench (same data, 3 runs, ms median per run, all byte-identical):
+
+| variant | run 1 | run 2 | run 3 |
+|---|---|---|---|
+| HEAD `Paeth4` | 205.6 | 208.8 | 204.9 |
+| shorter chain | 189.2 | 183.1 | 191.0 |
+| 2-row wavefront | 129.1 | 128.1 | 124.2 |
+| **4-row wavefront (chosen)** | 122.3 | 108.7 | 105.0 |
+| packed lanes (row n pixel i + row n+1 pixel i-1 in one `Vector128`) | 321.8 | 307.9 | 308.7 |
+
+4 rows beat 2 in every run. Packed lanes rejected: the shuffle it puts on the chain costs more than the second pixel gains.
+
+**No third row buffer.** The user preferred cache-friendly computation over extra buffers. The wavefront hands rows over in registers; only the group's last row is stored to the single row buffer, overwriting `prev[i]` after row 0 has read it. Per row on the fused path ~1.25 loads + 1.25 stores (src + amortised prev; dst + amortised prev) against 2 + 2 before. The user's view: PNG is not cache-unfriendly in working set (window ~288 KB in L2, a 9.7 KB row in L1); it is serially dependent (Paeth left neighbour, Huffman bit position).
+
+**Group path only for the fused RGBA8 output.** BGRA8, R8, RG8 and non-direct passes keep the single-row path (a group would need a buffer per row). A group needs 4 whole rows; otherwise single-row `Paeth4` runs (window edges, pass ends). There is no 2-row fallback kernel.
+
+### Measurements
+Scratch Stopwatch bench, Release, net10.0, Linux container (shared Xeon 2.8 GHz), 12 boot atlases, median of 10 warm passes per process, 5 processes alternating HEAD (e126c36) / new (inflate fast loop included, see [[managed-inflate]]):
+
+| stage | HEAD (5 runs) | new (5 runs) |
+|---|---|---|
+| whole decode | 367.0-380.4 ms | 269.2-305.7 ms |
+| inflate (whole-buffer `Inflater.Inflate`) | 163.9-183.3 ms | 152.0-159.3 ms |
+| single-row Paeth unfilter (shorter chain only; the 4-row path is not in this stage) | 194.7-201.6 ms | 178.6-192.1 ms |
+| CRC | 12.3-15.2 ms | 11.8-12.5 ms |
+
+Cold first decode of all 12 (3 runs each, sequential): HEAD 427-521 ms, new 375-465 ms. The isolated stages overstate a little (they read input from DRAM, not the L2-hot window), so stages sum to more than the whole decode.
+
+### Verification
+- **Test-verified**: ArctisImaging.Tests 80/80 (79 existing + `MixedFiltersMatchReference`), Release, net10.0, Linux. A first-draft Adam7 bug (group rows placed at `p.j` instead of `y0 + j*dy`) was caught by 4 failing interlaced tests and fixed before this result.
+- Byte-identical: SHA-256 of all 119 PNGs in the repo (excluding bin/obj) x RGBA8/BGRA8/R8/RG8 = 476 decodes, identical between the HEAD `Arctis.Imaging.dll` and the new one, 0 errors.
+- aurora-codereview: scan 0 hits; one open question on rule 33 (`in` for `PaethStep`'s `Vector128` parameters), not applied.
+- Not checked: Windows; boot PreloadAssets zone (`--profile`); engine `Perf.ImageDecode` tests; Debug engine suite; ARM/big-endian; the non-accelerated `Vector128` path (falls back to existing code); ratio vs ImageSharp.
+
+### Known gaps
+- Ratio vs ImageSharp not re-measured; the 0.5x target is still open.
+- Boot effect on Windows unmeasured (`AssetRegistries.PreloadAssets`).
+- Rule 33 question on `PaethStep`'s vector parameters open.
+- BGRA8 / R8 / RG8 Paeth stays single-row.
+- Atlases are still Paeth-baked; re-baking with Up/Sub remains an open lever.
 
 Related: [[atlas-bake-one-edge-pass]], [[asset-manifest-and-import]], [[engine-profiling]]
