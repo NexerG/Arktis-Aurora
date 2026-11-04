@@ -1,6 +1,9 @@
 using System;
 using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.X86;
 
 namespace Arctis.Imaging
 {
@@ -15,6 +18,11 @@ namespace Arctis.Imaging
             uint[] t = table;
             crc = ~crc;
             int i = 0;
+            if (Pclmulqdq.IsSupported && data.Length >= 64)
+            {
+                i = data.Length & ~15;
+                crc = Fold(crc, data.Slice(0, i));
+            }
             for (; i + 8 <= data.Length; i += 8)
             {
                 uint one = BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(i)) ^ crc;
@@ -25,6 +33,43 @@ namespace Arctis.Imaging
             for (; i < data.Length; i++)
                 crc = t[(crc ^ data[i]) & 0xFF] ^ (crc >> 8);
             return ~crc;
+        }
+
+        // CRC of a multiple of 16 bytes, 64 or more, by carry-less folding.
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private static uint Fold(uint crc, ReadOnlySpan<byte> data)
+        {
+            ref byte b = ref MemoryMarshal.GetReference(data);
+            nuint n = (nuint)data.Length, i = 64;
+            Vector128<ulong> k1k2 = Vector128.Create(0x0154442bd4ul, 0x01c6e41596ul);
+            Vector128<ulong> k3k4 = Vector128.Create(0x01751997d0ul, 0x00ccaa009eul);
+            Vector128<ulong> k5k0 = Vector128.Create(0x0163cd6124ul, 0ul);
+            Vector128<ulong> poly = Vector128.Create(0x01db710641ul, 0x01f7011641ul);
+            Vector128<ulong> low32 = Vector128.Create(~0u, 0u, ~0u, 0u).AsUInt64();
+
+            Vector128<ulong> x1 = Vector128.LoadUnsafe(ref b).AsUInt64() ^ Vector128.CreateScalar(crc).AsUInt64();
+            Vector128<ulong> x2 = Vector128.LoadUnsafe(ref b, 16).AsUInt64();
+            Vector128<ulong> x3 = Vector128.LoadUnsafe(ref b, 32).AsUInt64();
+            Vector128<ulong> x4 = Vector128.LoadUnsafe(ref b, 48).AsUInt64();
+            for (; i + 64 <= n; i += 64)
+            {
+                x1 = Pclmulqdq.CarrylessMultiply(x1, k1k2, 0x11) ^ Pclmulqdq.CarrylessMultiply(x1, k1k2, 0x00) ^ Vector128.LoadUnsafe(ref b, i).AsUInt64();
+                x2 = Pclmulqdq.CarrylessMultiply(x2, k1k2, 0x11) ^ Pclmulqdq.CarrylessMultiply(x2, k1k2, 0x00) ^ Vector128.LoadUnsafe(ref b, i + 16).AsUInt64();
+                x3 = Pclmulqdq.CarrylessMultiply(x3, k1k2, 0x11) ^ Pclmulqdq.CarrylessMultiply(x3, k1k2, 0x00) ^ Vector128.LoadUnsafe(ref b, i + 32).AsUInt64();
+                x4 = Pclmulqdq.CarrylessMultiply(x4, k1k2, 0x11) ^ Pclmulqdq.CarrylessMultiply(x4, k1k2, 0x00) ^ Vector128.LoadUnsafe(ref b, i + 48).AsUInt64();
+            }
+
+            x1 = Pclmulqdq.CarrylessMultiply(x1, k3k4, 0x11) ^ Pclmulqdq.CarrylessMultiply(x1, k3k4, 0x00) ^ x2;
+            x1 = Pclmulqdq.CarrylessMultiply(x1, k3k4, 0x11) ^ Pclmulqdq.CarrylessMultiply(x1, k3k4, 0x00) ^ x3;
+            x1 = Pclmulqdq.CarrylessMultiply(x1, k3k4, 0x11) ^ Pclmulqdq.CarrylessMultiply(x1, k3k4, 0x00) ^ x4;
+            for (; i < n; i += 16)
+                x1 = Pclmulqdq.CarrylessMultiply(x1, k3k4, 0x11) ^ Pclmulqdq.CarrylessMultiply(x1, k3k4, 0x00) ^ Vector128.LoadUnsafe(ref b, i).AsUInt64();
+
+            x1 = Pclmulqdq.CarrylessMultiply(x1, k3k4, 0x10) ^ Sse2.ShiftRightLogical128BitLane(x1, 8);
+            x1 = Pclmulqdq.CarrylessMultiply(x1 & low32, k5k0, 0x00) ^ Sse2.ShiftRightLogical128BitLane(x1, 4);
+            Vector128<ulong> q = Pclmulqdq.CarrylessMultiply(x1 & low32, poly, 0x10) & low32;
+            x1 ^= Pclmulqdq.CarrylessMultiply(q, poly, 0x00);
+            return x1.AsUInt32().GetElement(1);
         }
 
         private static uint[] Build()

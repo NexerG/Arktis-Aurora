@@ -28,6 +28,20 @@ namespace Arctis.Imaging.Tests
             Assert.Equal(PngBuilder.ReferenceCrc(data), Crc32.Update(Crc32.Update(0, data.AsSpan(0, 333)), data.AsSpan(333)));
         }
 
+        [Fact]
+        public void Crc32MatchesReferenceAtEveryLength()
+        {
+            byte[] data = Pattern(616, 11);
+            for (int offset = 0; offset < 16; offset++)
+                for (int length = 0; offset + length <= data.Length; length++)
+                {
+                    ReadOnlySpan<byte> span = data.AsSpan(offset, length);
+                    uint want = PngBuilder.ReferenceCrc(span);
+                    Assert.Equal(want, Crc32.Update(0, span));
+                    Assert.Equal(want, Crc32.Update(Crc32.Update(0, span.Slice(0, length / 3)), span.Slice(length / 3)));
+                }
+        }
+
         [Theory]
         [InlineData(0)]
         [InlineData(1)]

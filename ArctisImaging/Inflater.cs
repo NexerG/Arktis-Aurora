@@ -1,6 +1,7 @@
 using System;
 using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics;
 
 namespace Arctis.Imaging
 {
@@ -9,7 +10,7 @@ namespace Arctis.Imaging
     {
         internal const int MaxMatch = 258, History = 32768;
         private const int LitlenBits = 11, DistBits = 8, CodeBits = 7;
-        private const uint Literal = 0, Length = 1, End = 2, Sub = 3, Invalid = 4, Distance = 5, Literal2 = 6;
+        private const uint SubF = 1u << 12, EndF = 1u << 13, Exc = 1u << 14, LitF = 1u << 31;
         private const int LitlenMode = 0, DistMode = 1, CodeMode = 2;
         private const int NeedHeader = 0, InStored = 1, InCodes = 2;
 
@@ -19,7 +20,7 @@ namespace Arctis.Imaging
         private static ReadOnlySpan<byte> DistExtra => new byte[] { 0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13 };
         private static ReadOnlySpan<byte> CodeOrder => new byte[] { 16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15 };
 
-        // decode tables; an entry is value << 16 | kind << 8 | extra bits << 4 | code length
+        // decode tables; entry: LitF | value << 16 | flags | code length << 8 | bits used
         [InlineArray(2342)]
         internal struct LitlenTable { private uint e; }
 
@@ -183,7 +184,7 @@ namespace Arctis.Imaging
                 ulong bits = s.bits;
                 int count = s.count;
                 byte* p = s.p, end = s.end;
-                byte* fastLimit = outEnd - MaxMatch - 8;
+                byte* fastLimit = outEnd - MaxMatch - 32;
                 while (o < limit)
                 {
                     // fast loop: no output checks, two refills of input in reach, the next entry looked up early
@@ -199,61 +200,66 @@ namespace Arctis.Imaging
                             p += (63 - count) >> 3;
                             count |= 56;
                             uint f = next;
-                            if ((f >> 8 & 0xFF) == Sub) f = lit[(f >> 16) + (uint)((bits >> LitlenBits) & ((1u << (int)(f >> 4 & 15)) - 1))];
-                            int consumed = (int)(f & 15);
-                            bits >>= consumed;
-                            count -= consumed;
-                            uint fkind = f >> 8 & 0xFF;
-                            if (fkind == Literal2)
-                            {
-                                o[0] = (byte)(f >> 16);
-                                o[1] = (byte)(f >> 24);
-                                o += 2;
-                                next = lit[bits & ((1u << LitlenBits) - 1)];
-                                continue;
-                            }
-                            if (fkind == Literal)
+                            if ((f & SubF) != 0) f = lit[(f >> 16) + (uint)((bits >> LitlenBits) & ((1u << (int)(f >> 8 & 15)) - 1))];
+                            ulong saved = bits;
+                            bits >>= (int)f;
+                            count -= (int)(f & 31);
+                            if ((int)f < 0)
                             {
                                 *o++ = (byte)(f >> 16);
                                 next = lit[bits & ((1u << LitlenBits) - 1)];
                                 continue;
                             }
-                            if (fkind == End)
+                            if ((f & Exc) != 0)
                             {
+                                if ((f & EndF) == 0) throw new ImageFormatException("PNG image data has an invalid code");
                                 st.block = NeedHeader;
                                 break;
                             }
-                            if (fkind != Length) throw new ImageFormatException("PNG image data has an invalid code");
+                            int flength = (int)(f >> 16) + (int)((saved & ((1ul << (int)(f & 31)) - 1)) >> (int)(f >> 8 & 15));
 
-                            int fextra = (int)(f >> 4 & 15);
-                            int flength = (int)(f >> 16) + (int)(bits & ((1ul << fextra) - 1));
-                            bits >>= fextra;
-                            count -= fextra;
                             uint g = dist[bits & ((1u << DistBits) - 1)];
-                            if ((g >> 8 & 0xFF) == Sub) g = dist[(g >> 16) + (uint)((bits >> DistBits) & ((1u << (int)(g >> 4 & 15)) - 1))];
-                            consumed = (int)(g & 15);
-                            bits >>= consumed;
-                            count -= consumed;
-                            if ((g >> 8 & 0xFF) != Distance) throw new ImageFormatException("PNG image data has an invalid distance code");
-                            fextra = (int)(g >> 4 & 15);
-                            int fdistance = (int)(g >> 16) + (int)(bits & ((1ul << fextra) - 1));
-                            bits >>= fextra;
-                            count -= fextra;
+                            if ((g & SubF) != 0) g = dist[(g >> 16) + (uint)((bits >> DistBits) & ((1u << (int)(g >> 8 & 15)) - 1))];
+                            saved = bits;
+                            bits >>= (int)g;
+                            count -= (int)(g & 31);
+                            if ((g & Exc) != 0) throw new ImageFormatException("PNG image data has an invalid distance code");
+                            int fdistance = (int)(g >> 16) + (int)((saved & ((1ul << (int)(g & 31)) - 1)) >> (int)(g >> 8 & 15));
                             if (fdistance > o - start) throw new ImageFormatException("PNG image data refers before its start");
 
                             bits |= (BitConverter.IsLittleEndian ? *(ulong*)p : BinaryPrimitives.ReverseEndianness(*(ulong*)p)) << count;
                             p += (63 - count) >> 3;
                             count |= 56;
                             next = lit[bits & ((1u << LitlenBits) - 1)];
-                            if (fdistance >= 8)
+                            byte* from = o - fdistance, to = o, stop = o + flength;
+                            if (fdistance >= 16)
                             {
-                                byte* from = o - fdistance, stop = o + flength;
-                                byte* to = o;
+                                Vector128.Store(Vector128.Load(from), to);
+                                Vector128.Store(Vector128.Load(from + 16), to + 16);
+                                while (to + 32 < stop)
+                                {
+                                    to += 16;
+                                    from += 16;
+                                    Vector128.Store(Vector128.Load(from + 16), to + 16);
+                                }
+                            }
+                            else if (fdistance >= 8)
+                            {
                                 do
                                 {
                                     *(ulong*)to = *(ulong*)from;
                                     to += 8;
                                     from += 8;
+                                }
+                                while (to < stop);
+                            }
+                            else if (fdistance == 1)
+                            {
+                                Vector128<byte> run = Vector128.Create(*from);
+                                do
+                                {
+                                    Vector128.Store(run, to);
+                                    to += 16;
                                 }
                                 while (to < stop);
                             }
@@ -285,47 +291,31 @@ namespace Arctis.Imaging
                     }
 
                     uint e = lit[bits & ((1u << LitlenBits) - 1)];
-                    if ((e >> 8 & 0xFF) == Sub) e = lit[(e >> 16) + (uint)((bits >> LitlenBits) & ((1u << (int)(e >> 4 & 15)) - 1))];
-                    int used = (int)(e & 15);
-                    bits >>= used;
-                    count -= used;
-                    uint kind = e >> 8 & 0xFF;
-                    if (kind == Literal2)
-                    {
-                        if (outEnd - o < 2) throw new ImageFormatException("PNG image data is longer than the image");
-                        o[0] = (byte)(e >> 16);
-                        o[1] = (byte)(e >> 24);
-                        o += 2;
-                        continue;
-                    }
-                    if (kind == Literal)
+                    if ((e & SubF) != 0) e = lit[(e >> 16) + (uint)((bits >> LitlenBits) & ((1u << (int)(e >> 8 & 15)) - 1))];
+                    ulong keep = bits;
+                    bits >>= (int)e;
+                    count -= (int)(e & 31);
+                    if ((int)e < 0)
                     {
                         if (o == outEnd) throw new ImageFormatException("PNG image data is longer than the image");
                         *o++ = (byte)(e >> 16);
                         continue;
                     }
-                    if (kind == End)
+                    if ((e & Exc) != 0)
                     {
+                        if ((e & EndF) == 0) throw new ImageFormatException("PNG image data has an invalid code");
                         st.block = NeedHeader;
                         break;
                     }
-                    if (kind != Length) throw new ImageFormatException("PNG image data has an invalid code");
-
-                    int extra = (int)(e >> 4 & 15);
-                    int length = (int)(e >> 16) + (int)(bits & ((1ul << extra) - 1));
-                    bits >>= extra;
-                    count -= extra;
+                    int length = (int)(e >> 16) + (int)((keep & ((1ul << (int)(e & 31)) - 1)) >> (int)(e >> 8 & 15));
 
                     uint d = dist[bits & ((1u << DistBits) - 1)];
-                    if ((d >> 8 & 0xFF) == Sub) d = dist[(d >> 16) + (uint)((bits >> DistBits) & ((1u << (int)(d >> 4 & 15)) - 1))];
-                    used = (int)(d & 15);
-                    bits >>= used;
-                    count -= used;
-                    if ((d >> 8 & 0xFF) != Distance) throw new ImageFormatException("PNG image data has an invalid distance code");
-                    extra = (int)(d >> 4 & 15);
-                    int distance = (int)(d >> 16) + (int)(bits & ((1ul << extra) - 1));
-                    bits >>= extra;
-                    count -= extra;
+                    if ((d & SubF) != 0) d = dist[(d >> 16) + (uint)((bits >> DistBits) & ((1u << (int)(d >> 8 & 15)) - 1))];
+                    keep = bits;
+                    bits >>= (int)d;
+                    count -= (int)(d & 31);
+                    if ((d & Exc) != 0) throw new ImageFormatException("PNG image data has an invalid distance code");
+                    int distance = (int)(d >> 16) + (int)((keep & ((1ul << (int)(d & 31)) - 1)) >> (int)(d >> 8 & 15));
 
                     if (distance > o - start) throw new ImageFormatException("PNG image data refers before its start");
                     if (length > outEnd - o) throw new ImageFormatException("PNG image data is longer than the image");
@@ -411,8 +401,8 @@ namespace Arctis.Imaging
                 {
                     if (s.count < 14) s.Refill();
                     uint e = code[s.bits & ((1u << CodeBits) - 1)];
-                    int used = (int)(e & 15);
-                    if ((e >> 8 & 0xFF) == Invalid) throw new ImageFormatException("PNG image data has an invalid code length code");
+                    int used = (int)(e & 31);
+                    if ((e & Exc) != 0) throw new ImageFormatException("PNG image data has an invalid code length code");
                     s.bits >>= used;
                     s.count -= used;
                     int symbol = (int)(e >> 16);
@@ -481,7 +471,7 @@ namespace Arctis.Imaging
             }
             if (left > 0 && codes > 1) throw new ImageFormatException("PNG image data has an incomplete code");
 
-            for (int i = 0; i < 1 << root; i++) table[i] = Invalid << 8;
+            for (int i = 0; i < 1 << root; i++) table[i] = Exc;
             if (codes == 0) return;
 
             Span<int> offset = stackalloc int[16];
@@ -523,43 +513,26 @@ namespace Arctis.Imaging
                         subStart = next;
                         next += 1 << subBits;
                         if (next > capacity) throw new ImageFormatException("PNG image data has an oversized code");
-                        for (int i = subStart; i < next; i++) table[i] = Invalid << 8;
-                        table[reversed & ((1 << root) - 1)] = (uint)subStart << 16 | Sub << 8 | (uint)subBits << 4 | (uint)root;
+                        for (int i = subStart; i < next; i++) table[i] = Exc;
+                        table[reversed & ((1 << root) - 1)] = (uint)subStart << 16 | Exc | SubF | (uint)subBits << 8;
                     }
                     for (int i = reversed >> root; i < 1 << subBits; i += 1 << (len - root)) table[subStart + i] = leaf;
                 }
                 remaining[len]--;
                 code++;
             }
-            if (mode == LitlenMode) Pair(table, root);
-        }
-
-        // Turns each root entry whose literal is followed, within the root bits, by a second literal into one
-        // two-literal entry; top down, so the entry for the second code is still unpaired when it is read.
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        private static void Pair(uint* table, int root)
-        {
-            for (int i = (1 << root) - 1; i >= 0; i--)
-            {
-                uint e = table[i];
-                if ((e >> 8 & 0xFF) != Literal) continue;
-                int len = (int)(e & 15);
-                uint f = table[i >> len];
-                if ((f >> 8 & 0xFF) != Literal || (int)(f & 15) > root - len) continue;
-                table[i] = (e >> 16 | (f >> 16) << 8) << 16 | Literal2 << 8 | (uint)len + (f & 15);
-            }
         }
 
         private static uint Leaf(int mode, int symbol, int len)
         {
             uint l = (uint)len;
-            if (mode == CodeMode) return (uint)symbol << 16 | Literal << 8 | l;
+            if (mode == CodeMode) return (uint)symbol << 16 | l << 8 | l;
             if (mode == DistMode)
-                return symbol < 30 ? (uint)DistBase[symbol] << 16 | Distance << 8 | (uint)DistExtra[symbol] << 4 | l : Invalid << 8 | l;
-            if (symbol < 256) return (uint)symbol << 16 | Literal << 8 | l;
-            if (symbol == 256) return End << 8 | l;
-            if (symbol < 286) return (uint)LengthBase[symbol - 257] << 16 | Length << 8 | (uint)LengthExtra[symbol - 257] << 4 | l;
-            return Invalid << 8 | l;
+                return symbol < 30 ? (uint)DistBase[symbol] << 16 | l << 8 | (l + DistExtra[symbol]) : Exc | l;
+            if (symbol < 256) return LitF | (uint)symbol << 16 | l << 8 | l;
+            if (symbol == 256) return Exc | EndF | l << 8 | l;
+            if (symbol < 286) return (uint)LengthBase[symbol - 257] << 16 | l << 8 | (l + LengthExtra[symbol - 257]);
+            return Exc | l;
         }
 
         private static int Reverse(int code, int len)

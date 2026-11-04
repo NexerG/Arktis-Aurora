@@ -15,7 +15,7 @@ buffers), Logging, Threading, XSD. The evidence and measurements behind the rule
 ## Scope of a change
 - Performance is the priority. When it pulls against brevity or readability, performance wins.
 - The frame budget is 3.3 ms (300 fps), and a frame allocates nothing.
-- A slow system gets faster, not spread across threads; anything threaded also runs on one core.
+- Multithreading is not an optimisation. Never suggest or introduce threads, workers, `Jobs.For`, parallel loops or pipelining to make something faster, not even as a later lever. A slow system gets faster on one core. Threading enters only when the user asks for it.
 - Within that, write the least code that solves the problem. A rule's cost in lines is never a reason to skip it.
 - No features beyond what was asked. No abstractions for single-use code. No flexibility or configurability that wasn't requested.
 - No error handling for impossible scenarios.
@@ -53,7 +53,7 @@ buffers), Logging, Threading, XSD. The evidence and measurements behind the rule
 25. Another thread reads a pool only through `Backing<T>`, `CopyTo`, `CopyRange`, `OwnerAt`, `Count`, `Capacity` and the versions, and never writes through what they return.
 26. A consumer learns of changes by polling the pool's versions through its own `PoolCursor` — one per consumer, one per swapchain image for the renderer. No events, no bus, no shared clearable dirty flag. Read the version first, then the snapshot.
 27. A consumer iterates its own provisioned set, never the pool's live set: it creates late and destroys through its own deferred queue.
-28. A step's rows are split across workers only through `Jobs.For`, and only once the single-thread loop can't get faster.
+28. A step's rows are split across workers only through `Jobs.For`, and only when the user asks for it.
 
 ## LINQ
 29. No LINQ in any new code — runtime, boot, tooling, importers, tests. `ImplicitUsings` imports `System.Linq` everywhere, so the compiler won't flag it; check the diff.

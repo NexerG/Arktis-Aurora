@@ -85,7 +85,8 @@ Engine `Perf.ImageDecode` (Release+PROFILE, lavapipe, 3 runs each side, p50 medi
 - **Test-verified** (AggressiveOptimization, Adler-32 dropped, fused RGBA8 unfilter, 2026-11-02): ArctisImaging.Tests 79/79. Byte-identical: SHA-256 of 356 decodes (89 PNGs x RGBA8 / BGRA8 / R8 / RG8, so both the fused RGBA8 path and the unfused layouts) identical to the `ZLibStream`-era decoder. Engine solution builds clean Release+PROFILE. No timings taken. Not checked: boot or harness timing, Debug engine suite, `--test=Perf`, Linux, ARM, GUI.
 - Not checked (windowed): Debug engine test suite, `--test=Perf` (`Perf.ImageDecode.*`), Linux, ARM, big-endian, palette / sub-byte PNG speed, GUI. Boot Preload zones and Windows are now checked.
 
-## Two literals per lookup (2026-11-02, uncommitted)
+## Two literals per lookup (2026-11-02, uncommitted) — removed 2026-11-04
+**Superseded:** `Literal2` and `Pair` were dropped in the 2026-11-04 flag-bit update below; the notes here describe the removed code.
 - `Inflater` entry kind `Literal2 = 6`: value holds `lit1 | lit2 << 8`, length is the combined code length (<= 11, the root bits).
 - `private static void Pair(uint* table, int root)` (AggressiveOptimization) runs at the end of `Build` when `mode == LitlenMode`, for dynamic and fixed blocks. It walks the 2,048 root entries top down; where entry i is a literal of length len1 and `table[i >> len1]` is a literal of length <= root - len1, entry i becomes `Literal2`. Top down so the second code's entry is still unpaired when read.
 - `Codes` has a `Literal2` branch ahead of `Literal`: needs 2 bytes of room or throws "PNG image data is longer than the image"; writes the two bytes separately (endian-neutral).
@@ -147,14 +148,73 @@ Rejected on this data: a second literal per refill (literals are 3% of bytes), a
 **`AggressiveOptimization` on the new Paeth kernel follows the rule-42a exception** already used for Arctis.Imaging decode loops.
 
 ### Measurements
-Inflate (whole-buffer `Inflater.Inflate`, 12 atlases, Linux container, 5 alternating processes): HEAD 163.9-183.3 ms, new 152.0-159.3 ms. Whole-decode table is in [[png-decode-fast-paths]]. The Ubuntu .NET `ZLibStream` reference measured 316-394 ms for inflate, but Ubuntu's build likely links stock zlib rather than the zlib-ng of the Windows .NET bundles, so it is not a valid Windows reference.
+Inflate (whole-buffer `Inflater.Inflate`, 12 atlases, Linux container, 5 alternating processes): HEAD 163.9-183.3 ms, new 152.0-159.3 ms. Whole-decode table is in [[png-decode-fast-paths]]. The Ubuntu .NET `ZLibStream` reference measured 316-394 ms for inflate, but Ubuntu's build links stock zlib (confirmed by `ldd` 2026-11-04) rather than the zlib-ng of the Windows .NET bundles, so it is not a valid Windows reference.
 
 ### Verification
 - **Test-verified**: ArctisImaging.Tests 80/80, Release, net10.0, Linux. Byte-identical SHA-256 across 476 decodes (119 PNGs x 4 layouts) between HEAD and new `Arctis.Imaging.dll`.
 - Not checked: Windows, boot PreloadAssets (`--profile`), engine `Perf.ImageDecode`, Debug engine suite, ARM/big-endian.
 
 ### Known gaps
-- Inflate is still ~3x cycles/byte of libdeflate-class decoders per the earlier estimate; match-path branch mispredicts not investigated.
+- ~~Inflate is still ~3x cycles/byte of libdeflate-class decoders per the earlier estimate~~ — superseded 2026-11-04: measured ~1.5x slower than libdeflate before the flag-bit update, ~1.25x after.
 - Boot effect on Windows unmeasured.
+
+## Update 2026-11-04 — flag-bit entries, wide copy, PCLMUL CRC
+
+### What changed
+- `Arctis.Imaging.Inflater` entry layout (uint) replaces the kind values in bits 8-15 (`Literal, Length, End, Sub, Invalid, Distance, Literal2` removed):
+	- [0..4] bits to consume = code length + extra bits (litlen <= 20, dist <= 28)
+	- [8..11] code length (on a sub pointer: sub-table bits)
+	- [12] `SubF` sub pointer; [13] `EndF` end of block; [14] `Exc` exceptional (sub pointer, end, invalid)
+	- [16..30] value (literal byte, base length, base distance, sub-table start); [31] `LitF` literal
+	- Unfilled / invalid slots are `Exc` with 0 bits.
+- `Codes` fast and careful loops: literal test is `(int)e < 0`; end / invalid behind one `Exc` test; `bits >>= (int)e` consumes code + extra in one shift (C# masks a ulong shift count to 6 bits, bit 5 of the entry is always 0). The extra-bit value is read from the word saved before the shift: `(saved & ((1ul << total) - 1)) >> codelen` (libdeflate's "saved bitbuf"). Local `saved` (fast loop) / `keep` (careful loop).
+- Fast loop match copy: distance >= 16 -> two unconditional `Vector128` load/stores (32 bytes) then a 16-byte loop; 8-15 -> existing 8-byte loop; 1 -> inline `Vector128.Create(byte)` fill (local `run`); 2-7 -> `Copy` as before. `fastLimit` = `outEnd - MaxMatch - 32` (was `- 8`) for the copy overshoot.
+- `Leaf`, `Build` (invalid fill, sub pointer `start << 16 | Exc | SubF | subBits << 8`) and `ReadDynamic` (code-length table invalid check `(e & Exc) != 0`, bits used `e & 31`) moved to the new layout. `Pair` and two-literal entries removed. New `using System.Runtime.Intrinsics`.
+- No change to `Inflate`, `Begin`, `Fill`, `Finish` signatures or `State`. No data XML touched.
+- `Arctis.Imaging.Crc32.Update(uint, ReadOnlySpan<byte>)` unchanged signature; when `Pclmulqdq.IsSupported` and length >= 64 it hands the largest multiple-of-16 prefix to new private `Fold(uint crc, ReadOnlySpan<byte> data)` (`AggressiveOptimization`, rule-42a Arctis.Imaging exception, like `Update`); slicing-by-8 handles the tail and is the fallback.
+- `Fold`: 4 x 128-bit accumulators folded over 64-byte blocks with k1k2 (0x0154442bd4, 0x01c6e41596), reduced to one with k3k4 (0x01751997d0, 0x00ccaa009e), single 16-byte folds, 128 -> 64 bits with k5 (0x0163cd6124), Barrett reduction with poly (0x01db710641, 0x01f7011641). Constants and sequence are Intel's "Fast CRC computation using PCLMULQDQ" for the reflected polynomial, as in Chromium zlib's `crc32_sse42_simd_`. `MemoryMarshal.GetReference` + `Vector128.LoadUnsafe`, no unsafe code.
+- Test `Arctis.Imaging.Tests.PngTests.Crc32MatchesReferenceAtEveryLength` (new): lengths 0-616 at start offsets 0-15, whole and split at length/3, vs `PngBuilder.ReferenceCrc`.
+
+### Why
+**Hardware counters were unavailable, so prototypes were the measurement.** The plan was `perf stat` branch-miss counters first; this cloud VM exposes no `cpu` PMU (`/sys/bus/event_source/devices` has only software / tracepoint / breakpoint / msr / power / uprobe), so scratch prototypes were timed against the real inflater in the same process instead.
+
+**Flag-bit entries with one shift per code + extra (libdeflate's layout).** Per match the bit buffer took 4 serially dependent shifts (length code, length extra, distance code, distance extra); now 2. The kind dispatch was 4 sequential compares (`Literal2` first, though it formed in 0.2% of symbols); now one sign test for literal and one `Exc` test for the rare kinds.
+
+**`Literal2` dropped (user choice, recommended).** Pairs formed 0.02 M of 9.6 M symbols (2026-11-04 histogram); the earlier landing measured no gain; the new layout has no room for a second literal byte (bits 16-30 value, bit 31 the literal flag), so keeping it needed a different packing plus a branch on the literal path. Not prototyped. Dropping it alone (pairing off, compares unchanged) was within noise.
+
+**16-byte match copy and inline distance-1 fill.** 82.7% of matches have distance >= 64, average 23.7 B; two unconditional 16-byte stores cover ~90% of matches without a loop branch. Distance 1 is 9% of matches and previously left the fast loop for `Copy` -> `Span.Fill`. Distance-4 pattern copy still not done (3.6%).
+
+**CRC: own x64 fold, not the `System.IO.Hashing` NuGet package (user choice, recommended).** Keeps Arctis.Imaging (a published package) at zero dependencies. `System.IO.Hashing.Crc32` was used in the scratch bench only, as the speed target (2.3-2.5 ms). x86's SSE4.2 `crc32` instruction is CRC-32C, a different polynomial, so unusable. ARM64 (`Crc32.Arm64`, same polynomial) left out: cannot be run in this container.
+
+### Measurements
+Scratch bench, Release, net10.0, Linux container, Xeon 2.8 GHz with AVX2 / BMI2 / PCLMUL / AVX-512, `taskset -c 2`, 12 Thorium boot atlases = 16.3 MB PNG -> 133.2 MB inflated, 20 warm passes per process, 5 processes; ms for all 12 as median / min; every variant byte-identical to libdeflate's output.
+
+| variant | median range | min range |
+|---|---|---|
+| Arctis before | 164-175 | 152-155 |
+| V1 = flag entries + one shift, no Literal2 | 142-154 | 129-133 |
+| V2 = V1 + 16-byte copy + distance-1 fill (landed) | 128-137 | 123-125 |
+| libdeflate 1.19 (P/Invoke) | 107-112 | 99-102 |
+
+Reference decoders, same machine (same 12 zlib streams, median ms of 10 passes, 5 processes): libdeflate 106-113; zlib-ng 2.3.3 (PyPI `zlib-ng` wheel, Python `zlib_ng.decompress`) 236-268; stock zlib via Python 315-347; .NET `ZLibStream` 312-333. `ldd` confirms Ubuntu's .NET 10 `libSystem.IO.Compression.Native.so` links the system `libz.so.1`, i.e. stock zlib, not zlib-ng (the earlier "likely" is confirmed). Before this change Arctis inflate (~165) was ~1.5x faster than zlib-ng and ~1.5x slower than libdeflate; now ~1.25x slower than libdeflate. Python harness overhead is small: Python stock zlib matches .NET `ZLibStream`.
+
+Final A/B (HEAD vs working-tree `Arctis.Imaging` sources, same bench, 5 alternating process pairs, 20 passes, median / min ms):
+
+| stage | HEAD | new |
+|---|---|---|
+| whole decode RGBA8 (`ImageCodec.Decode`) | 319-344 / 290-303 | 255-277 / 242-258 |
+| inflate (`Inflater.Inflate`) | 162-172 / 154-156 | 128-140 / 119-121 |
+| CRC-32 over the 12 PNG files | 14.6-15.4 / 14.0-14.1 | 2.4-2.6 / 2.2-2.3 |
+
+### Verification
+- **Test-verified**: ArctisImaging.Tests 81/81 (80 existing + `Crc32MatchesReferenceAtEveryLength`), Release, net10.0, Linux; also 81/81 with `DOTNET_EnablePCLMULQDQ=0` (slicing fallback). Byte-identical: SHA-256 of all 119 repo PNGs (excluding bin/obj) x RGBA8 / BGRA8 / R8 / RG8 = 476 decodes identical between HEAD sources and the new sources, 0 errors. `ArctisImaging.csproj` builds clean for net8.0 and net10.0 (Release). aurora-codereview: scan hits all false positives; one comment-length finding on `Fold`'s descriptor, fixed.
+- Not checked: Windows; boot `AssetRegistries.PreloadAssets` (`--profile`); engine `Perf.ImageDecode` tests; Debug engine suite; net8.0 at runtime (built only); ARM64 and big-endian; a CPU without PCLMUL other than the env-var switch; the non-accelerated `Vector128` path.
+
+### Known gaps
+- Windows / boot effect unmeasured.
+- ARM64 CRC stays on slicing-by-8.
+- Distance 2-7 matches (except 1) still go through `Copy`; distance-4 pattern copy not done.
+- Inflate still ~1.25x libdeflate on this data.
+- Paeth unchanged; atlases still Paeth-baked.
 
 Related: [[png-decode-fast-paths]]

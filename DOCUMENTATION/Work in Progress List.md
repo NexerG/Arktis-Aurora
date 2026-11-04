@@ -257,7 +257,7 @@ This file holds **open work**. A landed entry moves to [[Changelog]]; one that s
 - [ ] **profile `AssetRegistries.PreloadAssets` (2026-11-01)** — ~650 ms, largest bootstrap step after EngineTypes; no sub-zones yet → engine-types-scan
 - [ ] **LatinModern goldens fail on HEAD (2026-11-01)** — 7 tests, 28–61 px differences; predate EngineTypes, not investigated → engine-types-scan
 - [ ] **RGBA8 Paeth at 0.5× ImageSharp (2026-11-01)** — was ~0.76–0.80 after the managed inflater; shorter chain + 4-row wavefront landed 2026-11-04 (test-verified, whole decode 367-380 → 269-306 ms in Linux container); ratio vs ImageSharp not re-measured → managed-inflate, png-decode-fast-paths
-	- [ ] **re-measure boot PreloadAssets on Windows after the Paeth wavefront + inflate fast loop (2026-11-04)**
+	- [ ] **re-measure boot PreloadAssets on Windows after the Paeth wavefront + inflate fast loop + flag-bit inflate / PCLMUL CRC (2026-11-04); also `Perf.ImageDecode`**
 - [ ] **PNG decode tier-0 cost at boot (2026-11-02)** — PreloadAssets ~580-650 ms vs ~470 ms with ZLibStream; candidates ReadyToRun for Arctis.Imaging, parallel or baked atlases; AggressiveOptimization now applied (2026-11-02), boot effect unmeasured → managed-inflate
 - [ ] **fuse R8/RG8 output into `PngDecoder.Expand` (2026-11-01)** — still copies through the `rgba` scratch row (and `packed` for Adam7) → png-decode-fast-paths
 - [ ] **Arctis JPEG decoder (2026-11-01)** — `ImageFiles` still falls back to ImageSharp → png-decode-fast-paths

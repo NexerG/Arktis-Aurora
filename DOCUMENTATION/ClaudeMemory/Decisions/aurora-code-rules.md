@@ -24,6 +24,7 @@ Rejected: a precedence line only inside the skill — CLAUDE.md is in context ev
 
 **Performance is the priority; when it pulls against brevity or readability, performance wins.**
 "Scope of a change" opens with that, then least code within the rules. The 3.3 ms frame (300 fps), allocation-free frames, and "a slow system gets faster, not spread across threads; threaded code also runs on one core" are carried in from the user's standing rules.
+2026-11-04: strengthened by the user to "multithreading is not an optimisation" — threading is never suggested or introduced to make something faster, not even as a later lever; rule 28's `Jobs.For` split now needs the user to ask, not "the single-thread loop can't get faster".
 
 **No LINQ in any new code — runtime, boot, tooling, importers, tests** (user decision).
 Evidence already in [[engine-testing]]: `GridListControl` allocated ~14 objects per measure + arrange (LINQ, `Select().ToArray()`) — 820 KB; `GanttChartControl.BuildRows` ~2.9 ms and 3.5 MB per rebuild at 2,000 tickets with a LINQ sort. Rejected: banning it only in code the frame reaches — that judgement call has already been wrong (`GridListControl` is layout code).
