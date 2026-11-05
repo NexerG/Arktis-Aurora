@@ -217,4 +217,14 @@ Final A/B (HEAD vs working-tree `Arctis.Imaging` sources, same bench, 5 alternat
 - Inflate still ~1.25x libdeflate on this data.
 - Paeth unchanged; atlases still Paeth-baked.
 
-Related: [[png-decode-fast-paths]]
+## Update 2026-11-05 — InflateZlib, neutral messages
+
+### What changed
+- NEW `Arctis.Imaging.Inflater.InflateZlib(ReadOnlySpan<byte> zlib, Span<byte> output)` (internal): inflates a plain in-memory zlib stream of known output size. `Begin`'s header check moved into a private `ReadHeader` shared by both.
+- Every `Inflater` error message is now format-neutral ("zlib stream ends early", "zlib stream has an invalid header", "zlib stream is longer than its output", "zlib stream has an invalid code", ...). "PNG has no image data" stays (it is about PNG chunks).
+- Reason: KTX2 ZLIB levels are plain zlib streams, see [[ktx2-container]]; the compressor side is [[png-deflate]].
+
+### Known gaps
+- Messages changed text; no test asserted them.
+
+Related: [[png-decode-fast-paths]], [[png-deflate]], [[ktx2-container]]

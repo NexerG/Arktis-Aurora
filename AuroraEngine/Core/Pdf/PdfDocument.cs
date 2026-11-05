@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.IO.Compression;
 using System.Text;
 
 namespace ArctisAurora.Core.Pdf
@@ -83,8 +82,7 @@ namespace ArctisAurora.Core.Pdf
         public static byte[] Deflate(byte[] data)
         {
             using MemoryStream packed = new MemoryStream();
-            using (ZLibStream zlib = new ZLibStream(packed, CompressionLevel.Optimal, true))
-                zlib.Write(data);
+            Arctis.Imaging.Deflater.Deflate(data, packed);
             return packed.ToArray();
         }
 

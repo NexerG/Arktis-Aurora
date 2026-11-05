@@ -258,7 +258,12 @@ This file holds **open work**. A landed entry moves to [[Changelog]]; one that s
 - [ ] **LatinModern goldens fail on HEAD (2026-11-01)** — 7 tests, 28–61 px differences; predate EngineTypes, not investigated → engine-types-scan
 - [ ] **RGBA8 Paeth at 0.5× ImageSharp (2026-11-01)** — was ~0.76–0.80 after the managed inflater; shorter chain + 4-row wavefront landed 2026-11-04 (test-verified, whole decode 367-380 → 269-306 ms in Linux container); ratio vs ImageSharp not re-measured → managed-inflate, png-decode-fast-paths
 	- [ ] **re-measure boot PreloadAssets on Windows after the Paeth wavefront + inflate fast loop + flag-bit inflate / PCLMUL CRC (2026-11-04); also `Perf.ImageDecode`**
-- [ ] **PNG decode tier-0 cost at boot (2026-11-02)** — PreloadAssets ~580-650 ms vs ~470 ms with ZLibStream; candidates ReadyToRun for Arctis.Imaging, parallel or baked atlases; AggressiveOptimization now applied (2026-11-02), boot effect unmeasured → managed-inflate
+- [ ] **PNG decode tier-0 cost at boot (2026-11-02)** — PreloadAssets ~580-650 ms vs ~470 ms with ZLibStream; candidates ReadyToRun for Arctis.Imaging, parallel or baked atlases (PNG or KTX2); AggressiveOptimization now applied (2026-11-02), boot effect unmeasured → managed-inflate
+- [ ] **byte-exact zlib port (2026-11-05)** — `Deflater` is close to zlib, not byte-identical (own Huffman lengths, not `trees.c`); the user says it may be needed later → png-deflate
+- [ ] **re-bake atlases with Sub/Up + Deflater (2026-11-05)** — no longer grows the PNGs (16.15 vs 16.28 MB for Thorium's 12); needs `importerVersion` bump, ~22 MB git churn remains → png-deflate, png-decode-fast-paths
+- [ ] **switch atlas bakes to KTX2 (2026-11-05)** — `importerVersion` bump; MTSDF vs lossy block compression to decide; uncompressed + ZLIB first → ktx2-container
+- [ ] **`TextureLoader` direct upload of stored KTX2 mips (2026-11-05)** — today KTX2 decodes level 0 like PNG → ktx2-container
+- [ ] **KTX2 Zstd / BasisLZ supercompression (2026-11-05)** — Zstd needs a decoder or package; Basis needs a native C++ transcoder (new dependency, flag first) → ktx2-container
 - [ ] **fuse R8/RG8 output into `PngDecoder.Expand` (2026-11-01)** — still copies through the `rgba` scratch row (and `packed` for Adam7) → png-decode-fast-paths
 - [ ] **Arctis JPEG decoder (2026-11-01)** — `ImageFiles` still falls back to ImageSharp → png-decode-fast-paths
 - [ ] **Arctis GIF decoder (2026-11-01)** — `ImageFiles` still falls back to ImageSharp → png-decode-fast-paths

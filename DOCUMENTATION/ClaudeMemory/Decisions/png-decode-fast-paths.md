@@ -31,6 +31,7 @@ Decoding into a PAGE_WRITECOMBINE buffer measured 135 vs 137 ms into a normal ar
 
 **Rejected for now: re-baking atlases with Arctis's own `PngEncoder`.**
 It writes Sub/Up rows only (bump `AssetImporter.importerVersion` 9 -> 10). Decode would drop to ~100 ms warm / ~130 ms cold process, but PNG size grows 15.5 -> 22.5 MB (Fastest deflate), ~22 MB of binary churn lands in git, and the first boot re-bakes. The target was met without it. It stays the next lever, along with Optimal compression to win back size.
+**Superseded 2026-11-05 (size claim only):** the 15.5 -> 22.5 MB figure was measured with `ZLibStream` Fastest. With `PngEncoder` now using `Deflater` at its default settings, a Sub/Up re-bake of Thorium's 12 atlases is 16.15 MB against 16.28 MB committed (Paeth, ImageSharp), slightly smaller, not larger. The re-bake itself was NOT done (`AssetImporter.importerVersion` still 9); the ~22 MB binary churn cost remains (every atlas PNG changes), but the size-growth argument no longer holds. See [[png-deflate]].
 
 **Rejected: decoding atlases in parallel on workers.**
 Single-core speed first (optimize-before-threading rule). Remains a later option: decode in parallel into staging, upload serially.

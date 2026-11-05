@@ -5,7 +5,7 @@ using System.Runtime.Intrinsics;
 
 namespace Arctis.Imaging
 {
-    // zlib (RFC 1950) and DEFLATE (RFC 1951) decoding of a PNG's IDAT chunks, a window at a time.
+    // zlib (RFC 1950) and DEFLATE (RFC 1951) decoding of IDAT chunks or a whole stream, a window at a time.
     internal static unsafe class Inflater
     {
         internal const int MaxMatch = 258, History = 32768;
@@ -67,7 +67,7 @@ namespace Arctis.Imaging
                     else if (NextChunk()) continue;
                     else
                     {
-                        if (++overread > 8) throw new ImageFormatException("PNG image data ends early");
+                        if (++overread > 8) throw new ImageFormatException("zlib streamends early");
                         b = 0;
                     }
                     bits |= b << count;
@@ -112,7 +112,22 @@ namespace Arctis.Imaging
                 State st = default;
                 Begin(ref st, data, png.Length, firstIdat);
                 byte* outEnd = start + output.Length;
-                if (Fill(ref st, start, start, outEnd, true) != outEnd) throw new ImageFormatException("PNG image data ends early");
+                if (Fill(ref st, start, start, outEnd, true) != outEnd) throw new ImageFormatException("zlib streamends early");
+                Finish(ref st);
+            }
+        }
+
+        // Inflates a zlib stream held whole in memory; fills output exactly or throws.
+        internal static void InflateZlib(ReadOnlySpan<byte> zlib, Span<byte> output)
+        {
+            fixed (byte* data = zlib)
+            fixed (byte* start = output)
+            {
+                State st = default;
+                st.s = new Bits { data = data, length = zlib.Length, p = data, end = data + zlib.Length };
+                ReadHeader(ref st.s);
+                byte* outEnd = start + output.Length;
+                if (Fill(ref st, start, start, outEnd, true) != outEnd) throw new ImageFormatException("zlib stream ends early");
                 Finish(ref st);
             }
         }
@@ -122,9 +137,14 @@ namespace Arctis.Imaging
         {
             st.s = new Bits { data = png, length = length, end = png + firstIdat - 4 };
             if (!st.s.NextChunk()) throw new ImageFormatException("PNG has no image data");
-            uint cmf = st.s.Take(8), flg = st.s.Take(8);
+            ReadHeader(ref st.s);
+        }
+
+        private static void ReadHeader(ref Bits s)
+        {
+            uint cmf = s.Take(8), flg = s.Take(8);
             if ((cmf & 15) != 8 || cmf >> 4 > 7 || (cmf << 8 | flg) % 31 != 0 || (flg & 0x20) != 0)
-                throw new ImageFormatException("PNG image data has an invalid zlib header");
+                throw new ImageFormatException("zlib stream has an invalid header");
         }
 
         // Inflates from o toward outEnd: to within MaxMatch of it, or on the last window to the stream's end.
@@ -143,7 +163,7 @@ namespace Arctis.Imaging
                     {
                         st.s.AlignToByte();
                         uint len = st.s.Take(16), nlen = st.s.Take(16);
-                        if (len != (~nlen & 0xFFFF)) throw new ImageFormatException("PNG image data has an invalid stored block");
+                        if (len != (~nlen & 0xFFFF)) throw new ImageFormatException("zlib streamhas an invalid stored block");
                         st.storedLeft = len;
                         st.block = InStored;
                     }
@@ -151,7 +171,7 @@ namespace Arctis.Imaging
                     {
                         if (type == 1) BuildFixed(ref st.t);
                         else if (type == 2) ReadDynamic(ref st.s, ref st.t);
-                        else throw new ImageFormatException("PNG image data has an invalid block type");
+                        else throw new ImageFormatException("zlib streamhas an invalid block type");
                         st.block = InCodes;
                     }
                 }
@@ -164,12 +184,12 @@ namespace Arctis.Imaging
         // Checks the stream ended and its trailer is present; the trailer's Adler-32 is not compared.
         internal static void Finish(ref State st)
         {
-            if (!st.done) throw new ImageFormatException("PNG image data ends early");
+            if (!st.done) throw new ImageFormatException("zlib streamends early");
             ref Bits s = ref st.s;
             s.AlignToByte();
             s.Take(16);
             s.Take(16);
-            if (s.overread * 8 > s.count) throw new ImageFormatException("PNG image data ends early");
+            if (s.overread * 8 > s.count) throw new ImageFormatException("zlib streamends early");
         }
 
         #region blocks
@@ -212,7 +232,7 @@ namespace Arctis.Imaging
                             }
                             if ((f & Exc) != 0)
                             {
-                                if ((f & EndF) == 0) throw new ImageFormatException("PNG image data has an invalid code");
+                                if ((f & EndF) == 0) throw new ImageFormatException("zlib streamhas an invalid code");
                                 st.block = NeedHeader;
                                 break;
                             }
@@ -223,9 +243,9 @@ namespace Arctis.Imaging
                             saved = bits;
                             bits >>= (int)g;
                             count -= (int)(g & 31);
-                            if ((g & Exc) != 0) throw new ImageFormatException("PNG image data has an invalid distance code");
+                            if ((g & Exc) != 0) throw new ImageFormatException("zlib streamhas an invalid distance code");
                             int fdistance = (int)(g >> 16) + (int)((saved & ((1ul << (int)(g & 31)) - 1)) >> (int)(g >> 8 & 15));
-                            if (fdistance > o - start) throw new ImageFormatException("PNG image data refers before its start");
+                            if (fdistance > o - start) throw new ImageFormatException("zlib streamrefers before its start");
 
                             bits |= (BitConverter.IsLittleEndian ? *(ulong*)p : BinaryPrimitives.ReverseEndianness(*(ulong*)p)) << count;
                             p += (63 - count) >> 3;
@@ -297,13 +317,13 @@ namespace Arctis.Imaging
                     count -= (int)(e & 31);
                     if ((int)e < 0)
                     {
-                        if (o == outEnd) throw new ImageFormatException("PNG image data is longer than the image");
+                        if (o == outEnd) throw new ImageFormatException("zlib stream is longer than its output");
                         *o++ = (byte)(e >> 16);
                         continue;
                     }
                     if ((e & Exc) != 0)
                     {
-                        if ((e & EndF) == 0) throw new ImageFormatException("PNG image data has an invalid code");
+                        if ((e & EndF) == 0) throw new ImageFormatException("zlib streamhas an invalid code");
                         st.block = NeedHeader;
                         break;
                     }
@@ -314,11 +334,11 @@ namespace Arctis.Imaging
                     keep = bits;
                     bits >>= (int)d;
                     count -= (int)(d & 31);
-                    if ((d & Exc) != 0) throw new ImageFormatException("PNG image data has an invalid distance code");
+                    if ((d & Exc) != 0) throw new ImageFormatException("zlib streamhas an invalid distance code");
                     int distance = (int)(d >> 16) + (int)((keep & ((1ul << (int)(d & 31)) - 1)) >> (int)(d >> 8 & 15));
 
-                    if (distance > o - start) throw new ImageFormatException("PNG image data refers before its start");
-                    if (length > outEnd - o) throw new ImageFormatException("PNG image data is longer than the image");
+                    if (distance > o - start) throw new ImageFormatException("zlib streamrefers before its start");
+                    if (length > outEnd - o) throw new ImageFormatException("zlib stream is longer than its output");
                     Copy(o, distance, length, outEnd);
                     o += length;
                 }
@@ -357,7 +377,7 @@ namespace Arctis.Imaging
         {
             ref Bits s = ref st.s;
             uint len = st.storedLeft;
-            if (last && len > outEnd - o) throw new ImageFormatException("PNG image data is longer than the image");
+            if (last && len > outEnd - o) throw new ImageFormatException("zlib stream is longer than its output");
             while (len > 0 && s.count >= 8 && o < outEnd)
             {
                 *o++ = (byte)s.bits;
@@ -369,7 +389,7 @@ namespace Arctis.Imaging
             if (s.count == 0) s.bits = 0;
             while (len > 0 && o < outEnd)
             {
-                if (s.p == s.end && !s.NextChunk()) throw new ImageFormatException("PNG image data ends early");
+                if (s.p == s.end && !s.NextChunk()) throw new ImageFormatException("zlib streamends early");
                 int n = (int)Math.Min(Math.Min(len, (uint)(s.end - s.p)), outEnd - o);
                 Buffer.MemoryCopy(s.p, o, n, n);
                 s.p += n;
@@ -385,7 +405,7 @@ namespace Arctis.Imaging
         private static void ReadDynamic(ref Bits s, ref Tables t)
         {
             int hlit = (int)s.Take(5) + 257, hdist = (int)s.Take(5) + 1, hclen = (int)s.Take(4) + 4;
-            if (hlit > 286 || hdist > 30) throw new ImageFormatException("PNG image data has an invalid block header");
+            if (hlit > 286 || hdist > 30) throw new ImageFormatException("zlib streamhas an invalid block header");
 
             Span<byte> lens = stackalloc byte[320];
             lens.Clear();
@@ -402,7 +422,7 @@ namespace Arctis.Imaging
                     if (s.count < 14) s.Refill();
                     uint e = code[s.bits & ((1u << CodeBits) - 1)];
                     int used = (int)(e & 31);
-                    if ((e & Exc) != 0) throw new ImageFormatException("PNG image data has an invalid code length code");
+                    if ((e & Exc) != 0) throw new ImageFormatException("zlib streamhas an invalid code length code");
                     s.bits >>= used;
                     s.count -= used;
                     int symbol = (int)(e >> 16);
@@ -415,18 +435,18 @@ namespace Arctis.Imaging
                     byte value = 0;
                     if (symbol == 16)
                     {
-                        if (i == 0) throw new ImageFormatException("PNG image data repeats a code length before the first");
+                        if (i == 0) throw new ImageFormatException("zlib streamrepeats a code length before the first");
                         value = lens[i - 1];
                         repeat = 3 + (int)s.Take(2);
                     }
                     else if (symbol == 17) repeat = 3 + (int)s.Take(3);
                     else repeat = 11 + (int)s.Take(7);
-                    if (i + repeat > total) throw new ImageFormatException("PNG image data has too many code lengths");
+                    if (i + repeat > total) throw new ImageFormatException("zlib streamhas too many code lengths");
                     lens.Slice(i, repeat).Fill(value);
                     i += repeat;
                 }
             }
-            if (lens[256] == 0) throw new ImageFormatException("PNG image data has no end-of-block code");
+            if (lens[256] == 0) throw new ImageFormatException("zlib streamhas no end-of-block code");
             fixed (uint* lit = &t.litlen[0])
             fixed (uint* dist = &t.dist[0])
             {
@@ -466,10 +486,10 @@ namespace Arctis.Imaging
             for (int len = 1; len <= 15; len++)
             {
                 left = (left << 1) - remaining[len];
-                if (left < 0) throw new ImageFormatException("PNG image data has an over-subscribed code");
+                if (left < 0) throw new ImageFormatException("zlib streamhas an over-subscribed code");
                 codes += remaining[len];
             }
-            if (left > 0 && codes > 1) throw new ImageFormatException("PNG image data has an incomplete code");
+            if (left > 0 && codes > 1) throw new ImageFormatException("zlib streamhas an incomplete code");
 
             for (int i = 0; i < 1 << root; i++) table[i] = Exc;
             if (codes == 0) return;
@@ -512,7 +532,7 @@ namespace Arctis.Imaging
                         }
                         subStart = next;
                         next += 1 << subBits;
-                        if (next > capacity) throw new ImageFormatException("PNG image data has an oversized code");
+                        if (next > capacity) throw new ImageFormatException("zlib streamhas an oversized code");
                         for (int i = subStart; i < next; i++) table[i] = Exc;
                         table[reversed & ((1 << root) - 1)] = (uint)subStart << 16 | Exc | SubF | (uint)subBits << 8;
                     }

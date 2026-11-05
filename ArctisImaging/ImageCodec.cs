@@ -1,6 +1,7 @@
 using System;
 using System.Buffers.Binary;
 using System.IO;
+using System.Numerics;
 
 namespace Arctis.Imaging
 {
@@ -34,6 +35,7 @@ namespace Arctis.Imaging
         {
             if (PngDecoder.TryReadHeader(data, out header)) return true;
             if (BmpDecoder.TryReadFileHeader(data, out header)) return true;
+            if (Ktx2.TryReadHeader(data, out header)) return true;
             if (TryReadJpegHeader(data, out header)) return true;
             if (TryReadGifHeader(data, out header)) return true;
             header = default;
@@ -54,6 +56,10 @@ namespace Arctis.Imaging
             {
                 case ImageFormat.Png: PngDecoder.Decode(source, destination, RowPitchOf(header.Width, options), options.Layout); break;
                 case ImageFormat.Bmp: BmpDecoder.Decode(source.Slice(BmpDecoder.FileHeaderSize), BinaryPrimitives.ReadInt32LittleEndian(source.Slice(10)) - BmpDecoder.FileHeaderSize, destination, RowPitchOf(header.Width, options), options.Layout); break;
+                case ImageFormat.Ktx2:
+                    Ktx2Info info = Ktx2.ReadInfo(source, out int scheme);
+                    Ktx2.DecodeLevel(source, info, scheme, 0, destination, RowPitchOf(header.Width, options), options.Layout);
+                    break;
                 default: throw new NotSupportedException($"{header.Format} decoding is not available");
             }
             return header;
@@ -71,13 +77,57 @@ namespace Arctis.Imaging
         }
 
         /// <summary>Writes pixels as a PNG: R8 as grey, RG8 as grey with alpha, RGBA8 and BGRA8 as RGBA.</summary>
-        public static void EncodePng(ReadOnlySpan<byte> pixels, int width, int height, int rowPitch, PixelLayout layout, Stream output)
+        public static void EncodePng(ReadOnlySpan<byte> pixels, int width, int height, int rowPitch, PixelLayout layout, Stream output, in DeflateSettings deflate = default)
         {
             if (width <= 0 || height <= 0) throw new ArgumentException($"invalid image size {width}x{height}");
             int tight = width * BytesPerPixel(layout);
             if (rowPitch == 0) rowPitch = tight;
             if (rowPitch < tight || pixels.Length < (long)rowPitch * (height - 1) + tight) throw new ArgumentException("pixel span is smaller than the image");
-            PngEncoder.Encode(pixels, width, height, rowPitch, layout, output);
+            deflate.Check();
+            PngEncoder.Encode(pixels, width, height, rowPitch, layout, output, deflate);
+        }
+
+        /// <summary>Reads what a KTX2 file holds; false when the data is not a KTX2 file.</summary>
+        /// <exception cref="ImageFormatException">The file is malformed.</exception>
+        /// <exception cref="NotSupportedException">The file uses a format, shape or supercompression with no decoder.</exception>
+        public static bool TryReadKtx2(ReadOnlySpan<byte> data, out Ktx2Info info)
+        {
+            info = default;
+            if (!Ktx2.IsKtx2(data)) return false;
+            info = Ktx2.ReadInfo(data, out _);
+            return true;
+        }
+
+        /// <summary>Decodes one mip level of a KTX2 file into the destination in the options' layout and pitch.</summary>
+        /// <exception cref="ImageFormatException">The file is malformed or the level exceeds the limits.</exception>
+        /// <exception cref="NotSupportedException">The file uses a format, shape or supercompression with no decoder.</exception>
+        public static void DecodeKtx2Level(ReadOnlySpan<byte> source, int level, Span<byte> destination, in DecodeOptions options)
+        {
+            if (!Ktx2.IsKtx2(source)) throw new ImageFormatException("not a KTX2 file");
+            Ktx2Info info = Ktx2.ReadInfo(source, out int scheme);
+            if (level < 0 || level >= info.Levels) throw new ArgumentOutOfRangeException(nameof(level), $"level {level} of {info.Levels}");
+            int width = Ktx2.LevelSize(info.Width, level), height = Ktx2.LevelSize(info.Height, level);
+            Prepare(new ImageHeader(ImageFormat.Ktx2, width, height, BytesPerPixel(info.Layout), 8, info.Layout != PixelLayout.R8), destination, options);
+            Ktx2.DecodeLevel(source, info, scheme, level, destination, RowPitchOf(width, options), options.Layout);
+        }
+
+        /// <summary>Writes mip levels as a KTX2 file: levels[0] full size, each next HalfSize of the one before, one layout.
+        /// Compressed levels are ZLIB-supercompressed.</summary>
+        public static void EncodeKtx2(ReadOnlySpan<Image> levels, bool srgb, bool compress, Stream output, in DeflateSettings deflate = default)
+        {
+            if (levels.Length == 0) throw new ArgumentException("no levels to write");
+            Image top = levels[0];
+            int most = BitOperations.Log2((uint)Math.Max(top.Width, top.Height)) + 1;
+            if (levels.Length > most) throw new ArgumentException($"{levels.Length} levels is more than a {top.Width}x{top.Height} image has");
+            for (int p = 1; p < levels.Length; p++)
+            {
+                Image level = levels[p], above = levels[p - 1];
+                if (level.Layout != top.Layout) throw new ArgumentException($"level {p} is {level.Layout}, level 0 is {top.Layout}");
+                if (level.Width != ImageOps.HalfSize(above.Width) || level.Height != ImageOps.HalfSize(above.Height))
+                    throw new ArgumentException($"level {p} is {level.Width}x{level.Height}, not half of level {p - 1}");
+            }
+            deflate.Check();
+            Ktx2.Encode(levels, srgb, compress, output, deflate);
         }
 
         private static void Prepare(in ImageHeader header, Span<byte> destination, in DecodeOptions options)

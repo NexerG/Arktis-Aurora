@@ -84,13 +84,13 @@ namespace Arctis.Imaging
         }
 
         /// <summary>Writes the image as a PNG.</summary>
-        public void SavePng(Stream output) => ImageCodec.EncodePng(Pixels, Width, Height, RowPitch, Layout, output);
+        public void SavePng(Stream output, in DeflateSettings deflate = default) => ImageCodec.EncodePng(Pixels, Width, Height, RowPitch, Layout, output, deflate);
 
         /// <summary>Writes the image as a PNG file.</summary>
-        public void SavePng(string path)
+        public void SavePng(string path, in DeflateSettings deflate = default)
         {
             using FileStream file = File.Create(path);
-            SavePng(file);
+            SavePng(file, deflate);
         }
     }
 }

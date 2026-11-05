@@ -2,14 +2,13 @@ using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.IO;
-using System.IO.Compression;
 
 namespace Arctis.Imaging
 {
-    // Fastest deflate; each row filtered by Sub or Up, whichever leaves the smaller sum of residuals.
+    // Each row filtered by Sub or Up, whichever leaves the smaller sum of residuals.
     internal static class PngEncoder
     {
-        internal static void Encode(ReadOnlySpan<byte> pixels, int width, int height, int pitch, PixelLayout layout, Stream output)
+        internal static void Encode(ReadOnlySpan<byte> pixels, int width, int height, int pitch, PixelLayout layout, Stream output, in DeflateSettings deflate)
         {
             int bpp = ImageCodec.BytesPerPixel(layout);
             int rowBytes = width * bpp;
@@ -32,40 +31,40 @@ namespace Arctis.Imaging
             WriteChunk(output, 0x49484452, ihdr);
 
             MemoryStream compressed = new MemoryStream();
-            byte[] buffers = ArrayPool<byte>.Shared.Rent(4 * (rowBytes + 1));
+            int filteredBytes = height * (rowBytes + 1);
+            byte[] buffers = ArrayPool<byte>.Shared.Rent(3 * rowBytes + 1 + filteredBytes);
             try
             {
                 Span<byte> prev = buffers.AsSpan(0, rowBytes);
                 Span<byte> cur = buffers.AsSpan(rowBytes, rowBytes);
-                Span<byte> sub = buffers.AsSpan(2 * rowBytes, rowBytes + 1);
-                Span<byte> up = buffers.AsSpan(3 * rowBytes + 1, rowBytes + 1);
+                Span<byte> up = buffers.AsSpan(2 * rowBytes, rowBytes + 1);
+                Span<byte> filtered = buffers.AsSpan(3 * rowBytes + 1, filteredBytes);
                 prev.Clear();
-                using (ZLibStream deflate = new ZLibStream(compressed, CompressionLevel.Fastest, true))
+                for (int y = 0; y < height; y++)
                 {
-                    for (int y = 0; y < height; y++)
+                    pixels.Slice(y * pitch, rowBytes).CopyTo(cur);
+                    if (layout == PixelLayout.BGRA8) ImageOps.SwizzleBgraToRgba(cur);
+
+                    Span<byte> sub = filtered.Slice(y * (rowBytes + 1), rowBytes + 1);
+                    sub[0] = 1;
+                    up[0] = 2;
+                    long subCost = 0, upCost = 0;
+                    for (int i = 0; i < rowBytes; i++)
                     {
-                        pixels.Slice(y * pitch, rowBytes).CopyTo(cur);
-                        if (layout == PixelLayout.BGRA8) ImageOps.SwizzleBgraToRgba(cur);
-
-                        sub[0] = 1;
-                        up[0] = 2;
-                        long subCost = 0, upCost = 0;
-                        for (int i = 0; i < rowBytes; i++)
-                        {
-                            byte s = (byte)(cur[i] - (i >= bpp ? cur[i - bpp] : 0));
-                            byte u = (byte)(cur[i] - prev[i]);
-                            sub[i + 1] = s;
-                            up[i + 1] = u;
-                            subCost += (sbyte)s < 0 ? -(sbyte)s : s;
-                            upCost += (sbyte)u < 0 ? -(sbyte)u : u;
-                        }
-                        deflate.Write(subCost <= upCost ? sub : up);
-
-                        Span<byte> swap = prev;
-                        prev = cur;
-                        cur = swap;
+                        byte s = (byte)(cur[i] - (i >= bpp ? cur[i - bpp] : 0));
+                        byte u = (byte)(cur[i] - prev[i]);
+                        sub[i + 1] = s;
+                        up[i + 1] = u;
+                        subCost += (sbyte)s < 0 ? -(sbyte)s : s;
+                        upCost += (sbyte)u < 0 ? -(sbyte)u : u;
                     }
+                    if (upCost < subCost) up.CopyTo(sub);
+
+                    Span<byte> swap = prev;
+                    prev = cur;
+                    cur = swap;
                 }
+                Deflater.Deflate(filtered, compressed, deflate);
             }
             finally
             {

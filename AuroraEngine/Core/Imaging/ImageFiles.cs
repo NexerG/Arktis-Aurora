@@ -18,7 +18,7 @@ namespace ArctisAurora.Core.Imaging
             }
         }
 
-        internal static bool CanDecode(ImageFormat format) => format == ImageFormat.Png || format == ImageFormat.Bmp;
+        internal static bool CanDecode(ImageFormat format) => format == ImageFormat.Png || format == ImageFormat.Bmp || format == ImageFormat.Ktx2;
 
         // Decodes any image file the engine reads.
         public static Image Load(ReadOnlySpan<byte> data, PixelLayout layout = PixelLayout.RGBA8)

@@ -331,6 +331,10 @@
           <xs:enumeration value="Fonts.ImportFamily" />
           <xs:enumeration value="Fonts.MathFontBaked" />
           <xs:enumeration value="Fonts.CffCharstring" />
+          <xs:enumeration value="Perf.ImageDecode.Atlases.Arctis" />
+          <xs:enumeration value="Perf.ImageDecode.Atlases.ImageSharp" />
+          <xs:enumeration value="Perf.ImageDecode.Formats.Arctis" />
+          <xs:enumeration value="Perf.ImageDecode.Formats.ImageSharp" />
           <xs:enumeration value="Input.ClickFiresRelease" />
           <xs:enumeration value="Input.KeyWithModifierFiresKeybind" />
           <xs:enumeration value="Input.DragMovesSplitter" />
