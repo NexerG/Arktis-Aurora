@@ -36,6 +36,7 @@ namespace Arctis.Imaging
             if (PngDecoder.TryReadHeader(data, out header)) return true;
             if (BmpDecoder.TryReadFileHeader(data, out header)) return true;
             if (Ktx2.TryReadHeader(data, out header)) return true;
+            if (DistanceField.TryReadHeader(data, out header)) return true;
             if (TryReadJpegHeader(data, out header)) return true;
             if (TryReadGifHeader(data, out header)) return true;
             header = default;
@@ -60,6 +61,7 @@ namespace Arctis.Imaging
                     Ktx2Info info = Ktx2.ReadInfo(source, out int scheme);
                     Ktx2.DecodeLevel(source, info, scheme, 0, destination, RowPitchOf(header.Width, options), options.Layout);
                     break;
+                case ImageFormat.Adf: DistanceField.Decode(source, destination, RowPitchOf(header.Width, options), options.Layout); break;
                 default: throw new NotSupportedException($"{header.Format} decoding is not available");
             }
             return header;
@@ -85,6 +87,16 @@ namespace Arctis.Imaging
             if (rowPitch < tight || pixels.Length < (long)rowPitch * (height - 1) + tight) throw new ArgumentException("pixel span is smaller than the image");
             deflate.Check();
             PngEncoder.Encode(pixels, width, height, rowPitch, layout, output, deflate);
+        }
+
+        /// <summary>Writes an RGBA8 distance-field atlas as ADF: R, G and B within ±1, alpha rebuilt as their median on decode.</summary>
+        /// <exception cref="ArgumentException">A pixel's alpha is not the median of its R, G and B.</exception>
+        public static void EncodeAdf(ReadOnlySpan<byte> rgba, int width, int height, int rowPitch, Stream output)
+        {
+            if (width <= 0 || height <= 0) throw new ArgumentException($"invalid image size {width}x{height}");
+            if (rowPitch == 0) rowPitch = width * 4;
+            if (rowPitch < width * 4 || rgba.Length < (long)rowPitch * (height - 1) + width * 4) throw new ArgumentException("pixel span is smaller than the image");
+            DistanceField.Encode(rgba, width, height, rowPitch, output);
         }
 
         /// <summary>Reads what a KTX2 file holds; false when the data is not a KTX2 file.</summary>

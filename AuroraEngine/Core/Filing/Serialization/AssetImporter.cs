@@ -13,7 +13,7 @@ namespace ArctisAurora.Core.Filing.Serialization
         private static readonly Diagnostics.LogChannel Log = Diagnostics.LogChannel.For("Assets");
 
         // Bump to invalidate every stamp and force a re-bake.
-        private const int importerVersion = 9;
+        private const int importerVersion = 10;
 
         [A_XSDActionDependency("AssetImporter.RunImports", "Bootstrap")]
         public static bool RunImports()
@@ -219,7 +219,7 @@ namespace ArctisAurora.Core.Filing.Serialization
                 importerVersion = importerVersion
             };
 
-            XElement found = ReadStamp(Paths.Font, baseName, baseName + ".agd", baseName + "_atlas.png");
+            XElement found = ReadStamp(Paths.Font, baseName, baseName + ".agd", baseName + "_atlas.adf");
             if (found != null && wanted.Matches(new FontImportStamp()
             {
                 source = (string)found.Attribute("Source") ?? string.Empty,
@@ -289,7 +289,7 @@ namespace ArctisAurora.Core.Filing.Serialization
                 importerVersion = importerVersion
             };
 
-            XElement found = ReadStamp(Paths.Icon, icons.name, icons.name + ".aid", icons.name + "_atlas.png");
+            XElement found = ReadStamp(Paths.Icon, icons.name, icons.name + ".aid", icons.name + "_atlas.adf");
             if (found != null && wanted.Matches(new IconImportStamp()
             {
                 source = (string)found.Attribute("Source") ?? string.Empty,

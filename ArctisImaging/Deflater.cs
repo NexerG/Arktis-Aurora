@@ -4,6 +4,8 @@ using System.Buffers.Binary;
 using System.IO;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.X86;
 
 namespace Arctis.Imaging
 {
@@ -11,13 +13,16 @@ namespace Arctis.Imaging
     public static unsafe class Deflater
     {
         private const int MinMatch = 3, MaxMatch = 258, WSize = 32768, WMask = WSize - 1, TooFar = 4096;
-        private const int MaxDist = WSize - (MaxMatch + MinMatch + 1), HashSize = 1 << 15, HashMask = HashSize - 1;
+        private const int MaxDist = WSize - (MaxMatch + MinMatch + 1), HashSize = 1 << 15;
         private const int BlockSymbols = 16383, MaxStored = 65535, EndOfBlock = 256;
         private const int LitlenCodes = 286, DistCodes = 30, LengthCodes = 19;
 
         // work layout, in ints
         private const int LitFreq = 0, DistFreq = 288, ClFreq = 320, LitLens = 340, DistLens = 628, ClLens = 660;
         private const int LitCodes = 680, DistCodesAt = 968, ClCodes = 1000, Rle = 1020, Scratch = 1340, WorkSize = 1916;
+
+        // length - 3 to its code index; distance - 1 below 256, then 256 + ((distance - 1) >> 7), to its code
+        private static readonly byte[] lengthCodeOf = LengthCodeTable(), distCodeOf = DistCodeTable();
 
         private static ReadOnlySpan<byte> CodeOrder => new byte[] { 16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15 };
 
@@ -36,8 +41,9 @@ namespace Arctis.Imaging
                 fixed (int* c = chains)
                 fixed (ushort* s = symbols)
                 fixed (int* w = work)
+                fixed (byte* b = buffer)
                 {
-                    Encoder e = new Encoder(data, input.Length, c, s, w, new BitWriter(buffer, output), settings);
+                    Encoder e = new Encoder(data, input.Length, c, s, w, new BitWriter(buffer, b, output), settings);
                     e.bits.Put(0x9C78, 16);
                     e.Run();
                     e.bits.AlignToByte();
@@ -60,7 +66,7 @@ namespace Arctis.Imaging
 
             // input and match search
             private readonly byte* data;
-            private readonly int n;
+            private readonly int n, hashShift;
             private readonly int* head, prev;
             private readonly int goodLength, maxLazy, niceLength, maxChain;
 
@@ -86,7 +92,9 @@ namespace Arctis.Imaging
                 count = 0;
                 blockStart = 0;
                 blockBytes = 0;
-                new Span<int>(head, HashSize).Clear();
+                int hashBits = Math.Clamp(BitOperations.Log2((uint)n) + 1, 8, 15);
+                hashShift = 32 - hashBits;
+                new Span<int>(head, 1 << hashBits).Clear();
                 new Span<int>(work, ClFreq).Clear();
             }
 
@@ -95,13 +103,15 @@ namespace Arctis.Imaging
             {
                 int strstart = 0, matchLength = MinMatch - 1, matchStart = 0;
                 bool matchAvailable = false;
-                while (strstart < n)
+                byte* window = data;
+                int length = n, lazy = maxLazy, maxInsert = n - MinMatch;
+                while (strstart < length)
                 {
                     int hashHead = 0;
-                    if (n - strstart >= MinMatch) hashHead = Insert(strstart);
+                    if (strstart <= maxInsert) hashHead = Insert(strstart);
                     int prevLength = matchLength, prevMatch = matchStart;
                     matchLength = MinMatch - 1;
-                    if (hashHead != 0 && prevLength < maxLazy && strstart - hashHead <= MaxDist)
+                    if (hashHead != 0 && prevLength < lazy && strstart - hashHead <= MaxDist)
                     {
                         matchLength = LongestMatch(strstart, hashHead, prevLength, ref matchStart);
                         if (matchLength == MinMatch && strstart - matchStart > TooFar) matchLength = MinMatch - 1;
@@ -109,7 +119,6 @@ namespace Arctis.Imaging
 
                     if (prevLength >= MinMatch && matchLength <= prevLength)
                     {
-                        int maxInsert = n - MinMatch;
                         bool full = TallyMatch(strstart - 1 - prevMatch, prevLength);
                         for (int k = prevLength - 2; k > 0; k--)
                             if (++strstart <= maxInsert) Insert(strstart);
@@ -120,7 +129,7 @@ namespace Arctis.Imaging
                     }
                     else if (matchAvailable)
                     {
-                        if (TallyLiteral(data[strstart - 1])) WriteBlock(false);
+                        if (TallyLiteral(window[strstart - 1])) WriteBlock(false);
                         strstart++;
                     }
                     else
@@ -129,14 +138,14 @@ namespace Arctis.Imaging
                         strstart++;
                     }
                 }
-                if (matchAvailable) TallyLiteral(data[strstart - 1]);
+                if (matchAvailable) TallyLiteral(window[strstart - 1]);
                 WriteBlock(true);
             }
 
             private readonly int Insert(int pos)
             {
                 byte* p = data + pos;
-                int h = ((p[0] << 10) ^ (p[1] << 5) ^ p[2]) & HashMask;
+                int h = (int)((uint)(p[0] | p[1] << 8 | p[2] << 16) * 2654435761u >> hashShift);
                 int match = head[h];
                 prev[pos & WMask] = match;
                 head[h] = pos;
@@ -156,19 +165,18 @@ namespace Arctis.Imaging
                 byte* window = data;
                 int* links = prev;
                 byte* scan = window + strstart;
-                byte scanEnd1 = scan[bestLen - 1], scanEnd = scan[bestLen];
+                ushort scanStart = *(ushort*)scan, scanEnd = *(ushort*)(scan + bestLen - 1);
                 do
                 {
                     byte* match = window + cur;
-                    if (match[bestLen] != scanEnd || match[bestLen - 1] != scanEnd1 || match[0] != scan[0] || match[1] != scan[1]) continue;
+                    if (*(ushort*)(match + bestLen - 1) != scanEnd || *(ushort*)match != scanStart) continue;
                     int len = 2 + Common(scan + 2, match + 2, maxLen - 2);
                     if (len > bestLen)
                     {
                         matchStart = cur;
                         bestLen = len;
                         if (len >= nice) break;
-                        scanEnd1 = scan[bestLen - 1];
-                        scanEnd = scan[bestLen];
+                        scanEnd = *(ushort*)(scan + bestLen - 1);
                     }
                 } while ((cur = links[cur & WMask]) > limit && --chain != 0);
                 return bestLen;
@@ -188,8 +196,9 @@ namespace Arctis.Imaging
             {
                 symDist[count] = (ushort)distance;
                 symLen[count] = (ushort)(length - MinMatch);
-                work[LitFreq + 257 + LengthCode(length - MinMatch)]++;
-                work[DistFreq + DistCode(distance - 1)]++;
+                int d = distance - 1;
+                work[LitFreq + 257 + lengthCodeOf[length - MinMatch]]++;
+                work[DistFreq + distCodeOf[d < 256 ? d : 256 + (d >> 7)]]++;
                 count++;
                 blockBytes += length;
                 return count == BlockSymbols;
@@ -280,21 +289,20 @@ namespace Arctis.Imaging
                 int* lc = work + LitCodes, ll = work + LitLens, dc = work + DistCodesAt, dl = work + DistLens;
                 ushort* distances = symDist, values = symLen;
                 int symbols = count;
-                for (int i = 0; i < symbols; i++)
-                {
-                    int distance = distances[i], value = values[i];
-                    if (distance == 0)
+                fixed (byte* lengthCodes = lengthCodeOf, distanceCodes = distCodeOf)
+                    for (int i = 0; i < symbols; i++)
                     {
-                        bits.Put((uint)lc[value], ll[value]);
-                        continue;
+                        int distance = distances[i], value = values[i];
+                        if (distance == 0)
+                        {
+                            bits.Put((uint)lc[value], ll[value]);
+                            continue;
+                        }
+                        int code = 257 + lengthCodes[value], e = LengthExtra(code - 257);
+                        bits.Put((uint)lc[code] | (uint)(value & ((1 << e) - 1)) << ll[code], ll[code] + e);
+                        int d = distance - 1, dcode = distanceCodes[d < 256 ? d : 256 + (d >> 7)], de = DistExtra(dcode);
+                        bits.Put((uint)dc[dcode] | (uint)(d & ((1 << de) - 1)) << dl[dcode], dl[dcode] + de);
                     }
-                    int code = LengthCode(value), e = LengthExtra(code);
-                    bits.Put((uint)lc[257 + code], ll[257 + code]);
-                    if (e != 0) bits.Put((uint)(value & ((1 << e) - 1)), e);
-                    int d = distance - 1, dcode = DistCode(d), de = DistExtra(dcode);
-                    bits.Put((uint)dc[dcode], dl[dcode]);
-                    if (de != 0) bits.Put((uint)(d & ((1 << de) - 1)), de);
-                }
                 bits.Put((uint)lc[EndOfBlock], ll[EndOfBlock]);
             }
         }
@@ -303,13 +311,15 @@ namespace Arctis.Imaging
         private struct BitWriter
         {
             private readonly byte[] buffer;
+            private readonly byte* start;
             private readonly Stream stream;
             private int pos, fill;
             private ulong acc;
 
-            public BitWriter(byte[] buffer, Stream stream)
+            public BitWriter(byte[] buffer, byte* start, Stream stream)
             {
                 this.buffer = buffer;
+                this.start = start;
                 this.stream = stream;
                 pos = 0;
                 fill = 0;
@@ -323,7 +333,7 @@ namespace Arctis.Imaging
                 fill += length;
                 if (fill < 32) return;
                 if (pos + 4 > buffer.Length) Drain();
-                BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(pos), (uint)acc);
+                *(uint*)(start + pos) = BitConverter.IsLittleEndian ? (uint)acc : BinaryPrimitives.ReverseEndianness((uint)acc);
                 pos += 4;
                 acc >>= 32;
                 fill -= 32;
@@ -532,6 +542,12 @@ namespace Arctis.Imaging
         private static int Common(byte* a, byte* b, int max)
         {
             int i = 0;
+            if (Vector256.IsHardwareAccelerated)
+                for (; i + 32 <= max; i += 32)
+                {
+                    uint m = ~Vector256.Equals(Vector256.Load(a + i), Vector256.Load(b + i)).ExtractMostSignificantBits();
+                    if (m != 0) return i + BitOperations.TrailingZeroCount(m);
+                }
             for (; i + 8 <= max; i += 8)
             {
                 ulong x = Unsafe.ReadUnaligned<ulong>(a + i) ^ Unsafe.ReadUnaligned<ulong>(b + i);
@@ -548,6 +564,24 @@ namespace Arctis.Imaging
             if (l == 255) return 28;
             int top = BitOperations.Log2((uint)l);
             return 4 * (top - 1) + ((l >> (top - 2)) & 3);
+        }
+
+        private static byte[] LengthCodeTable()
+        {
+            byte[] table = new byte[256];
+            for (int i = 0; i < table.Length; i++) table[i] = (byte)LengthCode(i);
+            return table;
+        }
+
+        private static byte[] DistCodeTable()
+        {
+            byte[] table = new byte[512];
+            for (int i = 0; i < 256; i++)
+            {
+                table[i] = (byte)DistCode(i);
+                table[256 + i] = (byte)DistCode(i << 7);
+            }
+            return table;
         }
 
         private static int LengthExtra(int code) => code < 8 || code == 28 ? 0 : (code >> 2) - 1;
@@ -579,6 +613,32 @@ namespace Arctis.Imaging
         {
             uint a = 1, b = 0;
             int i = 0;
+            if (Ssse3.IsSupported)
+            {
+                Vector128<sbyte> weights = Vector128.Create((sbyte)16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1);
+                Vector128<short> ones = Vector128.Create((short)1);
+                fixed (byte* p = data)
+                {
+                    // 16 bytes a step: vs1 sums the bytes, vs2 the weighted bytes, vs3 vs1 before each step
+                    while (data.Length - i >= 16)
+                    {
+                        int len = Math.Min(data.Length - i, 5552) & ~15;
+                        Vector128<uint> vs1 = Vector128<uint>.Zero, vs2 = Vector128<uint>.Zero, vs3 = Vector128<uint>.Zero;
+                        for (int end = i + len; i < end; i += 16)
+                        {
+                            Vector128<byte> v = Sse2.LoadVector128(p + i);
+                            vs3 += vs1;
+                            vs1 += Sse2.SumAbsoluteDifferences(v, Vector128<byte>.Zero).AsUInt32();
+                            vs2 += Sse2.MultiplyAddAdjacent(Ssse3.MultiplyAddAdjacent(v, weights), ones).AsUInt32();
+                        }
+                        vs2 += vs3 << 4;
+                        b += a * (uint)len + Vector128.Sum(vs2);
+                        a += Vector128.Sum(vs1);
+                        a %= 65521;
+                        b %= 65521;
+                    }
+                }
+            }
             while (i < data.Length)
             {
                 int end = Math.Min(i + 5552, data.Length);

@@ -84,9 +84,9 @@ namespace ArctisAurora.Core.Filing
             }
             Diagnostics.Profiling.Zone.End("Atlas.Cells");
 
-            Diagnostics.Profiling.Zone.Start("Atlas.SavePng");
-            atlas.SavePng(Path.Combine(dir, $"{setName}_atlas.png"));
-            Diagnostics.Profiling.Zone.End("Atlas.SavePng");
+            Diagnostics.Profiling.Zone.Start("Atlas.SaveAdf");
+            atlas.SaveAdf(Path.Combine(dir, $"{setName}_atlas.adf"));
+            Diagnostics.Profiling.Zone.End("Atlas.SaveAdf");
             Log.Info($"icon set '{setName}': {icons.Count} icons at {perIconSize}px.");
         }
     }

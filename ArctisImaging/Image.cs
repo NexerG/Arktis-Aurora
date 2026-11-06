@@ -92,5 +92,13 @@ namespace Arctis.Imaging
             using FileStream file = File.Create(path);
             SavePng(file, deflate);
         }
+
+        /// <summary>Writes an RGBA8 distance-field atlas as an ADF file.</summary>
+        public void SaveAdf(string path)
+        {
+            if (Layout != PixelLayout.RGBA8) throw new NotSupportedException($"ADF holds RGBA8 only, not {Layout}");
+            using FileStream file = File.Create(path);
+            ImageCodec.EncodeAdf(Pixels, Width, Height, RowPitch, file);
+        }
     }
 }

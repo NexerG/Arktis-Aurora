@@ -17,7 +17,7 @@ namespace ArctisAurora.Core.Filing
 
         // bake shape; bump version to force a re-bake
         private const int cellSize = 32;
-        private const int version = 1;
+        private const int version = 2;
         private const int firstCode = 0xE000;
         private const int lastCode = 0xF8FF;
 
@@ -32,10 +32,10 @@ namespace ArctisAurora.Core.Filing
             string dir = Path.Combine(outputRoot, AssetName);
             string mapPath = Path.Combine(dir, AssetName + ".map.axml");
             string agdPath = Path.Combine(dir, AssetName + ".agd");
-            string pngPath = Path.Combine(dir, AssetName + "_atlas.png");
+            string atlasPath = Path.Combine(dir, AssetName + "_atlas.adf");
             string hash = Hash(families);
 
-            if (File.Exists(mapPath) && File.Exists(agdPath) && File.Exists(pngPath))
+            if (File.Exists(mapPath) && File.Exists(agdPath) && File.Exists(atlasPath))
             {
                 XElement stored = XElement.Load(mapPath);
                 if ((string?)stored.Attribute("Hash") == hash)
@@ -71,7 +71,7 @@ namespace ArctisAurora.Core.Filing
 
             Log.Info($"font previews: baking {glyphs.Count} glyphs for {spelt.Count} families...");
             Directory.CreateDirectory(dir);
-            WriteAtlas(chars.ToArray(), glyphs.ToArray(), agdPath, pngPath);
+            WriteAtlas(chars.ToArray(), glyphs.ToArray(), agdPath, atlasPath);
             new XElement("FontPreviews", new XAttribute("Hash", hash),
                 spelt.Select(p => new XElement("Preview", new XAttribute("Family", p.Key), new XAttribute("Text", p.Value)))).Save(mapPath);
             Volatile.Write(ref texts, spelt);
@@ -100,7 +100,7 @@ namespace ArctisAurora.Core.Filing
         }
 
         // Same cell layout as a family atlas, one face.
-        private static void WriteAtlas(char[] chars, Glyph[] glyphs, string agdPath, string pngPath)
+        private static void WriteAtlas(char[] chars, Glyph[] glyphs, string agdPath, string atlasPath)
         {
             AtlasMetaData meta = new AtlasMetaData
             {
@@ -116,7 +116,7 @@ namespace ArctisAurora.Core.Filing
             Image image = new Image(cellSize * perAxis, cellSize * perAxis);
             for (int cell = 0; cell < glyphs.Length; cell++)
                 MTSDFGen.GenerateCell(glyphs[cell], image, cell % perAxis * cellSize, cell / perAxis * cellSize, cellSize, MTSDFGen.PxRange);
-            image.SavePng(pngPath);
+            image.SaveAdf(atlasPath);
         }
 
         private static string Hash(IReadOnlyList<InstalledFamily> families)

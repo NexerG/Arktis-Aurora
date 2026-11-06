@@ -4,7 +4,7 @@
   <xs:import schemaLocation="AllTypesSchema.xsd" namespace="http://arctisaurora/AuroraTypes" />
   <xs:import schemaLocation="EntityRegistryTypeSchema.xsd" namespace="http://arctisaurora/AuroraEntityRegistryTypes" />
   <xs:simpleType name="UI">
-    <xs:union memberTypes="types:SpanChartMode types:ListMarker types:EffectLoop types:GradientKind types:GridSizeMode types:PaletteRole types:WindowCorners types:TextStyleType types:TextAlignment types:PageMode types:MathRules types:PageSize types:SlotPlace types:ScrollDirection types:PictureWrap types:PictureCollision types:WorkspaceKind types:FileKind types:Orientation" />
+    <xs:union memberTypes="types:SpanChartMode types:EffectLoop types:GradientKind types:PaletteRole types:WindowCorners types:PictureWrap types:PictureCollision types:ListMarker types:TextStyleType types:TextAlignment types:PageMode types:MathRules types:PageSize types:SlotPlace types:GridSizeMode types:ScrollDirection types:WorkspaceKind types:FileKind types:Orientation" />
   </xs:simpleType>
   <xs:attributeGroup name="FrameStrip.Attributes">
     <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
@@ -136,189 +136,6 @@
     <xs:sequence />
     <xs:attributeGroup ref="types:ZoneTable.Attributes" />
   </xs:complexType>
-  <xs:simpleType name="ListMarker">
-    <xs:restriction base="xs:string">
-      <xs:enumeration value="Disc" />
-      <xs:enumeration value="Circle" />
-      <xs:enumeration value="Triangle" />
-      <xs:enumeration value="TriangleOutline" />
-      <xs:enumeration value="Square" />
-      <xs:enumeration value="SquareOutline" />
-      <xs:enumeration value="Decimal" />
-      <xs:enumeration value="UpperAlpha" />
-      <xs:enumeration value="LowerAlpha" />
-      <xs:enumeration value="LowerRoman" />
-      <xs:enumeration value="UpperRoman" />
-    </xs:restriction>
-  </xs:simpleType>
-  <xs:attributeGroup name="Run.Attributes">
-    <xs:attribute name="Text" type="xs:string" />
-    <xs:attribute name="Bold" type="xs:boolean" />
-    <xs:attribute name="Italic" type="xs:boolean" />
-    <xs:attribute name="Strikethrough" type="xs:boolean" />
-    <xs:attribute name="Underline" type="xs:boolean" />
-    <xs:attribute name="HighlightHex" type="xs:string" />
-    <xs:attribute name="ColorHex" type="xs:string" />
-    <xs:attribute name="ControlColor" type="xs:string" />
-    <xs:attribute name="Gradient" type="xs:string" />
-    <xs:attribute name="Effect" type="xs:string" />
-    <xs:attribute name="FontName" type="xs:string" />
-    <xs:attribute name="FontSize" type="xs:float" />
-    <xs:attribute name="FontSizeAuthored" type="xs:boolean" />
-    <xs:attribute name="StylingType" type="types:TextStyleType" />
-    <xs:attribute name="Image" type="xs:string" />
-    <xs:attribute name="Width" type="xs:float" />
-    <xs:attribute name="Height" type="xs:float" />
-    <xs:attribute name="Wrap" type="types:PictureWrap" />
-    <xs:attribute name="X" type="xs:float" />
-    <xs:attribute name="Y" type="xs:float" />
-    <xs:attribute name="Rotation" type="xs:float" />
-    <xs:attribute name="Collision" type="types:PictureCollision" />
-    <xs:attribute name="Math" type="xs:string" />
-    <xs:attribute name="Display" type="xs:boolean" />
-    <xs:attribute name="Strut" type="xs:float" />
-    <xs:attribute name="Sheet" type="xs:string" />
-    <xs:attribute name="Space" type="xs:float" />
-    <xs:attribute name="Fill" type="xs:boolean" />
-    <xs:attribute name="Leader" type="xs:string" />
-    <xs:attribute name="LeaderWidth" type="xs:float" />
-    <xs:attribute name="LeaderInset" type="xs:float" />
-    <xs:attribute name="Note" type="xs:string" />
-  </xs:attributeGroup>
-  <xs:element name="Run" type="types:Run" />
-  <xs:complexType name="Run">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:Run.Attributes" />
-  </xs:complexType>
-  <xs:attributeGroup name="Button.Attributes">
-    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
-    <xs:attribute name="Enabled" type="xs:boolean" />
-    <xs:attribute name="HoverColorHex" type="xs:string" />
-    <xs:attribute name="PressColorHex" type="xs:string" />
-  </xs:attributeGroup>
-  <xs:element name="Button" type="types:Button" />
-  <xs:complexType name="Button">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:Button.Attributes" />
-  </xs:complexType>
-  <xs:element name="CheckBox" type="types:CheckBox" />
-  <xs:complexType name="CheckBox">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:Button.Attributes" />
-  </xs:complexType>
-  <xs:attributeGroup name="ColorPicker.Attributes">
-    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
-    <xs:attribute name="Hex" type="xs:string" />
-  </xs:attributeGroup>
-  <xs:element name="ColorPicker" type="types:ColorPicker" />
-  <xs:complexType name="ColorPicker">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:ColorPicker.Attributes" />
-  </xs:complexType>
-  <xs:element name="Container" type="types:Container" />
-  <xs:complexType name="Container">
-    <xs:sequence />
-    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
-  </xs:complexType>
-  <xs:element name="ContextMenu" type="types:ContextMenu" />
-  <xs:group name="ContextMenuEntry.Children">
-    <xs:choice>
-      <xs:element name="ContextButton" type="types:ContextButton" />
-      <xs:element name="ContextLine" type="types:ContextLine" />
-      <xs:element name="ContextSubmenu" type="types:ContextSubmenu" />
-    </xs:choice>
-  </xs:group>
-  <xs:complexType name="ContextMenu">
-    <xs:sequence>
-      <xs:group minOccurs="0" maxOccurs="unbounded" ref="types:ContextMenuEntry.Children" />
-    </xs:sequence>
-  </xs:complexType>
-  <xs:attributeGroup name="ContextEntry.Attributes">
-    <xs:attribute name="When" type="xs:string" />
-  </xs:attributeGroup>
-  <xs:attributeGroup name="ContextButton.Attributes">
-    <xs:attributeGroup ref="types:ContextEntry.Attributes" />
-    <xs:attribute name="Text" type="xs:string" />
-    <xs:attribute name="Action" type="actions:UI" />
-  </xs:attributeGroup>
-  <xs:element name="ContextButton" type="types:ContextButton" />
-  <xs:complexType name="ContextButton">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:ContextButton.Attributes" />
-  </xs:complexType>
-  <xs:element name="ContextLine" type="types:ContextLine" />
-  <xs:complexType name="ContextLine">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:ContextEntry.Attributes" />
-  </xs:complexType>
-  <xs:attributeGroup name="ContextSubmenu.Attributes">
-    <xs:attributeGroup ref="types:ContextEntry.Attributes" />
-    <xs:attribute name="Text" type="xs:string" />
-    <xs:attribute name="Source" type="xs:string" />
-  </xs:attributeGroup>
-  <xs:element name="ContextSubmenu" type="types:ContextSubmenu" />
-  <xs:complexType name="ContextSubmenu">
-    <xs:sequence>
-      <xs:group minOccurs="0" maxOccurs="unbounded" ref="types:ContextMenuEntry.Children" />
-    </xs:sequence>
-    <xs:attributeGroup ref="types:ContextSubmenu.Attributes" />
-  </xs:complexType>
-  <xs:attributeGroup name="Dock.Attributes">
-    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
-    <xs:attribute name="LastChildFill" type="xs:boolean" />
-  </xs:attributeGroup>
-  <xs:element name="Dock" type="types:Dock" />
-  <xs:complexType name="Dock">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:Dock.Attributes" />
-  </xs:complexType>
-  <xs:attributeGroup name="DocumentEditor.Attributes">
-    <xs:attributeGroup ref="types:Scrollable.Attributes" />
-    <xs:attribute name="CaretColorHex" type="xs:string" />
-    <xs:attribute name="SelectionColorHex" type="xs:string" />
-    <xs:attribute name="Source" type="xs:string" />
-  </xs:attributeGroup>
-  <xs:element name="DocumentEditor" type="types:DocumentEditor" />
-  <xs:complexType name="DocumentEditor">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:DocumentEditor.Attributes" />
-  </xs:complexType>
-  <xs:attributeGroup name="DocumentToolbar.Attributes">
-    <xs:attributeGroup ref="types:StackPanel.Attributes" />
-    <xs:attribute name="HoverColorHex" type="xs:string" />
-    <xs:attribute name="PressColorHex" type="xs:string" />
-    <xs:attribute name="IdleInkColorHex" type="xs:string" />
-    <xs:attribute name="ActiveInkColorHex" type="xs:string" />
-    <xs:attribute name="SeparatorColorHex" type="xs:string" />
-    <xs:attribute name="FieldColorHex" type="xs:string" />
-  </xs:attributeGroup>
-  <xs:element name="DocumentToolbar" type="types:DocumentToolbar" />
-  <xs:complexType name="DocumentToolbar">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:DocumentToolbar.Attributes" />
-  </xs:complexType>
-  <xs:element name="Dropdown" type="types:Dropdown" />
-  <xs:complexType name="Dropdown">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:Button.Attributes" />
-  </xs:complexType>
-  <xs:attributeGroup name="EditableLabel.Attributes">
-    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
-    <xs:attribute name="Text" type="xs:string" />
-    <xs:attribute name="FontSize" type="xs:int" />
-    <xs:attribute name="TextColorHex" type="xs:string" />
-    <xs:attribute name="FieldColorHex" type="xs:string" />
-  </xs:attributeGroup>
-  <xs:element name="EditableLabel" type="types:EditableLabel" />
-  <xs:complexType name="EditableLabel">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:EditableLabel.Attributes" />
-  </xs:complexType>
-  <xs:element name="EditableTabs" type="types:EditableTabs" />
-  <xs:complexType name="EditableTabs">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:TabView.Attributes" />
-  </xs:complexType>
   <xs:simpleType name="EffectLoop">
     <xs:restriction base="xs:string">
       <xs:enumeration value="Once" />
@@ -361,20 +178,6 @@
     <xs:sequence>
       <xs:group minOccurs="0" maxOccurs="unbounded" ref="types:EffectDefinition.Children" />
     </xs:sequence>
-  </xs:complexType>
-  <xs:attributeGroup name="Expander.Attributes">
-    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
-    <xs:attribute name="Expanded" type="xs:boolean" />
-  </xs:attributeGroup>
-  <xs:element name="Expander" type="types:Expander" />
-  <xs:complexType name="Expander">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:Expander.Attributes" />
-  </xs:complexType>
-  <xs:element name="FileRow" type="types:FileRow" />
-  <xs:complexType name="FileRow">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:Button.Attributes" />
   </xs:complexType>
   <xs:simpleType name="GradientKind">
     <xs:restriction base="xs:string">
@@ -424,99 +227,6 @@
     <xs:sequence>
       <xs:group minOccurs="0" maxOccurs="unbounded" ref="types:GradientDefinition.Children" />
     </xs:sequence>
-  </xs:complexType>
-  <xs:simpleType name="GridSizeMode">
-    <xs:restriction base="xs:string">
-      <xs:enumeration value="Fixed" />
-      <xs:enumeration value="Auto" />
-      <xs:enumeration value="Star" />
-    </xs:restriction>
-  </xs:simpleType>
-  <xs:attributeGroup name="RowDefinition.Attributes">
-    <xs:attribute name="Height" type="xs:float" />
-    <xs:attribute name="SizeMode" type="types:GridSizeMode" />
-    <xs:attribute name="GapAfter" type="xs:float" />
-  </xs:attributeGroup>
-  <xs:element name="RowDefinition" type="types:RowDefinition" />
-  <xs:complexType name="RowDefinition">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:RowDefinition.Attributes" />
-  </xs:complexType>
-  <xs:attributeGroup name="ColumnDefinition.Attributes">
-    <xs:attribute name="Width" type="xs:float" />
-    <xs:attribute name="SizeMode" type="types:GridSizeMode" />
-    <xs:attribute name="GapAfter" type="xs:float" />
-  </xs:attributeGroup>
-  <xs:element name="ColumnDefinition" type="types:ColumnDefinition" />
-  <xs:complexType name="ColumnDefinition">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:ColumnDefinition.Attributes" />
-  </xs:complexType>
-  <xs:attributeGroup name="GridCell.Attributes">
-    <xs:attribute name="Row" type="xs:int" />
-    <xs:attribute name="Column" type="xs:int" />
-    <xs:attribute name="RowSpan" type="xs:int" />
-    <xs:attribute name="ColumnSpan" type="xs:int" />
-  </xs:attributeGroup>
-  <xs:element name="GridCell" type="types:GridCell" />
-  <xs:complexType name="GridCell">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:GridCell.Attributes" />
-  </xs:complexType>
-  <xs:element name="GridList" type="types:GridList" />
-  <xs:complexType name="GridList">
-    <xs:sequence>
-      <xs:element minOccurs="0" maxOccurs="unbounded" name="RowDefinition" type="types:RowDefinition">
-        <xs:annotation>
-          <xs:documentation></xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element minOccurs="0" maxOccurs="unbounded" name="ColumnDefinition" type="types:ColumnDefinition">
-        <xs:annotation>
-          <xs:documentation></xs:documentation>
-        </xs:annotation>
-      </xs:element>
-    </xs:sequence>
-    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
-  </xs:complexType>
-  <xs:attributeGroup name="Icon.Attributes">
-    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
-    <xs:attribute name="Set" type="xs:string" />
-    <xs:attribute name="Icon" type="xs:string" />
-  </xs:attributeGroup>
-  <xs:element name="Icon" type="types:Icon" />
-  <xs:complexType name="Icon">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:Icon.Attributes" />
-  </xs:complexType>
-  <xs:attributeGroup name="Image.Attributes">
-    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
-    <xs:attribute name="Source" type="xs:string" />
-  </xs:attributeGroup>
-  <xs:element name="Image" type="types:Image" />
-  <xs:complexType name="Image">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:Image.Attributes" />
-  </xs:complexType>
-  <xs:element name="Inspector" type="types:Inspector" />
-  <xs:complexType name="Inspector">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:StackPanel.Attributes" />
-  </xs:complexType>
-  <xs:element name="KeyCapture" type="types:KeyCapture" />
-  <xs:complexType name="KeyCapture">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:Button.Attributes" />
-  </xs:complexType>
-  <xs:element name="Label" type="types:Label" />
-  <xs:complexType name="Label">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:TextRun.Attributes" />
-  </xs:complexType>
-  <xs:element name="MenuButton" type="types:MenuButton" />
-  <xs:complexType name="MenuButton">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:Button.Attributes" />
   </xs:complexType>
   <xs:simpleType name="PaletteRole">
     <xs:restriction base="xs:string">
@@ -583,11 +293,64 @@
     <xs:sequence />
     <xs:attributeGroup ref="types:Palette.Attributes" />
   </xs:complexType>
-  <xs:element name="Panel" type="types:Panel" />
-  <xs:complexType name="Panel">
+  <xs:element name="WindowRoot" type="types:WindowRoot" />
+  <xs:complexType name="WindowRoot">
     <xs:sequence />
     <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
   </xs:complexType>
+  <xs:attributeGroup name="EditableLabel.Attributes">
+    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
+    <xs:attribute name="Text" type="xs:string" />
+    <xs:attribute name="FontSize" type="xs:int" />
+    <xs:attribute name="TextColorHex" type="xs:string" />
+    <xs:attribute name="FieldColorHex" type="xs:string" />
+  </xs:attributeGroup>
+  <xs:element name="EditableLabel" type="types:EditableLabel" />
+  <xs:complexType name="EditableLabel">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:EditableLabel.Attributes" />
+  </xs:complexType>
+  <xs:element name="Label" type="types:Label" />
+  <xs:complexType name="Label">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:TextRun.Attributes" />
+  </xs:complexType>
+  <xs:attributeGroup name="TextBox.Attributes">
+    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
+    <xs:attribute name="Text" type="xs:string" />
+    <xs:attribute name="Masked" type="xs:boolean" />
+    <xs:attribute name="FontSize" type="xs:int" />
+    <xs:attribute name="TextColorHex" type="xs:string" />
+    <xs:attribute name="SelectionColorHex" type="xs:string" />
+    <xs:attribute name="CaretColorHex" type="xs:string" />
+  </xs:attributeGroup>
+  <xs:element name="TextBox" type="types:TextBox" />
+  <xs:complexType name="TextBox">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:TextBox.Attributes" />
+  </xs:complexType>
+  <xs:simpleType name="PictureWrap">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="Inline" />
+      <xs:enumeration value="Square" />
+      <xs:enumeration value="Tight" />
+      <xs:enumeration value="TopAndBottom" />
+      <xs:enumeration value="Behind" />
+      <xs:enumeration value="InFront" />
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:simpleType name="PictureCollision">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="Box" />
+      <xs:enumeration value="Shape" />
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:attributeGroup name="TextRun.Attributes">
+    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
+    <xs:attribute name="Text" type="xs:string" />
+    <xs:attribute name="FontSize" type="xs:float" />
+    <xs:attribute name="FontName" type="xs:string" />
+  </xs:attributeGroup>
   <xs:attributeGroup name="AttachmentKind.Attributes">
     <xs:attribute name="Name" type="xs:string" />
     <xs:attribute name="Color" type="xs:string" />
@@ -609,14 +372,156 @@
       <xs:group minOccurs="0" maxOccurs="unbounded" ref="types:PlannerAttachmentKind.Children" />
     </xs:sequence>
   </xs:complexType>
-  <xs:attributeGroup name="Ribbon.Attributes">
-    <xs:attributeGroup ref="types:StackPanel.Attributes" />
-    <xs:attribute name="ConvertCsv" type="actions:UI" />
+  <xs:element name="ContextMenu" type="types:ContextMenu" />
+  <xs:group name="ContextMenuEntry.Children">
+    <xs:choice>
+      <xs:element name="ContextButton" type="types:ContextButton" />
+      <xs:element name="ContextLine" type="types:ContextLine" />
+      <xs:element name="ContextSubmenu" type="types:ContextSubmenu" />
+    </xs:choice>
+  </xs:group>
+  <xs:complexType name="ContextMenu">
+    <xs:sequence>
+      <xs:group minOccurs="0" maxOccurs="unbounded" ref="types:ContextMenuEntry.Children" />
+    </xs:sequence>
+  </xs:complexType>
+  <xs:attributeGroup name="ContextEntry.Attributes">
+    <xs:attribute name="When" type="xs:string" />
   </xs:attributeGroup>
-  <xs:element name="Ribbon" type="types:Ribbon" />
-  <xs:complexType name="Ribbon">
+  <xs:attributeGroup name="ContextButton.Attributes">
+    <xs:attributeGroup ref="types:ContextEntry.Attributes" />
+    <xs:attribute name="Text" type="xs:string" />
+    <xs:attribute name="Action" type="actions:UI" />
+  </xs:attributeGroup>
+  <xs:element name="ContextButton" type="types:ContextButton" />
+  <xs:complexType name="ContextButton">
     <xs:sequence />
-    <xs:attributeGroup ref="types:Ribbon.Attributes" />
+    <xs:attributeGroup ref="types:ContextButton.Attributes" />
+  </xs:complexType>
+  <xs:element name="ContextLine" type="types:ContextLine" />
+  <xs:complexType name="ContextLine">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:ContextEntry.Attributes" />
+  </xs:complexType>
+  <xs:attributeGroup name="ContextSubmenu.Attributes">
+    <xs:attributeGroup ref="types:ContextEntry.Attributes" />
+    <xs:attribute name="Text" type="xs:string" />
+    <xs:attribute name="Source" type="xs:string" />
+  </xs:attributeGroup>
+  <xs:element name="ContextSubmenu" type="types:ContextSubmenu" />
+  <xs:complexType name="ContextSubmenu">
+    <xs:sequence>
+      <xs:group minOccurs="0" maxOccurs="unbounded" ref="types:ContextMenuEntry.Children" />
+    </xs:sequence>
+    <xs:attributeGroup ref="types:ContextSubmenu.Attributes" />
+  </xs:complexType>
+  <xs:element name="MenuButton" type="types:MenuButton" />
+  <xs:complexType name="MenuButton">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:Button.Attributes" />
+  </xs:complexType>
+  <xs:element name="FileRow" type="types:FileRow" />
+  <xs:complexType name="FileRow">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:Button.Attributes" />
+  </xs:complexType>
+  <xs:simpleType name="ListMarker">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="Disc" />
+      <xs:enumeration value="Circle" />
+      <xs:enumeration value="Triangle" />
+      <xs:enumeration value="TriangleOutline" />
+      <xs:enumeration value="Square" />
+      <xs:enumeration value="SquareOutline" />
+      <xs:enumeration value="Decimal" />
+      <xs:enumeration value="UpperAlpha" />
+      <xs:enumeration value="LowerAlpha" />
+      <xs:enumeration value="LowerRoman" />
+      <xs:enumeration value="UpperRoman" />
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:attributeGroup name="Run.Attributes">
+    <xs:attribute name="Text" type="xs:string" />
+    <xs:attribute name="Bold" type="xs:boolean" />
+    <xs:attribute name="Italic" type="xs:boolean" />
+    <xs:attribute name="Strikethrough" type="xs:boolean" />
+    <xs:attribute name="Underline" type="xs:boolean" />
+    <xs:attribute name="HighlightHex" type="xs:string" />
+    <xs:attribute name="ColorHex" type="xs:string" />
+    <xs:attribute name="ControlColor" type="xs:string" />
+    <xs:attribute name="Gradient" type="xs:string" />
+    <xs:attribute name="Effect" type="xs:string" />
+    <xs:attribute name="FontName" type="xs:string" />
+    <xs:attribute name="Variant" type="xs:string" />
+    <xs:attribute name="FontSize" type="xs:float" />
+    <xs:attribute name="FontSizeAuthored" type="xs:boolean" />
+    <xs:attribute name="StylingType" type="types:TextStyleType" />
+    <xs:attribute name="Image" type="xs:string" />
+    <xs:attribute name="Width" type="xs:float" />
+    <xs:attribute name="Height" type="xs:float" />
+    <xs:attribute name="Wrap" type="types:PictureWrap" />
+    <xs:attribute name="X" type="xs:float" />
+    <xs:attribute name="Y" type="xs:float" />
+    <xs:attribute name="Rotation" type="xs:float" />
+    <xs:attribute name="Collision" type="types:PictureCollision" />
+    <xs:attribute name="Math" type="xs:string" />
+    <xs:attribute name="Display" type="xs:boolean" />
+    <xs:attribute name="Strut" type="xs:float" />
+    <xs:attribute name="Sheet" type="xs:string" />
+    <xs:attribute name="Space" type="xs:float" />
+    <xs:attribute name="Fill" type="xs:boolean" />
+    <xs:attribute name="Leader" type="xs:string" />
+    <xs:attribute name="LeaderWidth" type="xs:float" />
+    <xs:attribute name="LeaderInset" type="xs:float" />
+    <xs:attribute name="Note" type="xs:string" />
+    <xs:attribute name="Link" type="xs:string" />
+    <xs:attribute name="UrlStretch" type="xs:float" />
+    <xs:attribute name="UrlWidth" type="xs:float" />
+    <xs:attribute name="UrlShrink" type="xs:float" />
+    <xs:attribute name="UrlBreakPenalty" type="xs:float" />
+    <xs:attribute name="UrlBigBreakPenalty" type="xs:float" />
+    <xs:attribute name="UrlNumPenalty" type="xs:float" />
+    <xs:attribute name="UrlNumWidth" type="xs:float" />
+    <xs:attribute name="UrlNumStretch" type="xs:float" />
+    <xs:attribute name="UrlNumShrink" type="xs:float" />
+    <xs:attribute name="UrlUcPenalty" type="xs:float" />
+    <xs:attribute name="UrlUcWidth" type="xs:float" />
+    <xs:attribute name="UrlUcStretch" type="xs:float" />
+    <xs:attribute name="UrlUcShrink" type="xs:float" />
+    <xs:attribute name="UrlLcPenalty" type="xs:float" />
+    <xs:attribute name="UrlLcWidth" type="xs:float" />
+    <xs:attribute name="UrlLcStretch" type="xs:float" />
+    <xs:attribute name="UrlLcShrink" type="xs:float" />
+  </xs:attributeGroup>
+  <xs:element name="Run" type="types:Run" />
+  <xs:complexType name="Run">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:Run.Attributes" />
+  </xs:complexType>
+  <xs:attributeGroup name="DocumentEditor.Attributes">
+    <xs:attributeGroup ref="types:Scrollable.Attributes" />
+    <xs:attribute name="CaretColorHex" type="xs:string" />
+    <xs:attribute name="SelectionColorHex" type="xs:string" />
+    <xs:attribute name="Source" type="xs:string" />
+  </xs:attributeGroup>
+  <xs:element name="DocumentEditor" type="types:DocumentEditor" />
+  <xs:complexType name="DocumentEditor">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:DocumentEditor.Attributes" />
+  </xs:complexType>
+  <xs:attributeGroup name="DocumentToolbar.Attributes">
+    <xs:attributeGroup ref="types:StackPanel.Attributes" />
+    <xs:attribute name="HoverColorHex" type="xs:string" />
+    <xs:attribute name="PressColorHex" type="xs:string" />
+    <xs:attribute name="IdleInkColorHex" type="xs:string" />
+    <xs:attribute name="ActiveInkColorHex" type="xs:string" />
+    <xs:attribute name="SeparatorColorHex" type="xs:string" />
+    <xs:attribute name="FieldColorHex" type="xs:string" />
+  </xs:attributeGroup>
+  <xs:element name="DocumentToolbar" type="types:DocumentToolbar" />
+  <xs:complexType name="DocumentToolbar">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:DocumentToolbar.Attributes" />
   </xs:complexType>
   <xs:attributeGroup name="Document.Attributes">
     <xs:attribute name="Name" type="xs:string" />
@@ -761,6 +666,7 @@
     <xs:attribute name="FloatSep" type="xs:float" />
     <xs:attribute name="TextFloatSep" type="xs:float" />
     <xs:attribute name="InTextSep" type="xs:float" />
+    <xs:attribute name="InTextSepShrink" type="xs:float" />
     <xs:attribute name="FitHeight" type="xs:float" />
   </xs:attributeGroup>
   <xs:element name="Page" type="types:Page" />
@@ -815,6 +721,186 @@
     <xs:sequence />
     <xs:attributeGroup ref="types:RunningSlot.Attributes" />
   </xs:complexType>
+  <xs:attributeGroup name="Button.Attributes">
+    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
+    <xs:attribute name="Enabled" type="xs:boolean" />
+    <xs:attribute name="HoverColorHex" type="xs:string" />
+    <xs:attribute name="PressColorHex" type="xs:string" />
+  </xs:attributeGroup>
+  <xs:element name="Button" type="types:Button" />
+  <xs:complexType name="Button">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:Button.Attributes" />
+  </xs:complexType>
+  <xs:element name="CheckBox" type="types:CheckBox" />
+  <xs:complexType name="CheckBox">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:Button.Attributes" />
+  </xs:complexType>
+  <xs:attributeGroup name="ColorPicker.Attributes">
+    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
+    <xs:attribute name="Hex" type="xs:string" />
+  </xs:attributeGroup>
+  <xs:element name="ColorPicker" type="types:ColorPicker" />
+  <xs:complexType name="ColorPicker">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:ColorPicker.Attributes" />
+  </xs:complexType>
+  <xs:element name="Dropdown" type="types:Dropdown" />
+  <xs:complexType name="Dropdown">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:Button.Attributes" />
+  </xs:complexType>
+  <xs:attributeGroup name="Icon.Attributes">
+    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
+    <xs:attribute name="Set" type="xs:string" />
+    <xs:attribute name="Icon" type="xs:string" />
+  </xs:attributeGroup>
+  <xs:element name="Icon" type="types:Icon" />
+  <xs:complexType name="Icon">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:Icon.Attributes" />
+  </xs:complexType>
+  <xs:attributeGroup name="Image.Attributes">
+    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
+    <xs:attribute name="Source" type="xs:string" />
+  </xs:attributeGroup>
+  <xs:element name="Image" type="types:Image" />
+  <xs:complexType name="Image">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:Image.Attributes" />
+  </xs:complexType>
+  <xs:element name="KeyCapture" type="types:KeyCapture" />
+  <xs:complexType name="KeyCapture">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:Button.Attributes" />
+  </xs:complexType>
+  <xs:attributeGroup name="Slider.Attributes">
+    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
+    <xs:attribute name="Value" type="xs:float" />
+    <xs:attribute name="TrackColorHex" type="xs:string" />
+    <xs:attribute name="ThumbColorHex" type="xs:string" />
+    <xs:attribute name="TrackHeight" type="xs:float" />
+    <xs:attribute name="ThumbWidth" type="xs:float" />
+  </xs:attributeGroup>
+  <xs:element name="Slider" type="types:Slider" />
+  <xs:complexType name="Slider">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:Slider.Attributes" />
+  </xs:complexType>
+  <xs:attributeGroup name="Switch.Attributes">
+    <xs:attributeGroup ref="types:Button.Attributes" />
+    <xs:attribute name="Options" type="xs:string" />
+    <xs:attribute name="Columns" type="xs:int" />
+    <xs:attribute name="Selected" type="xs:int" />
+  </xs:attributeGroup>
+  <xs:element name="Switch" type="types:Switch" />
+  <xs:complexType name="Switch">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:Switch.Attributes" />
+  </xs:complexType>
+  <xs:attributeGroup name="ToggleSwitch.Attributes">
+    <xs:attributeGroup ref="types:Button.Attributes" />
+    <xs:attribute name="OnText" type="xs:string" />
+    <xs:attribute name="OffText" type="xs:string" />
+    <xs:attribute name="On" type="xs:boolean" />
+  </xs:attributeGroup>
+  <xs:element name="ToggleSwitch" type="types:ToggleSwitch" />
+  <xs:complexType name="ToggleSwitch">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:ToggleSwitch.Attributes" />
+  </xs:complexType>
+  <xs:element name="Container" type="types:Container" />
+  <xs:complexType name="Container">
+    <xs:sequence />
+    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
+  </xs:complexType>
+  <xs:attributeGroup name="Dock.Attributes">
+    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
+    <xs:attribute name="LastChildFill" type="xs:boolean" />
+  </xs:attributeGroup>
+  <xs:element name="Dock" type="types:Dock" />
+  <xs:complexType name="Dock">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:Dock.Attributes" />
+  </xs:complexType>
+  <xs:attributeGroup name="Expander.Attributes">
+    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
+    <xs:attribute name="Expanded" type="xs:boolean" />
+  </xs:attributeGroup>
+  <xs:element name="Expander" type="types:Expander" />
+  <xs:complexType name="Expander">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:Expander.Attributes" />
+  </xs:complexType>
+  <xs:simpleType name="GridSizeMode">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="Fixed" />
+      <xs:enumeration value="Auto" />
+      <xs:enumeration value="Star" />
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:attributeGroup name="RowDefinition.Attributes">
+    <xs:attribute name="Height" type="xs:float" />
+    <xs:attribute name="SizeMode" type="types:GridSizeMode" />
+    <xs:attribute name="GapAfter" type="xs:float" />
+  </xs:attributeGroup>
+  <xs:element name="RowDefinition" type="types:RowDefinition" />
+  <xs:complexType name="RowDefinition">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:RowDefinition.Attributes" />
+  </xs:complexType>
+  <xs:attributeGroup name="ColumnDefinition.Attributes">
+    <xs:attribute name="Width" type="xs:float" />
+    <xs:attribute name="SizeMode" type="types:GridSizeMode" />
+    <xs:attribute name="GapAfter" type="xs:float" />
+  </xs:attributeGroup>
+  <xs:element name="ColumnDefinition" type="types:ColumnDefinition" />
+  <xs:complexType name="ColumnDefinition">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:ColumnDefinition.Attributes" />
+  </xs:complexType>
+  <xs:attributeGroup name="GridCell.Attributes">
+    <xs:attribute name="Row" type="xs:int" />
+    <xs:attribute name="Column" type="xs:int" />
+    <xs:attribute name="RowSpan" type="xs:int" />
+    <xs:attribute name="ColumnSpan" type="xs:int" />
+  </xs:attributeGroup>
+  <xs:element name="GridCell" type="types:GridCell" />
+  <xs:complexType name="GridCell">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:GridCell.Attributes" />
+  </xs:complexType>
+  <xs:element name="GridList" type="types:GridList" />
+  <xs:complexType name="GridList">
+    <xs:sequence>
+      <xs:element minOccurs="0" maxOccurs="unbounded" name="RowDefinition" type="types:RowDefinition">
+        <xs:annotation>
+          <xs:documentation></xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element minOccurs="0" maxOccurs="unbounded" name="ColumnDefinition" type="types:ColumnDefinition">
+        <xs:annotation>
+          <xs:documentation></xs:documentation>
+        </xs:annotation>
+      </xs:element>
+    </xs:sequence>
+    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
+  </xs:complexType>
+  <xs:element name="Panel" type="types:Panel" />
+  <xs:complexType name="Panel">
+    <xs:sequence />
+    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
+  </xs:complexType>
+  <xs:attributeGroup name="Ribbon.Attributes">
+    <xs:attributeGroup ref="types:StackPanel.Attributes" />
+    <xs:attribute name="ConvertCsv" type="actions:UI" />
+  </xs:attributeGroup>
+  <xs:element name="Ribbon" type="types:Ribbon" />
+  <xs:complexType name="Ribbon">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:Ribbon.Attributes" />
+  </xs:complexType>
   <xs:simpleType name="ScrollDirection">
     <xs:restriction base="xs:string">
       <xs:enumeration value="Vertical" />
@@ -836,19 +922,6 @@
     <xs:sequence />
     <xs:attributeGroup ref="types:Scrollable.Attributes" />
   </xs:complexType>
-  <xs:attributeGroup name="Slider.Attributes">
-    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
-    <xs:attribute name="Value" type="xs:float" />
-    <xs:attribute name="TrackColorHex" type="xs:string" />
-    <xs:attribute name="ThumbColorHex" type="xs:string" />
-    <xs:attribute name="TrackHeight" type="xs:float" />
-    <xs:attribute name="ThumbWidth" type="xs:float" />
-  </xs:attributeGroup>
-  <xs:element name="Slider" type="types:Slider" />
-  <xs:complexType name="Slider">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:Slider.Attributes" />
-  </xs:complexType>
   <xs:element name="Splitter" type="types:Splitter" />
   <xs:complexType name="Splitter">
     <xs:sequence />
@@ -869,110 +942,29 @@
     <xs:sequence />
     <xs:attributeGroup ref="types:StackPanel.Attributes" />
   </xs:complexType>
-  <xs:attributeGroup name="Switch.Attributes">
-    <xs:attributeGroup ref="types:Button.Attributes" />
-    <xs:attribute name="Options" type="xs:string" />
-    <xs:attribute name="Columns" type="xs:int" />
-    <xs:attribute name="Selected" type="xs:int" />
-  </xs:attributeGroup>
-  <xs:element name="Switch" type="types:Switch" />
-  <xs:complexType name="Switch">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:Switch.Attributes" />
-  </xs:complexType>
-  <xs:attributeGroup name="TabItem.Attributes">
-    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
-    <xs:attribute name="Header" type="xs:string" />
-  </xs:attributeGroup>
-  <xs:element name="TabItem" type="types:TabItem" />
-  <xs:complexType name="TabItem">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:TabItem.Attributes" />
-  </xs:complexType>
-  <xs:attributeGroup name="TabView.Attributes">
-    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
-    <xs:attribute name="NewButton" type="xs:boolean" />
-    <xs:attribute name="TabHeight" type="xs:float" />
-    <xs:attribute name="TabWidth" type="xs:float" />
-    <xs:attribute name="MinTabWidth" type="xs:float" />
-    <xs:attribute name="TabColorHex" type="xs:string" />
-    <xs:attribute name="ActiveTabColorHex" type="xs:string" />
-    <xs:attribute name="TabHoverColorHex" type="xs:string" />
-    <xs:attribute name="TabInkColorHex" type="xs:string" />
-    <xs:attribute name="GripColorHex" type="xs:string" />
-    <xs:attribute name="GripHoverColorHex" type="xs:string" />
-    <xs:attribute name="GripPressColorHex" type="xs:string" />
-    <xs:attribute name="TearOffDocument" type="xs:string" />
-    <xs:attribute name="StickyDocument" type="xs:string" />
-    <xs:attribute name="Bare" type="xs:boolean" />
-    <xs:attribute name="TabContextMenu" type="xs:string" />
-  </xs:attributeGroup>
-  <xs:element name="TabView" type="types:TabView" />
-  <xs:complexType name="TabView">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:TabView.Attributes" />
-  </xs:complexType>
-  <xs:attributeGroup name="TextBox.Attributes">
-    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
-    <xs:attribute name="Text" type="xs:string" />
-    <xs:attribute name="Masked" type="xs:boolean" />
-    <xs:attribute name="FontSize" type="xs:int" />
-    <xs:attribute name="TextColorHex" type="xs:string" />
-    <xs:attribute name="SelectionColorHex" type="xs:string" />
-    <xs:attribute name="CaretColorHex" type="xs:string" />
-  </xs:attributeGroup>
-  <xs:element name="TextBox" type="types:TextBox" />
-  <xs:complexType name="TextBox">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:TextBox.Attributes" />
-  </xs:complexType>
-  <xs:simpleType name="PictureWrap">
-    <xs:restriction base="xs:string">
-      <xs:enumeration value="Inline" />
-      <xs:enumeration value="Square" />
-      <xs:enumeration value="Tight" />
-      <xs:enumeration value="TopAndBottom" />
-      <xs:enumeration value="Behind" />
-      <xs:enumeration value="InFront" />
-    </xs:restriction>
-  </xs:simpleType>
-  <xs:simpleType name="PictureCollision">
-    <xs:restriction base="xs:string">
-      <xs:enumeration value="Box" />
-      <xs:enumeration value="Shape" />
-    </xs:restriction>
-  </xs:simpleType>
-  <xs:attributeGroup name="TextRun.Attributes">
-    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
-    <xs:attribute name="Text" type="xs:string" />
-    <xs:attribute name="FontSize" type="xs:float" />
-    <xs:attribute name="FontName" type="xs:string" />
-  </xs:attributeGroup>
   <xs:element name="TitleBar" type="types:TitleBar" />
   <xs:complexType name="TitleBar">
     <xs:sequence />
     <xs:attributeGroup ref="types:StackPanel.Attributes" />
-  </xs:complexType>
-  <xs:attributeGroup name="ToggleSwitch.Attributes">
-    <xs:attributeGroup ref="types:Button.Attributes" />
-    <xs:attribute name="OnText" type="xs:string" />
-    <xs:attribute name="OffText" type="xs:string" />
-    <xs:attribute name="On" type="xs:boolean" />
-  </xs:attributeGroup>
-  <xs:element name="ToggleSwitch" type="types:ToggleSwitch" />
-  <xs:complexType name="ToggleSwitch">
-    <xs:sequence />
-    <xs:attributeGroup ref="types:ToggleSwitch.Attributes" />
   </xs:complexType>
   <xs:element name="WindowFrame" type="types:WindowFrame" />
   <xs:complexType name="WindowFrame">
     <xs:sequence />
     <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
   </xs:complexType>
-  <xs:element name="WindowRoot" type="types:WindowRoot" />
-  <xs:complexType name="WindowRoot">
-    <xs:sequence />
+  <xs:attributeGroup name="WrapPanel.Attributes">
     <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
+    <xs:attribute name="Spacing" type="xs:float" />
+  </xs:attributeGroup>
+  <xs:element name="WrapPanel" type="types:WrapPanel" />
+  <xs:complexType name="WrapPanel">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:WrapPanel.Attributes" />
+  </xs:complexType>
+  <xs:element name="Inspector" type="types:Inspector" />
+  <xs:complexType name="Inspector">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:StackPanel.Attributes" />
   </xs:complexType>
   <xs:attributeGroup name="WorkspaceBar.Attributes">
     <xs:attributeGroup ref="types:StackPanel.Attributes" />
@@ -1006,14 +998,42 @@
       <xs:enumeration value="Xml" />
     </xs:restriction>
   </xs:simpleType>
-  <xs:attributeGroup name="WrapPanel.Attributes">
-    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
-    <xs:attribute name="Spacing" type="xs:float" />
-  </xs:attributeGroup>
-  <xs:element name="WrapPanel" type="types:WrapPanel" />
-  <xs:complexType name="WrapPanel">
+  <xs:element name="EditableTabs" type="types:EditableTabs" />
+  <xs:complexType name="EditableTabs">
     <xs:sequence />
-    <xs:attributeGroup ref="types:WrapPanel.Attributes" />
+    <xs:attributeGroup ref="types:TabView.Attributes" />
+  </xs:complexType>
+  <xs:attributeGroup name="TabItem.Attributes">
+    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
+    <xs:attribute name="Header" type="xs:string" />
+  </xs:attributeGroup>
+  <xs:element name="TabItem" type="types:TabItem" />
+  <xs:complexType name="TabItem">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:TabItem.Attributes" />
+  </xs:complexType>
+  <xs:attributeGroup name="TabView.Attributes">
+    <xs:attributeGroup ref="EntityRegistry:Control.Attributes" />
+    <xs:attribute name="NewButton" type="xs:boolean" />
+    <xs:attribute name="TabHeight" type="xs:float" />
+    <xs:attribute name="TabWidth" type="xs:float" />
+    <xs:attribute name="MinTabWidth" type="xs:float" />
+    <xs:attribute name="TabColorHex" type="xs:string" />
+    <xs:attribute name="ActiveTabColorHex" type="xs:string" />
+    <xs:attribute name="TabHoverColorHex" type="xs:string" />
+    <xs:attribute name="TabInkColorHex" type="xs:string" />
+    <xs:attribute name="GripColorHex" type="xs:string" />
+    <xs:attribute name="GripHoverColorHex" type="xs:string" />
+    <xs:attribute name="GripPressColorHex" type="xs:string" />
+    <xs:attribute name="TearOffDocument" type="xs:string" />
+    <xs:attribute name="StickyDocument" type="xs:string" />
+    <xs:attribute name="Bare" type="xs:boolean" />
+    <xs:attribute name="TabContextMenu" type="xs:string" />
+  </xs:attributeGroup>
+  <xs:element name="TabView" type="types:TabView" />
+  <xs:complexType name="TabView">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:TabView.Attributes" />
   </xs:complexType>
   <xs:simpleType name="FileKind">
     <xs:restriction base="xs:string">

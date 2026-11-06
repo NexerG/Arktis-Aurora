@@ -31,7 +31,9 @@ namespace Arctis.Imaging
         /// <summary>Graphics Interchange Format.</summary>
         Gif,
         /// <summary>Khronos Texture 2.0.</summary>
-        Ktx2
+        Ktx2,
+        /// <summary>Arctis distance-field atlas: RGBA8 whose alpha is the median of R, G and B.</summary>
+        Adf
     }
 
     /// <summary>What a file says about its image, read without decoding pixels.</summary>

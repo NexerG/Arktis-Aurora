@@ -150,9 +150,9 @@ namespace ArctisAurora.Core.Filing
             }
             Diagnostics.Profiling.Zone.End("Atlas.Cells");
 
-            Diagnostics.Profiling.Zone.Start("Atlas.SavePng");
-            atlasImage.SavePng(Path.Combine(outputRoot, baseName, $"{baseName}_atlas.png"));
-            Diagnostics.Profiling.Zone.End("Atlas.SavePng");
+            Diagnostics.Profiling.Zone.Start("Atlas.SaveAdf");
+            atlasImage.SaveAdf(Path.Combine(outputRoot, baseName, $"{baseName}_atlas.adf"));
+            Diagnostics.Profiling.Zone.End("Atlas.SaveAdf");
         }
 
         // Reads one face's outlines and metrics into its own glyph array.

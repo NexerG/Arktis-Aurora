@@ -2,11 +2,13 @@ using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.IO;
+using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.X86;
 
 namespace Arctis.Imaging
 {
     // Each row filtered by Sub or Up, whichever leaves the smaller sum of residuals.
-    internal static class PngEncoder
+    internal static unsafe class PngEncoder
     {
         internal static void Encode(ReadOnlySpan<byte> pixels, int width, int height, int pitch, PixelLayout layout, Stream output, in DeflateSettings deflate)
         {
@@ -32,39 +34,67 @@ namespace Arctis.Imaging
 
             MemoryStream compressed = new MemoryStream();
             int filteredBytes = height * (rowBytes + 1);
+            bool swizzle = layout == PixelLayout.BGRA8;
             byte[] buffers = ArrayPool<byte>.Shared.Rent(3 * rowBytes + 1 + filteredBytes);
             try
             {
-                Span<byte> prev = buffers.AsSpan(0, rowBytes);
-                Span<byte> cur = buffers.AsSpan(rowBytes, rowBytes);
-                Span<byte> up = buffers.AsSpan(2 * rowBytes, rowBytes + 1);
-                Span<byte> filtered = buffers.AsSpan(3 * rowBytes + 1, filteredBytes);
-                prev.Clear();
-                for (int y = 0; y < height; y++)
+                fixed (byte* source = pixels, work = buffers)
                 {
-                    pixels.Slice(y * pitch, rowBytes).CopyTo(cur);
-                    if (layout == PixelLayout.BGRA8) ImageOps.SwizzleBgraToRgba(cur);
-
-                    Span<byte> sub = filtered.Slice(y * (rowBytes + 1), rowBytes + 1);
-                    sub[0] = 1;
+                    // prev starts as the zero row; spare takes a swizzled row
+                    byte* prev = work, spare = work + rowBytes, up = work + 2 * rowBytes, filtered = up + rowBytes + 1;
+                    new Span<byte>(prev, rowBytes).Clear();
                     up[0] = 2;
-                    long subCost = 0, upCost = 0;
-                    for (int i = 0; i < rowBytes; i++)
+                    for (int y = 0; y < height; y++)
                     {
-                        byte s = (byte)(cur[i] - (i >= bpp ? cur[i - bpp] : 0));
-                        byte u = (byte)(cur[i] - prev[i]);
-                        sub[i + 1] = s;
-                        up[i + 1] = u;
-                        subCost += (sbyte)s < 0 ? -(sbyte)s : s;
-                        upCost += (sbyte)u < 0 ? -(sbyte)u : u;
-                    }
-                    if (upCost < subCost) up.CopyTo(sub);
+                        byte* cur = source + (long)y * pitch;
+                        if (swizzle)
+                        {
+                            new ReadOnlySpan<byte>(cur, rowBytes).CopyTo(new Span<byte>(spare, rowBytes));
+                            ImageOps.SwizzleBgraToRgba(new Span<byte>(spare, rowBytes));
+                            cur = spare;
+                            spare = prev;
+                        }
 
-                    Span<byte> swap = prev;
-                    prev = cur;
-                    cur = swap;
+                        byte* sub = filtered + (long)y * (rowBytes + 1);
+                        sub[0] = 1;
+                        long subCost = 0, upCost = 0;
+                        int i = 0;
+                        for (; i < bpp; i++)
+                        {
+                            byte u = (byte)(cur[i] - prev[i]);
+                            sub[i + 1] = cur[i];
+                            up[i + 1] = u;
+                            subCost += Residual(cur[i]);
+                            upCost += Residual(u);
+                        }
+                        if (Ssse3.IsSupported)
+                        {
+                            Vector128<ulong> subSum = Vector128<ulong>.Zero, upSum = Vector128<ulong>.Zero;
+                            for (; i + 16 <= rowBytes; i += 16)
+                            {
+                                Vector128<byte> c = Sse2.LoadVector128(cur + i);
+                                Vector128<byte> s = c - Sse2.LoadVector128(cur + i - bpp), u = c - Sse2.LoadVector128(prev + i);
+                                Sse2.Store(sub + 1 + i, s);
+                                Sse2.Store(up + 1 + i, u);
+                                subSum += Sse2.SumAbsoluteDifferences(Ssse3.Abs(s.AsSByte()), Vector128<byte>.Zero).AsUInt64();
+                                upSum += Sse2.SumAbsoluteDifferences(Ssse3.Abs(u.AsSByte()), Vector128<byte>.Zero).AsUInt64();
+                            }
+                            subCost += (long)Vector128.Sum(subSum);
+                            upCost += (long)Vector128.Sum(upSum);
+                        }
+                        for (; i < rowBytes; i++)
+                        {
+                            byte s = (byte)(cur[i] - cur[i - bpp]), u = (byte)(cur[i] - prev[i]);
+                            sub[i + 1] = s;
+                            up[i + 1] = u;
+                            subCost += Residual(s);
+                            upCost += Residual(u);
+                        }
+                        if (upCost < subCost) new ReadOnlySpan<byte>(up, rowBytes + 1).CopyTo(new Span<byte>(sub, rowBytes + 1));
+                        prev = cur;
+                    }
                 }
-                Deflater.Deflate(filtered, compressed, deflate);
+                Deflater.Deflate(buffers.AsSpan(3 * rowBytes + 1, filteredBytes), compressed, deflate);
             }
             finally
             {
@@ -74,6 +104,8 @@ namespace Arctis.Imaging
             WriteChunk(output, 0x49444154, compressed.GetBuffer().AsSpan(0, (int)compressed.Length));
             WriteChunk(output, 0x49454E44, ReadOnlySpan<byte>.Empty);
         }
+
+        private static int Residual(byte v) => (sbyte)v < 0 ? -(sbyte)v : v;
 
         private static void WriteChunk(Stream output, uint type, ReadOnlySpan<byte> body)
         {

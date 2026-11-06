@@ -57,7 +57,7 @@ Release+PROFILE, Thorium `--profile=30`, Bootstrap thread, 3 runs each side, sam
 - `[MethodImpl(MethodImplOptions.AggressiveOptimization)]` removed from `Arctis.Imaging.PngDecoder` (`DecodeRows`, `Unfilter`, `Sub4`, `Paeth4`, `AddUp`) and `ArctisAurora.Core.UI.Notes.NoteSegments` (`Patch`, `Match`), with their unused `using System.Runtime.CompilerServices`.
 - aurora-code SKILL.md rule 42a (numbered 42a so 43-61 keep their numbers): no AggressiveOptimization.
 - New `ArctisAurora.Tests.ImageDecodePerfTests`, actions `Perf.ImageDecode.Atlases.Arctis`, `.Atlases.ImageSharp`, `.Formats.Arctis`, `.Formats.ImageSharp`, registered in `Perf.tests.axml` (Timeout 60000 atlases / 180000 formats, NO `<Budget>`).
-	- Atlases: the 11 Thorium font atlases (`Fonts/*/*_atlas.png`) plus `Icons/default/default_atlas.png`, cycled into 64 separate `byte[]` copies; one decode per frame into one reused RGBA8 buffer; zones `Image.Decode.Arctis.Atlas` / `Image.Decode.ImageSharp.Atlas`.
+	- Atlases (since 2026-11-06 the baked files are `*_atlas.adf`; the PNG rows decode them and re-encode PNG in memory with Arctis's encoder; the new `Perf.ImageDecode.Atlases.Adf` row decodes the ADF directly, see [[distance-field-format]]): the 11 Thorium font atlases (`Fonts/*/*_atlas`) plus `Icons/default/default_atlas`, cycled into 64 separate `byte[]` copies; one decode per frame into one reused RGBA8 buffer; zones `Image.Decode.Arctis.Atlas` / `Image.Decode.ImageSharp.Atlas`.
 	- Formats: a 1024² crop of the arial atlas, encoded at setup by ImageSharp as RGBA8, RGB8, Grey8, RGBA16 x filters None/Sub/Up/Average/Paeth, plus RGBA8 Adam7, plus (ImageSharp only) JPEG Q90 and GIF; 64 decodes per row; zones `Image.Decode.<Arctis|ImageSharp>.Png.<Colour>.<Filter>`, `.Png.RGBA8.Adam7`, `.Jpeg.Q90`, `.Gif`.
 	- ImageSharp side is `Image.Load<Rgba32>` + `CopyPixelDataTo` into the same buffer. No warm-up pass.
 - Linux tooling: `_Build/PerfTests.sh` builds Thorium `-f net10.0` Release+PROFILE with `-p:EnableWindowsTargeting=true` and runs `--test=Perf` under `xvfb-run` with `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json` (lavapipe); its Windows branch mirrors `PerfTests.cmd`. `.claude/skills/aurora-perf/profile.ps1` is cross-platform under pwsh (`$IsLinux` picks the `net10.0` bin and Linux build line, launches via xvfb-run + lavapipe; captures from `[Environment]::GetFolderPath('ApplicationData')`, `~/.config` on Linux). `summarize.ps1` unchanged. aurora-perf SKILL.md gained the Linux build line.
@@ -96,7 +96,7 @@ Release+PROFILE, Linux cloud container, lavapipe (CPU Vulkan) under xvfb, 3 runs
 | Jpeg.Q90 / Gif | unsupported | unsupported | 14.2-18.7 / 14.1-20.6 | — |
 
 - On the real atlas set Arctis ≈ ImageSharp at p50 and ~5-10% less total. Its cold max is far lower because boot already JIT-warmed Arctis (atlases are preloaded through it) while ImageSharp's first decode pays its own JIT: p50 is the fair column, max is not.
-- Off the RGBA8 fast paths (RGB8, Grey8, RGBA16, Adam7, the Average filter) Arctis is 1.2-1.56x slower.
+- Off the RGBA8 fast paths (RGB8, Grey8, RGBA16, Adam7, the Average filter) Arctis is 1.2-1.56x slower. (Superseded 2026-11-06: on Windows at HEAD all those rows are faster than ImageSharp, see "Update 2026-11-06 — Windows measurements".)
 - Removing AO left the atlas set unchanged and showed slower p50 on some scalar rows (RGBA8/RGB8 Average, Sub; RGBA16 Sub/Average), but the without-AO ranges are wide and the CPU is shared with lavapipe's render thread: an observation, not a result.
 
 ### Verification (update)
@@ -244,10 +244,32 @@ Cold first decode of all 12 (3 runs each, sequential): HEAD 427-521 ms, new 375-
 - Not checked: Windows; boot PreloadAssets zone (`--profile`); engine `Perf.ImageDecode` tests; Debug engine suite; ARM/big-endian; the non-accelerated `Vector128` path (falls back to existing code); ratio vs ImageSharp.
 
 ### Known gaps
-- Ratio vs ImageSharp not re-measured; the 0.5x target is still open.
-- Boot effect on Windows unmeasured (`AssetRegistries.PreloadAssets`).
+- Ratio vs ImageSharp not re-measured; the 0.5x target is still open. (Measured 2026-11-06: atlases ~0.47x, RGBA8 Paeth ~0.64x, see the update below.)
+- Boot effect on Windows unmeasured (`AssetRegistries.PreloadAssets`). (Measured 2026-11-06, see the update below.)
 - Rule 33 question on `PaethStep`'s vector parameters open.
 - BGRA8 / R8 / RG8 Paeth stays single-row.
 - Atlases are still Paeth-baked; re-baking with Up/Sub remains an open lever.
+
+## Update 2026-11-06 — Windows measurements
+
+Release+PROFILE Thorium, Windows 11, HEAD 4810b00 against e126c36 (the commit before the Paeth wavefront, inflate fast loop, flag-bit inflate and PCLMUL CRC; built in a scratch worktree). `--test` with a throwaway suite holding only the four `Perf.ImageDecode.*` tests, 3 alternating runs per build. p50 ms per decode:
+
+| zone | e126c36 | HEAD 4810b00 | ImageSharp |
+|---|---|---|---|
+| Atlas | 12.76-13.86 | 6.47-6.93 | 12.71-13.05 |
+| Atlas total, 64 decodes | 1141-1189 | 598-619 | 1236-1287 |
+| Png.RGBA8.Paeth | 6.94-7.02 | 4.05-4.17 | 6.35 |
+| Png.RGBA8.Adam7 | 8.68-8.85 | 5.90-5.97 | 8.39 |
+| Png.RGBA8.Average | 5.37-5.66 | 4.09-4.23 | 5.18-5.48 |
+| Png.RGB8.Paeth | 7.21-7.26 | 6.04-6.12 | 8.26 |
+| Png.RGBA16.Paeth | 8.62-8.81 | 7.04-7.11 | 18.0-19.0 |
+
+- Atlas decode is now ~0.47x ImageSharp: the 0.5x target is met on atlases. RGBA8 Paeth alone is ~0.64x, so 0.5x is not met there.
+- Off-fast-path rows are all faster than ImageSharp on Windows (e.g. Grey8 None 1.03-1.12 vs 2.86-2.96, RGB8 None 2.41-2.58 vs 3.71-3.81). This supersedes the 2026-11-01 container finding that RGB8/Grey8/RGBA16/Adam7/Average were 1.2-1.56x slower.
+- Boot `AssetRegistries.PreloadAssets` (the `[Bootstrap] … — Nms` log line of the same runs, not a `--profile` capture): HEAD 241 / 241 / 257 ms, e126c36 570 / 358 / 381 ms (570 = first, cold run). The earlier Windows figure of 483-503 ms was taken via `--profile`, so it is not directly comparable.
+- Zero `[Vulkan]` lines in all runs; all 4 image tests PASS in all runs (6 on HEAD, 3 on e126c36).
+- Not checked: `--profile` boot capture, ARM, a CPU without PCLMUL.
+
+Known gaps: RGBA8 Paeth 0.5x target still open.
 
 Related: [[atlas-bake-one-edge-pass]], [[asset-manifest-and-import]], [[engine-profiling]]

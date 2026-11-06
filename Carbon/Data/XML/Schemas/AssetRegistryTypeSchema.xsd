@@ -124,6 +124,8 @@
     <xs:attribute name="Sup3" type="xs:float" />
     <xs:attribute name="SubDrop" type="xs:float" />
     <xs:attribute name="SupDrop" type="xs:float" />
+    <xs:attribute name="BigOpSpacing1" type="xs:float" />
+    <xs:attribute name="BigOpSpacing3" type="xs:float" />
     <xs:attribute name="BigOpSpacing5" type="xs:float" />
     <xs:attribute name="DisplayOperators" type="xs:string" />
   </xs:attributeGroup>
@@ -153,8 +155,27 @@
   </xs:attributeGroup>
   <xs:element name="FontImport" type="types:FontImport" />
   <xs:complexType name="FontImport">
-    <xs:sequence />
+    <xs:sequence>
+      <xs:element minOccurs="0" maxOccurs="unbounded" name="Variant" type="types:FontVariantImport">
+        <xs:annotation>
+          <xs:documentation></xs:documentation>
+        </xs:annotation>
+      </xs:element>
+    </xs:sequence>
     <xs:attributeGroup ref="types:FontImport.Attributes" />
+  </xs:complexType>
+  <xs:attributeGroup name="FontVariantImport.Attributes">
+    <xs:attribute name="Name" type="xs:string" />
+    <xs:attribute name="Source" type="xs:string" />
+    <xs:attribute name="Face" type="xs:int" />
+    <xs:attribute name="Bold" type="xs:string" />
+    <xs:attribute name="Italic" type="xs:string" />
+    <xs:attribute name="BoldItalic" type="xs:string" />
+  </xs:attributeGroup>
+  <xs:element name="FontVariantImport" type="types:FontVariantImport" />
+  <xs:complexType name="FontVariantImport">
+    <xs:sequence />
+    <xs:attributeGroup ref="types:FontVariantImport.Attributes" />
   </xs:complexType>
   <xs:attributeGroup name="IconImport.Attributes">
     <xs:attribute name="Source" type="xs:string" />

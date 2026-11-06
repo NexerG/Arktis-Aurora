@@ -42,7 +42,7 @@ namespace ArctisAurora.Core.Registry.Assets
                 Log.Error($"font '{fontName}' was baked at pxRange {atlasMetaData.pxRange}, the shader expects {MTSDFGen.PxRange} — re-import it.");
 
             textureAsset = new TextureAsset();
-            textureAsset.LoadFile(Paths.Font(fontName, fontName + "_atlas.png"), Format.R8G8B8A8Unorm);
+            textureAsset.LoadFile(Paths.Font(fontName, fontName + "_atlas.adf"), Format.R8G8B8A8Unorm);
 
             string math = Paths.Font(fontName, fontName + ".math.axml");
             if (DataFiles.Exists(math)) mathConstants = MathConstants.Load(math);

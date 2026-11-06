@@ -11,7 +11,7 @@
 - `GetClosestDistanceOfChannel` deleted — it ran the whole edge list and the winding once per channel, 4× per texel
 - `SolveCubic` / `SolveQuadratic` write into a caller's `Span<float>` and return the root count;
   `ComputeWindingNumber` holds one `stackalloc float[3]` for all edges
-- Zones `Atlas.ReadFaces`, `Atlas.WriteMeta`, `Atlas.Cells` (with `#Cell`), `Atlas.SavePng` in the three bake entry points
+- Zones `Atlas.ReadFaces`, `Atlas.WriteMeta`, `Atlas.Cells` (with `#Cell`), `Atlas.SaveAdf` (was `Atlas.SavePng`) in the three bake entry points
 - Perf test `Perf.AtlasBake` (suite `Fonts`): icon set `default`, arial Latin, cambria Math ×3 faces, one bake per
   frame, into `%TEMP%\AuroraAtlasBake` — never the tracked `Data/Fonts` / `Data/Icons`. Clears the folder at start,
   so the last run's output stays for byte comparison. Does no work in Debug or plain Release (`SKIP`)

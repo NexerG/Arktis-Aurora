@@ -66,6 +66,7 @@ waste rather than a defect.
 - **The alpha channel carries no information.** A true-SDF alpha is the entire point of MTSDF; here
   it duplicates the median exactly, so a quarter of the atlas is wasted and the `> 0.1` guard can
   never fire on merit. That is a generator-side question, outside this repo.
+  Since 2026-11-06 ADF ([[distance-field-format]]) relies on alpha == median and drops alpha from storage.
 - Consequence for [[control-edge-and-outline]]: `OutlineWidth` strokes the median, and a genuine
   true-SDF alpha would give rounder joins at acute corners than the median's mitred extensions.
 - `pxRange = 4.0` is hardcoded in the Thorium fragment shader and stated nowhere else —

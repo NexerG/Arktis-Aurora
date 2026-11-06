@@ -211,7 +211,7 @@ Final A/B (HEAD vs working-tree `Arctis.Imaging` sources, same bench, 5 alternat
 - Not checked: Windows; boot `AssetRegistries.PreloadAssets` (`--profile`); engine `Perf.ImageDecode` tests; Debug engine suite; net8.0 at runtime (built only); ARM64 and big-endian; a CPU without PCLMUL other than the env-var switch; the non-accelerated `Vector128` path.
 
 ### Known gaps
-- Windows / boot effect unmeasured.
+- Windows / boot effect unmeasured. (Superseded 2026-11-06: Windows decode and boot numbers are in [[png-decode-fast-paths]].)
 - ARM64 CRC stays on slicing-by-8.
 - Distance 2-7 matches (except 1) still go through `Copy`; distance-4 pattern copy not done.
 - Inflate still ~1.25x libdeflate on this data.

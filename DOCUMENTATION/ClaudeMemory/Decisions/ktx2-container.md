@@ -38,7 +38,7 @@ Conversion between layouts goes through an RGBA row and `PixelRows.FromRgba` (Re
 - The writer does not generate mips: the caller passes the chain (e.g. via `ImageOps.HalveLinear`); each level must be `HalfSize` of the one before.
 
 **Not wired into atlases.**
-`FontAsset` / `IconSetAsset` still load `_atlas.png`; `TextureLoader` decodes KTX2 level 0 through the same path as PNG rather than uploading stored mips directly.
+`FontAsset` / `IconSetAsset` load `_atlas.adf` ([[distance-field-format]]), not KTX2; `TextureLoader` decodes KTX2 level 0 through the same path as PNG rather than uploading stored mips directly.
 
 ## Verification
 - **test-verified (unit)**: `dotnet test ArctisImaging.Tests -f net10.0` -> 124 passed, 0 failed (see [[png-deflate]]).

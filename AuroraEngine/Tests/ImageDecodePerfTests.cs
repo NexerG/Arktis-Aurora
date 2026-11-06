@@ -27,10 +27,13 @@ namespace ArctisAurora.Tests
         }
 
         [A_XSDActionDependency("Perf.ImageDecode.Atlases.Arctis", "Test")]
-        private static IEnumerator<int> AtlasesArctis(TestContext t) => Measure(t, Atlases("Image.Decode.Arctis.Atlas"), false);
+        private static IEnumerator<int> AtlasesArctis(TestContext t) => Measure(t, Atlases("Image.Decode.Arctis.Atlas", true), false);
 
         [A_XSDActionDependency("Perf.ImageDecode.Atlases.ImageSharp", "Test")]
-        private static IEnumerator<int> AtlasesImageSharp(TestContext t) => Measure(t, Atlases("Image.Decode.ImageSharp.Atlas"), true);
+        private static IEnumerator<int> AtlasesImageSharp(TestContext t) => Measure(t, Atlases("Image.Decode.ImageSharp.Atlas", true), true);
+
+        [A_XSDActionDependency("Perf.ImageDecode.Atlases.Adf", "Test")]
+        private static IEnumerator<int> AtlasesAdf(TestContext t) => Measure(t, Atlases("Image.Decode.Arctis.AtlasAdf", false), false);
 
         [A_XSDActionDependency("Perf.ImageDecode.Formats.Arctis", "Test")]
         private static IEnumerator<int> FormatsArctis(TestContext t) => Measure(t, Formats("Arctis", false), false);
@@ -73,14 +76,22 @@ namespace ArctisAurora.Tests
             image.CopyPixelDataTo(new Span<byte>(pixels, 0, image.Width * image.Height * 4));
         }
 
-        // The font and icon atlases, cycled into 64 separate copies.
-        private static Func<Work> Atlases(string zone) => () =>
+        // The font and icon atlases as baked, or re-encoded as PNG, cycled into 64 separate copies.
+        private static Func<Work> Atlases(string zone, bool png) => () =>
         {
-            string[] fonts = Directory.GetFiles(VirtualFileSystem.ResolveDir("Fonts"), "*_atlas.png", SearchOption.AllDirectories);
+            string[] fonts = Directory.GetFiles(VirtualFileSystem.ResolveDir("Fonts"), "*_atlas.adf", SearchOption.AllDirectories);
             byte[][] sources = new byte[fonts.Length + 1][];
             for (int i = 0; i < fonts.Length; i++)
                 sources[i] = File.ReadAllBytes(fonts[i]);
-            sources[fonts.Length] = File.ReadAllBytes(VirtualFileSystem.ResolveFile("Icons/default/default_atlas.png"));
+            sources[fonts.Length] = File.ReadAllBytes(VirtualFileSystem.ResolveFile("Icons/default/default_atlas.adf"));
+            if (png)
+                for (int i = 0; i < sources.Length; i++)
+                {
+                    Arctis.Imaging.Image atlas = Arctis.Imaging.Image.Load(sources[i]);
+                    using MemoryStream stream = new MemoryStream();
+                    atlas.SavePng(stream);
+                    sources[i] = stream.ToArray();
+                }
 
             Work work = new Work { files = new byte[decodes][], zones = new string[decodes] };
             for (int i = 0; i < decodes; i++)
@@ -95,7 +106,7 @@ namespace ArctisAurora.Tests
         // A 1024² crop of the arial atlas in every PNG colour type, filter and interlace, plus JPEG and GIF.
         private static Func<Work> Formats(string library, bool foreign) => () =>
         {
-            byte[] atlas = File.ReadAllBytes(VirtualFileSystem.ResolveFile("Fonts/arial/arial_atlas.png"));
+            byte[] atlas = File.ReadAllBytes(VirtualFileSystem.ResolveFile("Fonts/arial/arial_atlas.adf"));
             ImageCodec.TryIdentify(atlas, out ImageHeader header);
             byte[] full = new byte[header.Width * header.Height * 4];
             ImageCodec.Decode(atlas, full, new DecodeOptions(PixelLayout.RGBA8));

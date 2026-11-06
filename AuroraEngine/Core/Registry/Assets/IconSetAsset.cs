@@ -27,7 +27,7 @@ namespace ArctisAurora.Core.Registry.Assets
                 Log.Error($"icon set '{setName}' was baked at pxRange {metaData.pxRange}, the shader expects {MTSDFGen.PxRange} — re-import it.");
 
             textureAsset = new TextureAsset();
-            textureAsset.LoadFile(Paths.Icon(setName, setName + "_atlas.png"), Format.R8G8B8A8Unorm);
+            textureAsset.LoadFile(Paths.Icon(setName, setName + "_atlas.adf"), Format.R8G8B8A8Unorm);
         }
     }
 }
