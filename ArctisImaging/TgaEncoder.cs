@@ -9,6 +9,7 @@ namespace Arctis.Imaging
     internal static class TgaEncoder
     {
         private const int Mapped = 1, TrueColour = 2, Grey = 3, RunLength = 8;
+        private const int BlockBytes = 1 << 18;
 
         internal static void Encode(ReadOnlySpan<byte> pixels, int width, int height, int pitch, PixelLayout layout, Stream output, in TgaSettings settings)
         {
@@ -68,10 +69,25 @@ namespace Arctis.Imaging
                     output.Write(map.Slice(0, colours * entryBytes));
                 }
 
+                bool colour = layout == PixelLayout.RGBA8 || layout == PixelLayout.BGRA8;
+                bool direct = !indexed && !settings.Rle && !rightToLeft && (format switch
+                {
+                    TgaPixelFormat.Argb32 or TgaPixelFormat.Rgb24 => colour,
+                    TgaPixelFormat.Grey8 => colour || layout == PixelLayout.R8,
+                    TgaPixelFormat.GreyAlpha16 => layout == PixelLayout.RG8,
+                    _ => false
+                });
                 Span<uint> row = values.AsSpan(0, width);
-                for (int stored = 0; stored < height; stored++)
+                if (direct && !topDown) WriteBottomUp(pixels, width, height, pitch, layout, format, bpp, output);
+                else for (int stored = 0; stored < height; stored++)
                 {
                     int y = topDown ? stored : height - 1 - stored;
+                    if (direct)
+                    {
+                        WriteDirect(pixels.Slice(y * pitch), line, width, layout, format);
+                        output.Write(line, 0, width * bpp);
+                        continue;
+                    }
                     if (!indexed) PixelRows.ToRgba(pixels.Slice(y * pitch), rgba, width, layout);
                     for (int x = 0; x < width; x++)
                     {
@@ -113,6 +129,54 @@ namespace Arctis.Imaging
         }
 
         private static int Five(int c) => (c * 31 + 127) / 255;
+
+        // Direct rows bottom-up: each block of source rows is read top to bottom into mirrored slots, then written at once.
+        private static void WriteBottomUp(ReadOnlySpan<byte> pixels, int width, int height, int pitch, PixelLayout layout, TgaPixelFormat format, int bpp, Stream output)
+        {
+            int rowBytes = width * bpp, rows = Math.Max(1, BlockBytes / rowBytes);
+            byte[] block = ArrayPool<byte>.Shared.Rent(rows * rowBytes);
+            try
+            {
+                for (int end = height; end > 0; end -= rows)
+                {
+                    int n = Math.Min(rows, end);
+                    for (int j = 0; j < n; j++)
+                        WriteDirect(pixels.Slice((end - n + j) * pitch), block.AsSpan((n - 1 - j) * rowBytes, rowBytes), width, layout, format);
+                    output.Write(block, 0, n * rowBytes);
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(block);
+            }
+        }
+
+        // One left-to-right raw row converted straight from the source.
+        private static void WriteDirect(ReadOnlySpan<byte> src, Span<byte> line, int width, PixelLayout layout, TgaPixelFormat format)
+        {
+            switch (format)
+            {
+                case TgaPixelFormat.Argb32:
+                    if (layout == PixelLayout.BGRA8) src.Slice(0, width * 4).CopyTo(line);
+                    else ImageOps.CopySwizzled(src.Slice(0, width * 4), line);
+                    break;
+                case TgaPixelFormat.Rgb24:
+                    PixelRows.ToBgr(src, line, width, layout);
+                    break;
+                case TgaPixelFormat.GreyAlpha16:
+                    src.Slice(0, width * 2).CopyTo(line);
+                    break;
+                default:
+                    if (layout == PixelLayout.R8)
+                    {
+                        src.Slice(0, width).CopyTo(line);
+                        break;
+                    }
+                    int first = layout == PixelLayout.RGBA8 ? 0 : 2, last = 2 - first;
+                    for (int x = 0; x < width; x++) line[x] = PixelRows.Luma(src[x * 4 + first], src[x * 4 + 1], src[x * 4 + last]);
+                    break;
+            }
+        }
 
         private static int WriteRaw(ReadOnlySpan<uint> row, int bpp, Span<byte> line)
         {

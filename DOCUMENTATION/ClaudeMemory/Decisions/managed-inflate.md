@@ -227,4 +227,6 @@ Final A/B (HEAD vs working-tree `Arctis.Imaging` sources, same bench, 5 alternat
 ### Known gaps
 - Messages changed text; no test asserted them.
 
-Related: [[png-decode-fast-paths]], [[png-deflate]], [[ktx2-container]]
+- Wider tiers for `Crc32.Fold` (VPCLMULQDQ, net9+), `Deflater.Common` and `Deflater.Adler32`: see [[simd-width-tiers]]. The Inflater match copy stays 128-bit.
+
+Related: [[png-decode-fast-paths]], [[png-deflate]], [[ktx2-container]], [[simd-width-tiers]]

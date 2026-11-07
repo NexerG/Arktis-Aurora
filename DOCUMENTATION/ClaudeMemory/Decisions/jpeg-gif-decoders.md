@@ -222,4 +222,6 @@ Speed. Scratch bench outside the repo: old `RefineAc` (copy of the previous tree
 - Review finding open: `GifTests.Frame` is a class (aurora-code rule 30).
 - The scratch cross-check and benches are not in the repo.
 
-Related: [[other-raster-formats]], [[png-decode-fast-paths]], [[png-deflate]], [[lossless-jpeg]]
+- 512/256-bit tiers for `ConvertRow`, `ColumnSums`, `Interleave`, `HasAc` and the paired progressive IDCT (`IdctAvx512Pair`): see [[simd-width-tiers]].
+
+Related: [[other-raster-formats]], [[png-decode-fast-paths]], [[png-deflate]], [[lossless-jpeg]], [[simd-width-tiers]]

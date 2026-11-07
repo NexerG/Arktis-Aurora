@@ -1,6 +1,7 @@
 using System;
 using System.Buffers;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 
 namespace Arctis.Imaging
@@ -27,20 +28,44 @@ namespace Arctis.Imaging
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         internal static void CopySwizzled(ReadOnlySpan<byte> source, Span<byte> destination)
         {
-            int i = 0;
+            if (destination.Length < source.Length) throw new ArgumentException("destination is shorter than source");
+            ref byte s = ref MemoryMarshal.GetReference(source);
+            ref byte d = ref MemoryMarshal.GetReference(destination);
+            nuint n = (nuint)source.Length, i = 0;
+            if (Vector512.IsHardwareAccelerated)
+            {
+                Vector512<byte> order = Vector512.Create(
+                    Vector256.Create((byte)2, 1, 0, 3, 6, 5, 4, 7, 10, 9, 8, 11, 14, 13, 12, 15, 18, 17, 16, 19, 22, 21, 20, 23, 26, 25, 24, 27, 30, 29, 28, 31),
+                    Vector256.Create((byte)34, 33, 32, 35, 38, 37, 36, 39, 42, 41, 40, 43, 46, 45, 44, 47, 50, 49, 48, 51, 54, 53, 52, 55, 58, 57, 56, 59, 62, 61, 60, 63));
+                for (; i + 128 <= n; i += 128)
+                {
+                    Vector512<byte> a = Vector512.LoadUnsafe(ref s, i), b = Vector512.LoadUnsafe(ref s, i + 64);
+                    Vector512.Shuffle(a, order).StoreUnsafe(ref d, i);
+                    Vector512.Shuffle(b, order).StoreUnsafe(ref d, i + 64);
+                }
+            }
+            if (Vector256.IsHardwareAccelerated)
+            {
+                Vector256<byte> order = Vector256.Create((byte)2, 1, 0, 3, 6, 5, 4, 7, 10, 9, 8, 11, 14, 13, 12, 15, 18, 17, 16, 19, 22, 21, 20, 23, 26, 25, 24, 27, 30, 29, 28, 31);
+                for (; i + 64 <= n; i += 64)
+                {
+                    Vector256<byte> a = Vector256.LoadUnsafe(ref s, i), b = Vector256.LoadUnsafe(ref s, i + 32);
+                    Vector256.Shuffle(a, order).StoreUnsafe(ref d, i);
+                    Vector256.Shuffle(b, order).StoreUnsafe(ref d, i + 32);
+                }
+            }
             if (Vector128.IsHardwareAccelerated)
             {
                 Vector128<byte> order = Vector128.Create((byte)2, 1, 0, 3, 6, 5, 4, 7, 10, 9, 8, 11, 14, 13, 12, 15);
-                for (; i + 16 <= source.Length; i += 16)
-                    Vector128.Shuffle(Vector128.Create(source.Slice(i, 16)), order).CopyTo(destination.Slice(i));
+                for (; i + 16 <= n; i += 16) Vector128.Shuffle(Vector128.LoadUnsafe(ref s, i), order).StoreUnsafe(ref d, i);
             }
-            for (; i + 4 <= source.Length; i += 4)
+            for (; i + 4 <= n; i += 4)
             {
-                byte r = source[i], b = source[i + 2];
-                destination[i] = b;
-                destination[i + 1] = source[i + 1];
-                destination[i + 2] = r;
-                destination[i + 3] = source[i + 3];
+                byte r = Unsafe.Add(ref s, i), b = Unsafe.Add(ref s, i + 2);
+                Unsafe.Add(ref d, i) = b;
+                Unsafe.Add(ref d, i + 1) = Unsafe.Add(ref s, i + 1);
+                Unsafe.Add(ref d, i + 2) = r;
+                Unsafe.Add(ref d, i + 3) = Unsafe.Add(ref s, i + 3);
             }
         }
 

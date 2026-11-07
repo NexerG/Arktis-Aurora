@@ -44,10 +44,24 @@ namespace Arctis.Imaging
             byte[] rgba = ArrayPool<byte>.Shared.Rent(width * 4);
             byte[] samples = ArrayPool<byte>.Shared.Rent(width * 4 * 2);
             byte[] line = ArrayPool<byte>.Shared.Rent(rowBytes);
+            bool colour = layout == PixelLayout.RGBA8 || layout == PixelLayout.BGRA8;
+            bool direct = !plain && maxval == 255 && (kind switch
+            {
+                PnmKind.Ppm => colour,
+                PnmKind.Pgm => true,
+                PnmKind.Pam => tuple == PamTupleType.RgbAlpha && layout == PixelLayout.RGBA8,
+                _ => false
+            });
             try
             {
                 for (int y = 0; y < height; y++)
                 {
+                    if (direct)
+                    {
+                        WriteDirect(pixels.Slice(y * pitch), line, width, layout, kind);
+                        output.Write(line, 0, rowBytes);
+                        continue;
+                    }
                     PixelRows.ToRgba(pixels.Slice(y * pitch), rgba, width, layout);
                     Span<ushort> row = MemoryMarshal.Cast<byte, ushort>(samples.AsSpan(0, width * depth * 2));
                     for (int x = 0; x < width; x++)
@@ -99,6 +113,30 @@ namespace Arctis.Imaging
                 ArrayPool<byte>.Shared.Return(rgba);
                 ArrayPool<byte>.Shared.Return(samples);
                 ArrayPool<byte>.Shared.Return(line);
+            }
+        }
+
+        // One raw maxval-255 row converted straight from the source.
+        private static void WriteDirect(ReadOnlySpan<byte> src, Span<byte> line, int width, PixelLayout layout, PnmKind kind)
+        {
+            switch (kind)
+            {
+                case PnmKind.Ppm:
+                    PixelRows.ToRgb(src, line, width, layout);
+                    break;
+                case PnmKind.Pam:
+                    src.Slice(0, width * 4).CopyTo(line);
+                    break;
+                default:
+                    if (layout == PixelLayout.R8) src.Slice(0, width).CopyTo(line);
+                    else if (layout == PixelLayout.RG8)
+                        for (int x = 0; x < width; x++) line[x] = src[x * 2];
+                    else
+                    {
+                        int first = layout == PixelLayout.RGBA8 ? 0 : 2, last = 2 - first;
+                        for (int x = 0; x < width; x++) line[x] = PixelRows.Luma(src[x * 4 + first], src[x * 4 + 1], src[x * 4 + last]);
+                    }
+                    break;
             }
         }
 

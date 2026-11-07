@@ -431,6 +431,43 @@ namespace Arctis.Imaging
             {
                 byte* r = pb + y * tw, g = r + n, b = g + n, o = dst + (long)y * rowPitch;
                 int x = 0;
+                if (Vector512.IsHardwareAccelerated && Avx512BW.IsSupported)
+                {
+                    // the unpacks leave each 128-bit lane's pixels in four vectors; qword permutes put them in order
+                    Vector512<long> first = Vector512.Create(0L, 1, 8, 9, 2, 3, 10, 11), second = Vector512.Create(4L, 5, 12, 13, 6, 7, 14, 15);
+                    Vector512<long> low = Vector512.Create(0L, 1, 2, 3, 8, 9, 10, 11), high = Vector512.Create(4L, 5, 6, 7, 12, 13, 14, 15);
+                    for (; x + 64 <= tw; x += 64)
+                    {
+                        Vector512<byte> vr = Vector512.Load(r + x), vg = Vector512.Load(g + x), vb = Vector512.Load(b + x);
+                        Vector512<byte> m = Avx512BW.Max(Avx512BW.Min(vr, vg), Avx512BW.Min(Avx512BW.Max(vr, vg), vb));
+                        Vector512<ushort> rg0 = Avx512BW.UnpackLow(vr, vg).AsUInt16(), rg1 = Avx512BW.UnpackHigh(vr, vg).AsUInt16();
+                        Vector512<ushort> bm0 = Avx512BW.UnpackLow(vb, m).AsUInt16(), bm1 = Avx512BW.UnpackHigh(vb, m).AsUInt16();
+                        Vector512<long> v0 = Avx512BW.UnpackLow(rg0, bm0).AsInt64(), v1 = Avx512BW.UnpackHigh(rg0, bm0).AsInt64();
+                        Vector512<long> v2 = Avx512BW.UnpackLow(rg1, bm1).AsInt64(), v3 = Avx512BW.UnpackHigh(rg1, bm1).AsInt64();
+                        Vector512<long> a = Avx512F.PermuteVar8x64x2(v0, first, v1), c = Avx512F.PermuteVar8x64x2(v2, first, v3);
+                        Vector512<long> e = Avx512F.PermuteVar8x64x2(v0, second, v1), h = Avx512F.PermuteVar8x64x2(v2, second, v3);
+                        byte* d = o + x * 4;
+                        Avx512F.PermuteVar8x64x2(a, low, c).AsByte().Store(d);
+                        Avx512F.PermuteVar8x64x2(a, high, c).AsByte().Store(d + 64);
+                        Avx512F.PermuteVar8x64x2(e, low, h).AsByte().Store(d + 128);
+                        Avx512F.PermuteVar8x64x2(e, high, h).AsByte().Store(d + 192);
+                    }
+                }
+                if (Vector256.IsHardwareAccelerated && Avx2.IsSupported)
+                    for (; x + 32 <= tw; x += 32)
+                    {
+                        Vector256<byte> vr = Vector256.Load(r + x), vg = Vector256.Load(g + x), vb = Vector256.Load(b + x);
+                        Vector256<byte> m = Avx2.Max(Avx2.Min(vr, vg), Avx2.Min(Avx2.Max(vr, vg), vb));
+                        Vector256<ushort> rg0 = Avx2.UnpackLow(vr, vg).AsUInt16(), rg1 = Avx2.UnpackHigh(vr, vg).AsUInt16();
+                        Vector256<ushort> bm0 = Avx2.UnpackLow(vb, m).AsUInt16(), bm1 = Avx2.UnpackHigh(vb, m).AsUInt16();
+                        Vector256<byte> v0 = Avx2.UnpackLow(rg0, bm0).AsByte(), v1 = Avx2.UnpackHigh(rg0, bm0).AsByte();
+                        Vector256<byte> v2 = Avx2.UnpackLow(rg1, bm1).AsByte(), v3 = Avx2.UnpackHigh(rg1, bm1).AsByte();
+                        byte* d = o + x * 4;
+                        Avx2.Permute2x128(v0, v1, 0x20).Store(d);
+                        Avx2.Permute2x128(v2, v3, 0x20).Store(d + 32);
+                        Avx2.Permute2x128(v0, v1, 0x31).Store(d + 64);
+                        Avx2.Permute2x128(v2, v3, 0x31).Store(d + 96);
+                    }
                 if (Sse2.IsSupported)
                     for (; x + 16 <= tw; x += 16)
                     {

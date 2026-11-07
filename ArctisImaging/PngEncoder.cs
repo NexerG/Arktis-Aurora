@@ -67,6 +67,36 @@ namespace Arctis.Imaging
                             subCost += Residual(cur[i]);
                             upCost += Residual(u);
                         }
+                        if (Vector512.IsHardwareAccelerated && Avx512BW.IsSupported)
+                        {
+                            Vector512<ulong> subSum = Vector512<ulong>.Zero, upSum = Vector512<ulong>.Zero;
+                            for (; i + 64 <= rowBytes; i += 64)
+                            {
+                                Vector512<byte> c = Vector512.Load(cur + i);
+                                Vector512<byte> s = c - Vector512.Load(cur + i - bpp), u = c - Vector512.Load(prev + i);
+                                s.Store(sub + 1 + i);
+                                u.Store(up + 1 + i);
+                                subSum += Avx512BW.SumAbsoluteDifferences(Avx512BW.Abs(s.AsSByte()), Vector512<byte>.Zero).AsUInt64();
+                                upSum += Avx512BW.SumAbsoluteDifferences(Avx512BW.Abs(u.AsSByte()), Vector512<byte>.Zero).AsUInt64();
+                            }
+                            subCost += (long)Vector512.Sum(subSum);
+                            upCost += (long)Vector512.Sum(upSum);
+                        }
+                        if (Vector256.IsHardwareAccelerated && Avx2.IsSupported)
+                        {
+                            Vector256<ulong> subSum = Vector256<ulong>.Zero, upSum = Vector256<ulong>.Zero;
+                            for (; i + 32 <= rowBytes; i += 32)
+                            {
+                                Vector256<byte> c = Vector256.Load(cur + i);
+                                Vector256<byte> s = c - Vector256.Load(cur + i - bpp), u = c - Vector256.Load(prev + i);
+                                s.Store(sub + 1 + i);
+                                u.Store(up + 1 + i);
+                                subSum += Avx2.SumAbsoluteDifferences(Avx2.Abs(s.AsSByte()), Vector256<byte>.Zero).AsUInt64();
+                                upSum += Avx2.SumAbsoluteDifferences(Avx2.Abs(u.AsSByte()), Vector256<byte>.Zero).AsUInt64();
+                            }
+                            subCost += (long)Vector256.Sum(subSum);
+                            upCost += (long)Vector256.Sum(upSum);
+                        }
                         if (Ssse3.IsSupported)
                         {
                             Vector128<ulong> subSum = Vector128<ulong>.Zero, upSum = Vector128<ulong>.Zero;

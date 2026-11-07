@@ -1,7 +1,7 @@
 # Pattern — store data the way it is found, compute it the way it is processed (SIMD layout)
 
 **Date:** 2026-09-23
-**Status:** guidance — no engine code follows it yet. First intended user: the animation SIMD rework (track
+**Status:** guidance. First users of the all-widths rule: the `Arctis.Imaging` codecs ([[simd-width-tiers]], 2026-11-07). No engine (AuroraEngine) code follows the layout advice yet; first intended user: the animation SIMD rework (track
 runner + transforms; user picked both, quaternion rotation, width 8 — 2026-09-23).
 
 SIMD runs one instruction over 8 lanes, and the 8 values must share one register (`vx` of 8 items). AoS vs
@@ -42,8 +42,14 @@ SoA vs AoSoA is only the question of how they get there and what that costs.
 
 ## .NET specifics
 
-- Width 8 = `Vector256<float>`. On ARM64 `Vector256.IsHardwareAccelerated` is false → a second path on two
-  `Vector128`. `Vector512` is not a default target.
+- **Every width is a target where the work allows it** (user, 2026-11-07): `Vector512` → `Vector256` →
+  `Vector128` → scalar, each tier gated on its own `IsHardwareAccelerated` and falling through to the next for
+  the tail. A tier is skipped only when the algorithm cannot fill it (a serial dependency, a fixed 8-wide
+  block); the note or the code's doc says which.
+- An x86 intrinsic tier (`Avx512BW`, `Avx2`) also checks the matching `VectorNNN.IsHardwareAccelerated`, so it
+  honours the runtime's choice — .NET reports `Vector512` unaccelerated on CPUs that downclock under it, and
+  `DOTNET_PreferredVectorBitWidth` can turn it off.
+- Width 8 = `Vector256<float>`. On ARM64 `Vector256.IsHardwareAccelerated` is false → the `Vector128` tier.
 - net10 has `Vector256.Exp`, `Sin`, `Cos`, `SinCos`, `Lerp`, `FusedMultiplyAdd` (checked 2026-09-23 against
   `Microsoft.NETCore.App.Ref` 10.0.12).
 - A `T[]` is 8/16-byte aligned. Box2D asserts 32-byte alignment for aligned loads; here use `LoadUnsafe`, and

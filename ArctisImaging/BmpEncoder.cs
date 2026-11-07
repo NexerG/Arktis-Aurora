@@ -10,7 +10,7 @@ namespace Arctis.Imaging
     internal static class BmpEncoder
     {
         private const uint Rgb = 0, Rle8 = 1, Rle4 = 2, BitFields = 3, AlphaBitFields = 6;
-        private const int PixelsPerMetre = 3780;
+        private const int PixelsPerMetre = 3780, BlockBytes = 1 << 18;
         private const uint SrgbSpace = 0x73524742, ImagesIntent = 4;
 
         internal static void Encode(ReadOnlySpan<byte> pixels, int width, int height, int pitch, PixelLayout layout, Stream output, in BmpSettings settings, bool fileHeader) =>
@@ -154,10 +154,18 @@ namespace Arctis.Imaging
                 }
                 if (mask != null) Array.Clear(mask, 0, (int)maskStride * height);
                 Channel r = new Channel(rMask), g = new Channel(gMask), b = new Channel(bMask), a = new Channel(aMask);
-                for (int row = 0; row < height; row++)
+                bool direct = indices == null && !icon && (bits == 24 || bits == 32) && (layout == PixelLayout.RGBA8 || layout == PixelLayout.BGRA8);
+                if (direct && !settings.TopDown) WriteBottomUp(pixels, width, height, pitch, layout, bits, aMask == 0, (int)stride, output);
+                else for (int row = 0; row < height; row++)
                 {
                     int y = settings.TopDown ? row : height - 1 - row;
                     Span<byte> dst = line.AsSpan(0, (int)stride);
+                    if (direct)
+                    {
+                        WriteDirect(pixels.Slice(y * pitch), dst, width, layout, bits, aMask == 0);
+                        output.Write(dst);
+                        continue;
+                    }
                     dst.Clear();
                     if (indices != null)
                     {
@@ -212,6 +220,42 @@ namespace Arctis.Imaging
                 ArrayPool<byte>.Shared.Return(rgba);
                 ArrayPool<byte>.Shared.Return(line);
             }
+        }
+
+        // Direct rows bottom-up: each block of source rows is read top to bottom into mirrored slots, then written at once.
+        private static void WriteBottomUp(ReadOnlySpan<byte> pixels, int width, int height, int pitch, PixelLayout layout, int bits, bool noAlpha, int stride, Stream output)
+        {
+            int rows = Math.Max(1, BlockBytes / stride);
+            byte[] block = ArrayPool<byte>.Shared.Rent(rows * stride);
+            try
+            {
+                for (int end = height; end > 0; end -= rows)
+                {
+                    int n = Math.Min(rows, end);
+                    for (int j = 0; j < n; j++)
+                        WriteDirect(pixels.Slice((end - n + j) * pitch), block.AsSpan((n - 1 - j) * stride, stride), width, layout, bits, noAlpha);
+                    output.Write(block, 0, n * stride);
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(block);
+            }
+        }
+
+        // One 24 or 32-bit row converted straight from an RGBA8 or BGRA8 source, padding cleared.
+        private static void WriteDirect(ReadOnlySpan<byte> src, Span<byte> dst, int width, PixelLayout layout, int bits, bool noAlpha)
+        {
+            if (bits == 24)
+            {
+                PixelRows.ToBgr(src, dst, width, layout);
+                dst.Slice(width * 3).Clear();
+                return;
+            }
+            if (layout == PixelLayout.BGRA8) src.Slice(0, width * 4).CopyTo(dst);
+            else ImageOps.CopySwizzled(src.Slice(0, width * 4), dst);
+            if (noAlpha)
+                for (int x = 0; x < width; x++) dst[x * 4 + 3] = 0;
         }
 
         // An exact palette of the image's colours in first-seen order, and each pixel's index; alpha is forced opaque

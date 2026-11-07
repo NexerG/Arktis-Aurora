@@ -76,4 +76,6 @@ Scratchpad bench, this Windows machine, 24 cores, Release, 12 Thorium atlases = 
 - Commented-out dead code in `FontAsset` still names `_atlas.png`.
 - ARM gets the scalar interleave (SSE2 path only).
 
-Related: [[ktx2-container]], [[managed-inflate]], [[png-decode-fast-paths]], [[atlas-is-unorm-not-srgb]], [[atlas-bake-one-edge-pass]]
+- `DistanceField.Interleave` has Avx512BW and Avx2 tiers above SSE2 (2026-11-07): see [[simd-width-tiers]]. The tile copy stays 128-bit pending a slack check.
+
+Related: [[simd-width-tiers]], [[ktx2-container]], [[managed-inflate]], [[png-decode-fast-paths]], [[atlas-is-unorm-not-srgb]], [[atlas-bake-one-edge-pass]]

@@ -272,4 +272,6 @@ Release+PROFILE Thorium, Windows 11, HEAD 4810b00 against e126c36 (the commit be
 
 Known gaps: RGBA8 Paeth 0.5x target still open.
 
-Related: [[atlas-bake-one-edge-pass]], [[asset-manifest-and-import]], [[engine-profiling]]
+- 512/256-bit tiers for `PngDecoder.AddUp` / `Expand` and the `PngEncoder` filter-cost loop (2026-11-07): see [[simd-width-tiers]]. The Paeth/Sub/Average unfilters stay as they are (serial dependency).
+
+Related: [[atlas-bake-one-edge-pass]], [[asset-manifest-and-import]], [[engine-profiling]], [[simd-width-tiers]]

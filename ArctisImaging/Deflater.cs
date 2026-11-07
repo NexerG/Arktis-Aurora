@@ -542,10 +542,22 @@ namespace Arctis.Imaging
         private static int Common(byte* a, byte* b, int max)
         {
             int i = 0;
+            if (Vector512.IsHardwareAccelerated)
+                for (; i + 64 <= max; i += 64)
+                {
+                    ulong m = ~Vector512.Equals(Vector512.Load(a + i), Vector512.Load(b + i)).ExtractMostSignificantBits();
+                    if (m != 0) return i + BitOperations.TrailingZeroCount(m);
+                }
             if (Vector256.IsHardwareAccelerated)
                 for (; i + 32 <= max; i += 32)
                 {
                     uint m = ~Vector256.Equals(Vector256.Load(a + i), Vector256.Load(b + i)).ExtractMostSignificantBits();
+                    if (m != 0) return i + BitOperations.TrailingZeroCount(m);
+                }
+            if (Vector128.IsHardwareAccelerated)
+                for (; i + 16 <= max; i += 16)
+                {
+                    uint m = ~Vector128.Equals(Vector128.Load(a + i), Vector128.Load(b + i)).ExtractMostSignificantBits() & 0xFFFF;
                     if (m != 0) return i + BitOperations.TrailingZeroCount(m);
                 }
             for (; i + 8 <= max; i += 8)
@@ -613,13 +625,59 @@ namespace Arctis.Imaging
         {
             uint a = 1, b = 0;
             int i = 0;
-            if (Ssse3.IsSupported)
+            fixed (byte* p = data)
             {
-                Vector128<sbyte> weights = Vector128.Create((sbyte)16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1);
-                Vector128<short> ones = Vector128.Create((short)1);
-                fixed (byte* p = data)
+                // 64, 32 or 16 bytes a step: vs1 sums the bytes, vs2 the weighted bytes, vs3 vs1 before each step
+                if (Vector512.IsHardwareAccelerated && Avx512BW.IsSupported)
                 {
-                    // 16 bytes a step: vs1 sums the bytes, vs2 the weighted bytes, vs3 vs1 before each step
+                    Vector512<sbyte> weights = Vector512.Create(
+                        Vector256.Create((sbyte)64, 63, 62, 61, 60, 59, 58, 57, 56, 55, 54, 53, 52, 51, 50, 49, 48, 47, 46, 45, 44, 43, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33),
+                        Vector256.Create((sbyte)32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1));
+                    Vector512<short> ones = Vector512.Create((short)1);
+                    while (data.Length - i >= 64)
+                    {
+                        int len = Math.Min(data.Length - i, 5552) & ~63;
+                        Vector512<uint> vs1 = Vector512<uint>.Zero, vs2 = Vector512<uint>.Zero, vs3 = Vector512<uint>.Zero;
+                        for (int end = i + len; i < end; i += 64)
+                        {
+                            Vector512<byte> v = Vector512.Load(p + i);
+                            vs3 += vs1;
+                            vs1 += Avx512BW.SumAbsoluteDifferences(v, Vector512<byte>.Zero).AsUInt32();
+                            vs2 += Avx512BW.MultiplyAddAdjacent(Avx512BW.MultiplyAddAdjacent(v, weights), ones).AsUInt32();
+                        }
+                        vs2 += vs3 << 6;
+                        b += a * (uint)len + Vector512.Sum(vs2);
+                        a += Vector512.Sum(vs1);
+                        a %= 65521;
+                        b %= 65521;
+                    }
+                }
+                if (Vector256.IsHardwareAccelerated && Avx2.IsSupported)
+                {
+                    Vector256<sbyte> weights = Vector256.Create((sbyte)32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1);
+                    Vector256<short> ones = Vector256.Create((short)1);
+                    while (data.Length - i >= 32)
+                    {
+                        int len = Math.Min(data.Length - i, 5552) & ~31;
+                        Vector256<uint> vs1 = Vector256<uint>.Zero, vs2 = Vector256<uint>.Zero, vs3 = Vector256<uint>.Zero;
+                        for (int end = i + len; i < end; i += 32)
+                        {
+                            Vector256<byte> v = Vector256.Load(p + i);
+                            vs3 += vs1;
+                            vs1 += Avx2.SumAbsoluteDifferences(v, Vector256<byte>.Zero).AsUInt32();
+                            vs2 += Avx2.MultiplyAddAdjacent(Avx2.MultiplyAddAdjacent(v, weights), ones).AsUInt32();
+                        }
+                        vs2 += vs3 << 5;
+                        b += a * (uint)len + Vector256.Sum(vs2);
+                        a += Vector256.Sum(vs1);
+                        a %= 65521;
+                        b %= 65521;
+                    }
+                }
+                if (Ssse3.IsSupported)
+                {
+                    Vector128<sbyte> weights = Vector128.Create((sbyte)16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1);
+                    Vector128<short> ones = Vector128.Create((short)1);
                     while (data.Length - i >= 16)
                     {
                         int len = Math.Min(data.Length - i, 5552) & ~15;

@@ -808,6 +808,7 @@ namespace Arctis.Imaging
         private static void TransformAll(ref Frame f)
         {
             Span<int> workspace = stackalloc int[64];
+            bool paired = Vector512.IsHardwareAccelerated && Avx512F.IsSupported;
             for (int i = 0; i < f.count; i++)
             {
                 ref Component c = ref f.components[i];
@@ -819,8 +820,22 @@ namespace Arctis.Imaging
                     {
                         ReadOnlySpan<short> block = f.coefficients.AsSpan(c.coefStart + (by * c.blocksX + bx) * 64, 64);
                         Span<byte> output = f.planes.AsSpan(c.planeStart + by * 8 * stride + bx * 8);
-                        if (HasAc(block)) Transform(block, quant, output, stride, workspace);
-                        else FillBlock(output, stride, DcOnly(block[0], quant[0]));
+                        if (!HasAc(block))
+                        {
+                            FillBlock(output, stride, DcOnly(block[0], quant[0]));
+                            continue;
+                        }
+                        if (paired && bx + 1 < blocksX)
+                        {
+                            ReadOnlySpan<short> next = f.coefficients.AsSpan(c.coefStart + (by * c.blocksX + bx + 1) * 64, 64);
+                            if (HasAc(next))
+                            {
+                                IdctAvx512Pair(block, next, quant, output, stride);
+                                bx++;
+                                continue;
+                            }
+                        }
+                        Transform(block, quant, output, stride, workspace);
                     }
                 }
             }
@@ -830,7 +845,13 @@ namespace Arctis.Imaging
         private static bool HasAc(ReadOnlySpan<short> block)
         {
             ref short b = ref MemoryMarshal.GetReference(block);
-            Vector128<short> any = Vector128.LoadUnsafe(ref b) & Vector128.Create((short)0, -1, -1, -1, -1, -1, -1, -1);
+            if (Vector512.IsHardwareAccelerated)
+                return ((Vector512.LoadUnsafe(ref b) & Vector512.Create(Vector256.Create((short)0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1), Vector256<short>.AllBitsSet))
+                    | Vector512.LoadUnsafe(ref b, 32)) != Vector512<short>.Zero;
+            if (Vector256.IsHardwareAccelerated)
+                return ((Vector256.LoadUnsafe(ref b) & Vector256.Create((short)0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1))
+                    | Vector256.LoadUnsafe(ref b, 16) | Vector256.LoadUnsafe(ref b, 32) | Vector256.LoadUnsafe(ref b, 48)) != Vector256<short>.Zero;
+            Vector128<short> any =Vector128.LoadUnsafe(ref b) & Vector128.Create((short)0, -1, -1, -1, -1, -1, -1, -1);
             for (int at = 8; at < 64; at += 8) any |= Vector128.LoadUnsafe(ref b, (nuint)at);
             return any != Vector128<short>.Zero;
         }
@@ -873,6 +894,24 @@ namespace Arctis.Imaging
             StoreRows(ref o, stride, 6, r6.GetLower(), r6.GetUpper(), r7.GetLower(), r7.GetUpper());
         }
 
+        // islow on two side-by-side blocks: each Vector512 holds row k of the left block, then row k of the right.
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private static void IdctAvx512Pair(ReadOnlySpan<short> left, ReadOnlySpan<short> right, ReadOnlySpan<int> q, Span<byte> output, int stride)
+        {
+            ref short a = ref MemoryMarshal.GetReference(left);
+            ref short b = ref MemoryMarshal.GetReference(right);
+            ref int quant = ref MemoryMarshal.GetReference(q);
+            Vector512<int> r0 = Row512(ref a, ref b, ref quant, 0), r1 = Row512(ref a, ref b, ref quant, 8), r2 = Row512(ref a, ref b, ref quant, 16), r3 = Row512(ref a, ref b, ref quant, 24);
+            Vector512<int> r4 = Row512(ref a, ref b, ref quant, 32), r5 = Row512(ref a, ref b, ref quant, 40), r6 = Row512(ref a, ref b, ref quant, 48), r7 = Row512(ref a, ref b, ref quant, 56);
+            Butterfly(ref r0, ref r1, ref r2, ref r3, ref r4, ref r5, ref r6, ref r7, ConstBits - Pass1Bits);
+            Transpose(ref r0, ref r1, ref r2, ref r3, ref r4, ref r5, ref r6, ref r7);
+            Butterfly(ref r0, ref r1, ref r2, ref r3, ref r4, ref r5, ref r6, ref r7, ConstBits + Pass1Bits + 3);
+            Transpose(ref r0, ref r1, ref r2, ref r3, ref r4, ref r5, ref r6, ref r7);
+            ref byte o = ref MemoryMarshal.GetReference(output);
+            StorePairRows(ref o, stride, 0, r0, r1, r2, r3);
+            StorePairRows(ref o, stride, 4, r4, r5, r6, r7);
+        }
+
         // islow with each row as two Vector128 halves; the transposes swap 4x4 quadrants.
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static void IdctVector(ReadOnlySpan<short> input, ReadOnlySpan<int> q, Span<byte> output, int stride)
@@ -912,6 +951,13 @@ namespace Arctis.Imaging
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static Vector256<int> Row256(ref short coef, ref int quant, int at)
             => Avx2.ConvertToVector256Int32(Vector128.LoadUnsafe(ref coef, (nuint)at)) * Vector256.LoadUnsafe(ref quant, (nuint)at);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static Vector512<int> Row512(ref short left, ref short right, ref int quant, int at)
+        {
+            Vector256<int> k = Vector256.LoadUnsafe(ref quant, (nuint)at);
+            return Avx512F.ConvertToVector512Int32(Vector256.Create(Vector128.LoadUnsafe(ref left, (nuint)at), Vector128.LoadUnsafe(ref right, (nuint)at))) * Vector512.Create(k, k);
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static void Row128(ref short coef, ref int quant, int at, out Vector128<int> low, out Vector128<int> high)
@@ -1006,6 +1052,86 @@ namespace Arctis.Imaging
             v5 = Vector256.ShiftRightArithmetic(tmp12 - o1, shift);
             v3 = Vector256.ShiftRightArithmetic(tmp13 + o0, shift);
             v4 = Vector256.ShiftRightArithmetic(tmp13 - o0, shift);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static void Butterfly(ref Vector512<int> v0, ref Vector512<int> v1, ref Vector512<int> v2, ref Vector512<int> v3,
+            ref Vector512<int> v4, ref Vector512<int> v5, ref Vector512<int> v6, ref Vector512<int> v7, int shift)
+        {
+            Vector512<int> z1 = (v2 + v6) * Vector512.Create(4433);
+            Vector512<int> tmp2 = z1 + v6 * Vector512.Create(-15137);
+            Vector512<int> tmp3 = z1 + v2 * Vector512.Create(6270);
+            Vector512<int> tmp0 = Vector512.ShiftLeft(v0 + v4, ConstBits);
+            Vector512<int> tmp1 = Vector512.ShiftLeft(v0 - v4, ConstBits);
+            Vector512<int> tmp10 = tmp0 + tmp3, tmp13 = tmp0 - tmp3, tmp11 = tmp1 + tmp2, tmp12 = tmp1 - tmp2;
+
+            Vector512<int> o0 = v7, o1 = v5, o2 = v3, o3 = v1;
+            z1 = o0 + o3;
+            Vector512<int> z2 = o1 + o2, z3 = o0 + o2, z4 = o1 + o3;
+            Vector512<int> z5 = (z3 + z4) * Vector512.Create(9633);
+            o0 *= Vector512.Create(2446);
+            o1 *= Vector512.Create(16819);
+            o2 *= Vector512.Create(25172);
+            o3 *= Vector512.Create(12299);
+            z1 *= Vector512.Create(-7373);
+            z2 *= Vector512.Create(-20995);
+            z3 = z3 * Vector512.Create(-16069) + z5;
+            z4 = z4 * Vector512.Create(-3196) + z5;
+            o0 += z1 + z3;
+            o1 += z2 + z4;
+            o2 += z2 + z3;
+            o3 += z1 + z4;
+
+            Vector512<int> round = Vector512.Create(1 << (shift - 1));
+            tmp10 += round;
+            tmp11 += round;
+            tmp12 += round;
+            tmp13 += round;
+            v0 = Vector512.ShiftRightArithmetic(tmp10 + o3, shift);
+            v7 = Vector512.ShiftRightArithmetic(tmp10 - o3, shift);
+            v1 = Vector512.ShiftRightArithmetic(tmp11 + o2, shift);
+            v6 = Vector512.ShiftRightArithmetic(tmp11 - o2, shift);
+            v2 = Vector512.ShiftRightArithmetic(tmp12 + o1, shift);
+            v5 = Vector512.ShiftRightArithmetic(tmp12 - o1, shift);
+            v3 = Vector512.ShiftRightArithmetic(tmp13 + o0, shift);
+            v4 = Vector512.ShiftRightArithmetic(tmp13 - o0, shift);
+        }
+
+        // Transposes both 8x8 halves at once; the qword permutes do Permute2x128's job inside each half.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static void Transpose(ref Vector512<int> r0, ref Vector512<int> r1, ref Vector512<int> r2, ref Vector512<int> r3,
+            ref Vector512<int> r4, ref Vector512<int> r5, ref Vector512<int> r6, ref Vector512<int> r7)
+        {
+            Vector512<int> t0 = Avx512F.UnpackLow(r0, r1), t1 = Avx512F.UnpackHigh(r0, r1), t2 = Avx512F.UnpackLow(r2, r3), t3 = Avx512F.UnpackHigh(r2, r3);
+            Vector512<int> t4 = Avx512F.UnpackLow(r4, r5), t5 = Avx512F.UnpackHigh(r4, r5), t6 = Avx512F.UnpackLow(r6, r7), t7 = Avx512F.UnpackHigh(r6, r7);
+            Vector512<long> u0 = Avx512F.UnpackLow(t0.AsInt64(), t2.AsInt64()), u1 = Avx512F.UnpackHigh(t0.AsInt64(), t2.AsInt64());
+            Vector512<long> u2 = Avx512F.UnpackLow(t1.AsInt64(), t3.AsInt64()), u3 = Avx512F.UnpackHigh(t1.AsInt64(), t3.AsInt64());
+            Vector512<long> u4 = Avx512F.UnpackLow(t4.AsInt64(), t6.AsInt64()), u5 = Avx512F.UnpackHigh(t4.AsInt64(), t6.AsInt64());
+            Vector512<long> u6 = Avx512F.UnpackLow(t5.AsInt64(), t7.AsInt64()), u7 = Avx512F.UnpackHigh(t5.AsInt64(), t7.AsInt64());
+            Vector512<long> low = Vector512.Create(0L, 1, 8, 9, 4, 5, 12, 13), high = Vector512.Create(2L, 3, 10, 11, 6, 7, 14, 15);
+            r0 = Avx512F.PermuteVar8x64x2(u0, low, u4).AsInt32();
+            r1 = Avx512F.PermuteVar8x64x2(u1, low, u5).AsInt32();
+            r2 = Avx512F.PermuteVar8x64x2(u2, low, u6).AsInt32();
+            r3 = Avx512F.PermuteVar8x64x2(u3, low, u7).AsInt32();
+            r4 = Avx512F.PermuteVar8x64x2(u0, high, u4).AsInt32();
+            r5 = Avx512F.PermuteVar8x64x2(u1, high, u5).AsInt32();
+            r6 = Avx512F.PermuteVar8x64x2(u2, high, u6).AsInt32();
+            r7 = Avx512F.PermuteVar8x64x2(u3, high, u7).AsInt32();
+        }
+
+        // Four rows of both blocks, clamped around 128; a row's left and right halves are 16 contiguous bytes.
+        private static void StorePairRows(ref byte output, int stride, int row, Vector512<int> a, Vector512<int> b, Vector512<int> c, Vector512<int> d)
+        {
+            Vector512<int> centre = Vector512.Create(128), low = Vector512<int>.Zero, high = Vector512.Create(255);
+            a = Vector512.Min(Vector512.Max(a + centre, low), high);
+            b = Vector512.Min(Vector512.Max(b + centre, low), high);
+            c = Vector512.Min(Vector512.Max(c + centre, low), high);
+            d = Vector512.Min(Vector512.Max(d + centre, low), high);
+            Vector512<byte> rows = Vector512.Narrow(Vector512.Narrow(a, b), Vector512.Narrow(c, d)).AsByte();
+            rows.GetLower().GetLower().StoreUnsafe(ref Unsafe.Add(ref output, row * stride));
+            rows.GetLower().GetUpper().StoreUnsafe(ref Unsafe.Add(ref output, (row + 1) * stride));
+            rows.GetUpper().GetLower().StoreUnsafe(ref Unsafe.Add(ref output, (row + 2) * stride));
+            rows.GetUpper().GetUpper().StoreUnsafe(ref Unsafe.Add(ref output, (row + 3) * stride));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1236,7 +1362,48 @@ namespace Arctis.Imaging
             ref byte p0 = ref MemoryMarshal.GetReference(c0), p1 = ref MemoryMarshal.GetReference(c1), p2 = ref MemoryMarshal.GetReference(c2);
             ref byte t = ref MemoryMarshal.GetReference(target);
             int x = 0;
-            if (Avx2.IsSupported)
+            if (Vector512.IsHardwareAccelerated && Avx512BW.IsSupported)
+            {
+                // 32 pixels in 16-bit lanes; the qword permutes put each lane's pixels back in order
+                if (ycc)
+                {
+                    Vector512<short> bias = Vector512.Create((short)128), two = Vector512.Create((short)2), alpha = Vector512.Create((short)255);
+                    Vector512<short> kr = Vector512.Create(Pair(26345, 16384), Pair(26345, 16384)), kg = Vector512.Create(Pair(-22554, 18734), Pair(-22554, 18734)), kb = Vector512.Create(Pair(-14942, 16384), Pair(-14942, 16384));
+                    Vector512<int> half = Vector512.Create(32768);
+                    Vector512<long> first = Vector512.Create(0L, 1, 8, 9, 2, 3, 10, 11), second = Vector512.Create(4L, 5, 12, 13, 6, 7, 14, 15);
+                    for (; x + 32 <= width; x += 32)
+                    {
+                        Vector512<short> luma = Avx512BW.ConvertToVector512Int16(Vector256.LoadUnsafe(ref p0, (nuint)x));
+                        Vector512<short> cb = Avx512BW.ConvertToVector512Int16(Vector256.LoadUnsafe(ref p1, (nuint)x)) - bias;
+                        Vector512<short> cr = Avx512BW.ConvertToVector512Int16(Vector256.LoadUnsafe(ref p2, (nuint)x)) - bias;
+                        Vector512<short> r = luma + cr + Product(cr, two, kr, Vector512<int>.Zero);
+                        Vector512<short> g = luma - cr + Product(cb, cr, kg, half);
+                        Vector512<short> b = luma + cb + cb + Product(cb, two, kb, Vector512<int>.Zero);
+                        Vector512<byte> rb = Avx512BW.PackUnsignedSaturate(r, b), ga = Avx512BW.PackUnsignedSaturate(g, alpha);
+                        Vector512<short> rg = Avx512BW.UnpackLow(rb, ga).AsInt16(), ba = Avx512BW.UnpackHigh(rb, ga).AsInt16();
+                        Vector512<long> low = Avx512BW.UnpackLow(rg, ba).AsInt64(), high = Avx512BW.UnpackHigh(rg, ba).AsInt64();
+                        Avx512F.PermuteVar8x64x2(low, first, high).AsByte().StoreUnsafe(ref t, (nuint)(x * 4));
+                        Avx512F.PermuteVar8x64x2(low, second, high).AsByte().StoreUnsafe(ref t, (nuint)(x * 4 + 64));
+                    }
+                }
+                for (; x + 16 <= width; x += 16)
+                {
+                    Vector512<int> r = Avx512F.ConvertToVector512Int32(Vector128.LoadUnsafe(ref p0, (nuint)x));
+                    Vector512<int> g = Avx512F.ConvertToVector512Int32(Vector128.LoadUnsafe(ref p1, (nuint)x));
+                    Vector512<int> b = Avx512F.ConvertToVector512Int32(Vector128.LoadUnsafe(ref p2, (nuint)x));
+                    if (ycc)
+                    {
+                        Vector512<int> half = Vector512.Create(32768), low = Vector512<int>.Zero, high = Vector512.Create(255);
+                        Vector512<int> cb = g - Vector512.Create(128), cr = b - Vector512.Create(128), luma = r;
+                        r = Vector512.Min(Vector512.Max(luma + Vector512.ShiftRightArithmetic(cr * Vector512.Create(91881) + half, 16), low), high);
+                        g = Vector512.Min(Vector512.Max(luma + Vector512.ShiftRightArithmetic(cb * Vector512.Create(-22554) - cr * Vector512.Create(46802) + half, 16), low), high);
+                        b = Vector512.Min(Vector512.Max(luma + Vector512.ShiftRightArithmetic(cb * Vector512.Create(116130) + half, 16), low), high);
+                    }
+                    Vector512<int> pixels = r | Vector512.ShiftLeft(g, 8) | Vector512.ShiftLeft(b, 16) | Vector512.Create(unchecked((int)0xFF000000));
+                    pixels.AsByte().StoreUnsafe(ref t, (nuint)(x * 4));
+                }
+            }
+            if (Vector256.IsHardwareAccelerated && Avx2.IsSupported)
             {
                 // 16 pixels in 16-bit lanes, libjpeg's constants split into pmaddwd pairs
                 if (ycc)
@@ -1276,7 +1443,7 @@ namespace Arctis.Imaging
                     pixels.AsByte().StoreUnsafe(ref t, (nuint)(x * 4));
                 }
             }
-            else if (Sse2.IsSupported || AdvSimd.Arm64.IsSupported)
+            if (Sse2.IsSupported || AdvSimd.Arm64.IsSupported)
             {
                 for (; x + 16 <= width; x += 16)
                 {
@@ -1319,6 +1486,14 @@ namespace Arctis.Imaging
             Vector256<int> low = Avx2.MultiplyAddAdjacent(Avx2.UnpackLow(a, b), k) + add;
             Vector256<int> high = Avx2.MultiplyAddAdjacent(Avx2.UnpackHigh(a, b), k) + add;
             return Avx2.PackSignedSaturate(Vector256.ShiftRightArithmetic(low, 16), Vector256.ShiftRightArithmetic(high, 16));
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static Vector512<short> Product(Vector512<short> a, Vector512<short> b, Vector512<short> k, Vector512<int> add)
+        {
+            Vector512<int> low = Avx512BW.MultiplyAddAdjacent(Avx512BW.UnpackLow(a, b), k) + add;
+            Vector512<int> high = Avx512BW.MultiplyAddAdjacent(Avx512BW.UnpackHigh(a, b), k) + add;
+            return Avx512BW.PackSignedSaturate(Vector512.ShiftRightArithmetic(low, 16), Vector512.ShiftRightArithmetic(high, 16));
         }
 
         private static Vector256<short> Pair(short k0, short k1) => Vector256.Create((ushort)k0 | k1 << 16).AsInt16();
@@ -1430,7 +1605,16 @@ namespace Arctis.Imaging
             bool vertical = far.Length > 0;
             ref byte fr = ref vertical ? ref MemoryMarshal.GetReference(far) : ref n;
             int x = 0;
-            if (Avx2.IsSupported)
+            if (Vector512.IsHardwareAccelerated && Avx512BW.IsSupported)
+            {
+                for (; x + 32 <= width; x += 32)
+                {
+                    Vector512<short> sum = Avx512BW.ConvertToVector512Int16(Vector256.LoadUnsafe(ref n, (nuint)x));
+                    if (vertical) sum = sum * Vector512.Create((short)3) + Avx512BW.ConvertToVector512Int16(Vector256.LoadUnsafe(ref fr, (nuint)x));
+                    sum.AsUInt16().StoreUnsafe(ref s, (nuint)x + 1);
+                }
+            }
+            if (Vector256.IsHardwareAccelerated && Avx2.IsSupported)
             {
                 for (; x + 16 <= width; x += 16)
                 {
@@ -1439,7 +1623,7 @@ namespace Arctis.Imaging
                     sum.AsUInt16().StoreUnsafe(ref s, (nuint)x + 1);
                 }
             }
-            else if (Sse2.IsSupported || AdvSimd.Arm64.IsSupported)
+            if (Sse2.IsSupported || AdvSimd.Arm64.IsSupported)
             {
                 for (; x + 16 <= width; x += 16)
                 {
@@ -1467,7 +1651,20 @@ namespace Arctis.Imaging
             ref ushort s = ref MemoryMarshal.GetArrayDataReference(sums);
             ref byte o = ref MemoryMarshal.GetReference(output);
             int x = 0;
-            if (Avx2.IsSupported)
+            if (Vector512.IsHardwareAccelerated && Avx512BW.IsSupported)
+            {
+                Vector512<short> three = Vector512.Create((short)3), even = Vector512.Create((short)evenBias), odd = Vector512.Create((short)oddBias);
+                for (; x + 32 <= width; x += 32)
+                {
+                    Vector512<short> left = Vector512.LoadUnsafe(ref s, (nuint)x).AsInt16();
+                    Vector512<short> centre = Vector512.LoadUnsafe(ref s, (nuint)x + 1).AsInt16() * three;
+                    Vector512<short> right = Vector512.LoadUnsafe(ref s, (nuint)x + 2).AsInt16();
+                    Vector512<short> e = Vector512.ShiftRightLogical(centre + left + even, shift);
+                    Vector512<short> d = Vector512.ShiftRightLogical(centre + right + odd, shift);
+                    Avx512BW.PackUnsignedSaturate(Avx512BW.UnpackLow(e, d), Avx512BW.UnpackHigh(e, d)).StoreUnsafe(ref o, (nuint)(x * 2));
+                }
+            }
+            if (Vector256.IsHardwareAccelerated && Avx2.IsSupported)
             {
                 Vector256<short> three = Vector256.Create((short)3), even = Vector256.Create((short)evenBias), odd = Vector256.Create((short)oddBias);
                 for (; x + 16 <= width; x += 16)

@@ -279,7 +279,11 @@ This file holds **open work**. A landed entry moves to [[Changelog]]; one that s
 	- [ ] **GUI-verify pasting the 2026-11-07 formats** — ICO/CUR, PNM/PAM, QOI, farbfeld, PCX, XBM, XPM, lossless JPEG, .jls into a Thorium note → ico-simple-rasters, lossless-jpeg
 	- [ ] **XPM named colours unsupported** — throws `NotSupportedException`; embedding the X11 rgb.txt table (~750 entries) was rejected → ico-simple-rasters
 	- [ ] **JPEG-LS restart intervals, point transform, mapping tables unsupported** — no reference encoder here produces them → lossless-jpeg
-	- [ ] **BMP/TGA/PNM/QOI/ICO encoders unoptimised (2026-11-07)** — raw TGA, binary PNM, 24-bit BMP are 3-70x ImageSharp's time (per-pixel conversion, no bulk rows) → simple-raster-encoders
+	- [ ] **encoders still over 0.7x ImageSharp (2026-11-07)** — TGA 32 raw (photo to 0.87, atlas 0.70-0.73), TGA RLE atlas 1.06-1.08, PPM/PGM binary atlas 0.74-0.80, PPM plain 1.27-1.67, QOI 0.75-0.85; target <= 0.7 → simple-raster-encoders
+	- [ ] **sequential (baseline) JPEG paired 512 IDCT (2026-11-07)** — only progressive pairs blocks; baseline transforms each block as decoded, pairing needs one held back → simd-width-tiers
+	- [ ] **.NET 8 portable-shuffle software fallback (2026-11-07)** — Vector128 shuffles with a local index (PNG `Expand`, `Pack24`, `ImageOps.CopySwizzled`) are ~25x slower on .NET 8; inline indices or intrinsics, undecided → simd-width-tiers
+	- [ ] **wide Inflater match copy and DistanceField tile copy (2026-11-07)** — stay 128-bit; re-check the slack (`fastLimit = outEnd - MaxMatch - 32`) before widening → simd-width-tiers
+	- [ ] **TGA default origin (2026-11-07)** — user picked TopLeft; enum reorder vs new `TgaOrigin.Auto` unanswered, maybe moot since block reads put BottomLeft TGA 32 at 0.70-0.73; default still BottomLeft → simple-raster-encoders
 	- [ ] **palette quantizer for indexed formats (2026-11-07)** — encoders take exact palettes only; Wu/median-cut with optional dithering, to come with GIF encoding → simple-raster-encoders
 	- [ ] **GPU formats** — DDS plus BC1-BC7, ETC2/EAC, ASTC inside DDS and KTX2
 	- [ ] **HDR formats** — Radiance .hdr, OpenEXR (RLE/ZIP/PIZ/PXR24/B44/DWA), half/float layouts

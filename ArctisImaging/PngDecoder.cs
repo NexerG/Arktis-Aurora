@@ -3,6 +3,7 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.X86;
 
 namespace Arctis.Imaging
 {
@@ -304,13 +305,38 @@ namespace Arctis.Imaging
                         if (depth == 8 && !key)
                         {
                             int x = 0;
+                            Vector128<byte> alpha = Vector128.Create(0xFF000000u).AsByte();
+                            Vector128<byte> q0 = Vector128.Create((byte)0, 0, 0, 0xFF, 1, 1, 1, 0xFF, 2, 2, 2, 0xFF, 3, 3, 3, 0xFF);
+                            Vector128<byte> q1 = Vector128.Create((byte)4, 4, 4, 0xFF, 5, 5, 5, 0xFF, 6, 6, 6, 0xFF, 7, 7, 7, 0xFF);
+                            Vector128<byte> q2 = Vector128.Create((byte)8, 8, 8, 0xFF, 9, 9, 9, 0xFF, 10, 10, 10, 0xFF, 11, 11, 11, 0xFF);
+                            Vector128<byte> q3 = Vector128.Create((byte)12, 12, 12, 0xFF, 13, 13, 13, 0xFF, 14, 14, 14, 0xFF, 15, 15, 15, 0xFF);
+
+                            // 16 grey bytes copied into every 128-bit lane, each lane expanding its own four
+                            if (step == 1 && Vector512.IsHardwareAccelerated && Avx512BW.IsSupported)
+                            {
+                                Vector512<byte> q = Vector512.Create(Vector256.Create(q0, q1), Vector256.Create(q2, q3));
+                                Vector512<byte> opaque = Vector512.Create(Vector256.Create(alpha, alpha), Vector256.Create(alpha, alpha));
+                                for (; x + 16 <= width; x += 16)
+                                {
+                                    Vector128<byte> l = Vector128.Load(src + x);
+                                    Vector256<byte> g = Vector256.Create(l, l);
+                                    (Avx512BW.Shuffle(Vector512.Create(g, g), q) | opaque).Store(dst + x * 4);
+                                }
+                            }
+                            if (step == 1 && Vector256.IsHardwareAccelerated && Avx2.IsSupported)
+                            {
+                                Vector256<byte> qa = Vector256.Create(q0, q1), qb = Vector256.Create(q2, q3), opaque = Vector256.Create(alpha, alpha);
+                                for (; x + 16 <= width; x += 16)
+                                {
+                                    Vector128<byte> l = Vector128.Load(src + x);
+                                    Vector256<byte> g = Vector256.Create(l, l);
+                                    byte* d = dst + x * 4;
+                                    (Avx2.Shuffle(g, qa) | opaque).Store(d);
+                                    (Avx2.Shuffle(g, qb) | opaque).Store(d + 32);
+                                }
+                            }
                             if (step == 1 && Vector128.IsHardwareAccelerated)
                             {
-                                Vector128<byte> alpha = Vector128.Create(0xFF000000u).AsByte();
-                                Vector128<byte> q0 = Vector128.Create((byte)0, 0, 0, 0xFF, 1, 1, 1, 0xFF, 2, 2, 2, 0xFF, 3, 3, 3, 0xFF);
-                                Vector128<byte> q1 = Vector128.Create((byte)4, 4, 4, 0xFF, 5, 5, 5, 0xFF, 6, 6, 6, 0xFF, 7, 7, 7, 0xFF);
-                                Vector128<byte> q2 = Vector128.Create((byte)8, 8, 8, 0xFF, 9, 9, 9, 0xFF, 10, 10, 10, 0xFF, 11, 11, 11, 0xFF);
-                                Vector128<byte> q3 = Vector128.Create((byte)12, 12, 12, 0xFF, 13, 13, 13, 0xFF, 14, 14, 14, 0xFF, 15, 15, 15, 0xFF);
                                 for (; x + 16 <= width; x += 16)
                                 {
                                     Vector128<byte> g = Vector128.Load(src + x);
@@ -336,12 +362,29 @@ namespace Arctis.Imaging
                         if (depth == 8 && !key)
                         {
                             int x = 0;
+                            Vector128<byte> order = bgra
+                                ? Vector128.Create((byte)2, 1, 0, 0xFF, 5, 4, 3, 0xFF, 8, 7, 6, 0xFF, 11, 10, 9, 0xFF)
+                                : Vector128.Create((byte)0, 1, 2, 0xFF, 3, 4, 5, 0xFF, 6, 7, 8, 0xFF, 9, 10, 11, 0xFF);
+                            Vector128<byte> alpha = Vector128.Create(0xFF000000u).AsByte();
+
+                            // a dword permute gives each 128-bit lane its four pixels' 12 bytes, which it then expands
+                            if (step == 1 && Vector512.IsHardwareAccelerated && Avx512BW.IsSupported)
+                            {
+                                Vector512<byte> lanes = Vector512.Create(Vector256.Create(order, order), Vector256.Create(order, order));
+                                Vector512<byte> opaque = Vector512.Create(Vector256.Create(alpha, alpha), Vector256.Create(alpha, alpha));
+                                Vector512<int> spread = Vector512.Create(0, 1, 2, 0, 3, 4, 5, 0, 6, 7, 8, 0, 9, 10, 11, 0);
+                                for (; x + 22 <= width; x += 16)
+                                    (Avx512BW.Shuffle(Avx512F.PermuteVar16x32(Vector512.Load(src + x * 3).AsInt32(), spread).AsByte(), lanes) | opaque).Store(dst + x * 4);
+                            }
+                            if (step == 1 && Vector256.IsHardwareAccelerated && Avx2.IsSupported)
+                            {
+                                Vector256<byte> lanes = Vector256.Create(order, order), opaque = Vector256.Create(alpha, alpha);
+                                Vector256<int> spread = Vector256.Create(0, 1, 2, 0, 3, 4, 5, 0);
+                                for (; x + 11 <= width; x += 8)
+                                    (Avx2.Shuffle(Avx2.PermuteVar8x32(Vector256.Load(src + x * 3).AsInt32(), spread).AsByte(), lanes) | opaque).Store(dst + x * 4);
+                            }
                             if (step == 1 && Vector128.IsHardwareAccelerated)
                             {
-                                Vector128<byte> order = bgra
-                                    ? Vector128.Create((byte)2, 1, 0, 0xFF, 5, 4, 3, 0xFF, 8, 7, 6, 0xFF, 11, 10, 9, 0xFF)
-                                    : Vector128.Create((byte)0, 1, 2, 0xFF, 3, 4, 5, 0xFF, 6, 7, 8, 0xFF, 9, 10, 11, 0xFF);
-                                Vector128<byte> alpha = Vector128.Create(0xFF000000u).AsByte();
                                 for (; x + 6 <= width; x += 4)
                                     (Vector128.Shuffle(Vector128.Load(src + x * 3), order) | alpha).Store(dst + x * 4);
                             }
@@ -393,11 +436,33 @@ namespace Arctis.Imaging
                         else
                         {
                             int x = 0;
+                            Vector128<byte> order = bgra
+                                ? Vector128.Create((byte)5, 4, 3, 2, 1, 0, 7, 6, 13, 12, 11, 10, 9, 8, 15, 14)
+                                : Vector128.Create((byte)1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10, 13, 12, 15, 14);
+                            if (step == 1 && Vector512.IsHardwareAccelerated && Avx512BW.IsSupported)
+                            {
+                                Vector512<byte> lanes = Vector512.Create(Vector256.Create(order, order), Vector256.Create(order, order));
+                                Vector512<uint> scale = Vector512.Create(255u), round = Vector512.Create(32895u);
+                                for (; x + 8 <= width; x += 8)
+                                {
+                                    (Vector512<uint> lo, Vector512<uint> hi) = Vector512.Widen(Avx512BW.Shuffle(Vector512.Load(src + x * 8), lanes).AsUInt16());
+                                    Vector512<ushort> narrow = Vector512.Narrow((lo * scale + round) >> 16, (hi * scale + round) >> 16);
+                                    Vector512.Narrow(narrow, narrow).AsByte().GetLower().Store(dst + x * 4);
+                                }
+                            }
+                            if (step == 1 && Vector256.IsHardwareAccelerated && Avx2.IsSupported)
+                            {
+                                Vector256<byte> lanes = Vector256.Create(order, order);
+                                Vector256<uint> scale = Vector256.Create(255u), round = Vector256.Create(32895u);
+                                for (; x + 4 <= width; x += 4)
+                                {
+                                    (Vector256<uint> lo, Vector256<uint> hi) = Vector256.Widen(Avx2.Shuffle(Vector256.Load(src + x * 8), lanes).AsUInt16());
+                                    Vector256<ushort> narrow = Vector256.Narrow((lo * scale + round) >> 16, (hi * scale + round) >> 16);
+                                    Vector256.Narrow(narrow, narrow).AsByte().GetLower().Store(dst + x * 4);
+                                }
+                            }
                             if (step == 1 && Vector128.IsHardwareAccelerated)
                             {
-                                Vector128<byte> order = bgra
-                                    ? Vector128.Create((byte)5, 4, 3, 2, 1, 0, 7, 6, 13, 12, 11, 10, 9, 8, 15, 14)
-                                    : Vector128.Create((byte)1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10, 13, 12, 15, 14);
                                 Vector128<uint> scale = Vector128.Create(255u), round = Vector128.Create(32895u);
                                 for (; x + 2 <= width; x += 2)
                                 {
@@ -674,6 +739,20 @@ namespace Arctis.Imaging
         private static void AddUp(ReadOnlySpan<byte> src, Span<byte> cur, ReadOnlySpan<byte> prev, Span<byte> dst)
         {
             int i = 0;
+            if (Vector512.IsHardwareAccelerated)
+                for (; i + 64 <= cur.Length; i += 64)
+                {
+                    Vector512<byte> v = Vector512.Create(src.Slice(i, 64)) + Vector512.Create(prev.Slice(i, 64));
+                    v.CopyTo(cur.Slice(i));
+                    v.CopyTo(dst.Slice(i));
+                }
+            if (Vector256.IsHardwareAccelerated)
+                for (; i + 32 <= cur.Length; i += 32)
+                {
+                    Vector256<byte> v = Vector256.Create(src.Slice(i, 32)) + Vector256.Create(prev.Slice(i, 32));
+                    v.CopyTo(cur.Slice(i));
+                    v.CopyTo(dst.Slice(i));
+                }
             if (Vector128.IsHardwareAccelerated)
                 for (; i + 16 <= cur.Length; i += 16)
                 {
