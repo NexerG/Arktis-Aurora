@@ -21,8 +21,13 @@ namespace ArctisAurora.Core.Imaging
         internal static void UploadFile(ReadOnlySpan<byte> file, Format format, bool mipmaps, bool opaqueRows, ref VkImage image, ref DeviceMemory memory,
             out int width, out int height, out (float left, float right)[]? rows)
         {
+            if (mipmaps && ImageCodec.TryReadKtx2(file, out Ktx2Info info) && info.Levels > 1)
+            {
+                UploadKtx2(file, info, format, opaqueRows, ref image, ref memory, out width, out height, out rows);
+                return;
+            }
             PixelLayout layout = FormatMap.LayoutOf(format);
-            if (!mipmaps && !opaqueRows && ImageCodec.TryIdentify(file, out ImageHeader header) && ImageFiles.CanDecode(header.Format))
+            if (!mipmaps && !opaqueRows && ImageCodec.TryIdentify(file, out ImageHeader header))
             {
                 uint limit = AVulkanBufferHandler.MaxImageDimension();
                 if (header.Width <= limit && header.Height <= limit)
@@ -53,6 +58,70 @@ namespace ArctisAurora.Core.Imaging
             UploadImage(ImageFiles.Load(file, layout), format, mipmaps, opaqueRows, ref image, ref memory, out width, out height, out rows);
         }
 
+        // Uploads a KTX2 file's stored mips, decoded straight into staging, from the first level the device fits.
+        private static void UploadKtx2(ReadOnlySpan<byte> file, in Ktx2Info info, Format format, bool opaqueRows, ref VkImage image, ref DeviceMemory memory,
+            out int width, out int height, out (float left, float right)[]? rows)
+        {
+            PixelLayout layout = FormatMap.LayoutOf(format);
+            int bpp = ImageCodec.BytesPerPixel(layout);
+            if (opaqueRows && bpp != 4) throw new ArgumentException("opaque rows need four bytes per pixel");
+            bool srgb = format is Format.R8G8B8A8Srgb or Format.B8G8R8A8Srgb or Format.R8Srgb or Format.R8G8Srgb;
+            if (srgb != info.Srgb) Log.Once().Warn($"a KTX2 file stored as {(info.Srgb ? "SRGB" : "UNORM")} uploads as {format}");
+
+            uint limit = AVulkanBufferHandler.MaxImageDimension();
+            int first = 0;
+            while (first < info.Levels && (LevelSize(info.Width, first) > limit || LevelSize(info.Height, first) > limit)) first++;
+            if (first == info.Levels) throw new NotSupportedException($"no level of a {info.Width}x{info.Height} KTX2 fits the device limit {limit}");
+            if (first > 0) Log.Warn($"KTX2 {info.Width}x{info.Height} exceeds the device limit {limit}; uploading from level {first}.");
+
+            BufferImageCopy[] regions = new BufferImageCopy[info.Levels - first];
+            ulong size = 0;
+            for (int i = 0; i < regions.Length; i++)
+            {
+                int w = LevelSize(info.Width, first + i), h = LevelSize(info.Height, first + i);
+                regions[i] = Region(i, size, w, h);
+                size += (ulong)(w * h * bpp);
+            }
+            width = LevelSize(info.Width, first);
+            height = LevelSize(info.Height, first);
+            rows = null;
+
+            DecodeOptions options = new DecodeOptions(layout, 0, ImageFiles.Limits);
+            byte* staging = AVulkanBufferHandler.MapStaging(size, out Buffer stagingBuffer, out DeviceMemory stagingMemory);
+            byte[]? top = null;
+            try
+            {
+                Profiling.Zone.Start("Image.Decode");
+                for (int i = 0; i < regions.Length; i++)
+                {
+                    int length = (int)(regions[i].ImageExtent.Width * regions[i].ImageExtent.Height) * bpp;
+                    Span<byte> target = new Span<byte>(staging + regions[i].BufferOffset, length);
+                    if (i > 0 || !opaqueRows)
+                    {
+                        ImageCodec.DecodeKtx2Level(file, first + i, target, options);
+                        continue;
+                    }
+                    top = ArrayPool<byte>.Shared.Rent(length);
+                    Span<byte> pixels = top.AsSpan(0, length);
+                    ImageCodec.DecodeKtx2Level(file, first, pixels, options);
+                    rows = OpaqueRowsOf(pixels, width, height);
+                    pixels.CopyTo(target);
+                }
+                Profiling.Zone.End("Image.Decode");
+            }
+            catch
+            {
+                AVulkanBufferHandler.FreeStaging(stagingBuffer, stagingMemory);
+                throw;
+            }
+            finally
+            {
+                if (top != null) ArrayPool<byte>.Shared.Return(top);
+            }
+            AVulkanBufferHandler.UploadStaged(ref image, ref memory, (uint)width, (uint)height, format, regions, stagingBuffer, stagingMemory,
+                ref Renderer.transferQueue, ref Renderer.transferCommandPool);
+        }
+
         // Uploads a decoded image; mips are box-filtered in linear light, each level from a CPU copy of the one above.
         internal static void UploadImage(Image source, Format format, bool mipmaps, bool opaqueRows, ref VkImage image, ref DeviceMemory memory,
             out int width, out int height, out (float left, float right)[]? rows)
@@ -61,7 +130,7 @@ namespace ArctisAurora.Core.Imaging
             int bpp = ImageCodec.BytesPerPixel(source.Layout);
             if ((mipmaps || opaqueRows) && bpp != 4) throw new ArgumentException("mips and opaque rows need four bytes per pixel");
             Image top = FitDevice(source, bpp);
-            rows = opaqueRows ? OpaqueRowsOf(top) : null;
+            rows = opaqueRows ? OpaqueRowsOf(top.Pixels, top.Width, top.Height) : null;
 
             int levels = mipmaps ? BitOperations.Log2((uint)Math.Max(top.Width, top.Height)) + 1 : 1;
             BufferImageCopy[] regions = new BufferImageCopy[levels];
@@ -127,11 +196,9 @@ namespace ArctisAurora.Core.Imaging
         }
 
         // Each pixel row's leftmost and rightmost opaque pixel as fractions of the width; an empty row has left > right.
-        private static (float left, float right)[] OpaqueRowsOf(Image image)
+        private static (float left, float right)[] OpaqueRowsOf(ReadOnlySpan<byte> pixels, int width, int height)
         {
-            int width = image.Width;
-            byte[] pixels = image.Pixels;
-            (float left, float right)[] rows = new (float, float)[image.Height];
+            (float left, float right)[] rows = new (float, float)[height];
             for (int y = 0; y < rows.Length; y++)
             {
                 int start = y * width * 4;
@@ -153,5 +220,7 @@ namespace ArctisAurora.Core.Imaging
             ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, (uint)level, 0, 1),
             ImageExtent = new Extent3D((uint)width, (uint)height, 1)
         };
+
+        private static int LevelSize(int size, int level) => Math.Max(1, size >> level);
     }
 }

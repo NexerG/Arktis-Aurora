@@ -105,7 +105,7 @@ Release+PROFILE, Linux cloud container, lavapipe (CPU Vulkan) under xvfb, 3 runs
 - Not checked: Windows runs of the new tests and of the `profile.ps1` Windows branch; `profile.ps1` not executed on Linux (only `PerfTests.sh` was); boot-time cost of removing AO (`Preload`/`PreloadAssets` zones via `--profile`); Debug build/test suite not rerun.
 
 ### Known gaps (update)
-- JPEG and GIF decode absent in Arctis (`ImageFiles` still falls back to ImageSharp).
+- JPEG and GIF decode landed later in Arctis, see [[jpeg-gif-decoders]].
 - ~~No fast paths for RGB8 / Grey8 / 16-bit / interlaced / Average filter~~ — done, see "Update 2026-11-01 — all colour types, Adam7, fewer copies".
 - AO-removal effect on boot unmeasured; numbers are from a noisy CPU-rendered container and should be repeated on Windows.
 - The Linux container needed hand-installed packages (not in repo): dotnet-sdk-10.0 (Ubuntu; Microsoft's download host is blocked by the network policy), mesa-vulkan-drivers, vulkan-validationlayers (Release requests `VK_LAYER_KHRONOS_validation`; without it instance creation fails with ErrorLayerNotPresent), libminizip1t64 (libassimp.so needs libminizip.so.1, otherwise PreloadAssets crashes), pwsh via `dotnet tool install PowerShell`.
@@ -174,7 +174,7 @@ Release+PROFILE, Linux container, lavapipe under xvfb, `Perf.ImageDecode` p50 ms
 ### Known gaps
 - RGBA8 Paeth still ~1.02-1.08x ImageSharp.
 - R8/RG8 output still copies through the `rgba` scratch row (and `packed` for Adam7).
-- JPEG/GIF decoders still absent.
+- JPEG/GIF decoders: landed, see [[jpeg-gif-decoders]].
 - Numbers from a noisy CPU-rendered container; repeat on Windows.
 
 ## Update 2026-11-02 — RGBA8 unfilter stores straight to the destination

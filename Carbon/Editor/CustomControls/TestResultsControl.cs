@@ -158,7 +158,7 @@ namespace Carbon.Editor.CustomControls
             if (_textures.TryGetValue(path, out image)) return true;
             if (!File.Exists(path) || TextureAsset.Table.Count >= TextureAsset.MaxTextures) return false;
 
-            ArctisAurora.Core.Imaging.ImageFiles.TryIdentify(File.ReadAllBytes(path), out int width, out int height);
+            ArctisAurora.Core.Imaging.ImageFiles.TryIdentify(path, out int width, out int height);
             TextureAsset texture = new TextureAsset();
             texture.LoadFile(path, Silk.NET.Vulkan.Format.R8G8B8A8Unorm);
             image = (texture, width, height);

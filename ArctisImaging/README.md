@@ -6,9 +6,17 @@ native buffer, or a mapped GPU staging buffer — with no intermediate image obj
 - Managed code only, no native dependencies: runs wherever .NET runs (Windows, Linux, macOS, iOS, Android),
   trimming- and AOT-compatible.
 - Every header is checked against `ImageLimits` before anything is allocated.
-- Decoders: PNG (all colour types and bit depths, interlaced), BMP / DIB (1–32 bit, bit fields).
-  Identification only: JPEG, GIF.
-- Encoder: PNG.
+- Decoders: PNG (all colour types and bit depths, interlaced), BMP / DIB (1–32 bit, bit fields, RLE4/RLE8),
+  JPEG (baseline, progressive, grey, RGB/YCbCr, CMYK/YCCK; lossless 2-16 bit; no arithmetic coding),
+  JPEG-LS, GIF (first frame),
+  TGA, TIFF (8/16-bit, 1/2/4-bit grey and palette, CMYK, planar, none/LZW/Deflate/PackBits/JPEG),
+  WebP (lossless, lossy, first frame of animated), ICO / CUR, PNM / PAM (PBM, PGM, PPM), QOI,
+  farbfeld, PCX, XBM, XPM.
+- Encoders: PNG, JPEG, BMP / DIB, TGA, ICO / CUR, PNM / PAM, QOI. BMP, TGA, PNM and QOI take a settings
+  struct (`BmpSettings`, `TgaSettings`, `PnmSettings`, `QoiSettings`) exposing every variant of the format;
+  ICO / CUR take `IconEntry` values. Indexed output uses exact palettes only (more colours than the palette
+  holds throws).
+- A variant a decoder refuses throws `NotSupportedException`.
 - PNG image data is inflated by Arctis's own decoder; zlib is not on the decode path.
 
 ## Decode into your own memory

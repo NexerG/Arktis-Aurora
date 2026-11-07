@@ -17,4 +17,8 @@
   <ItemGroup>
     <ProjectReference Include="..\ArctisImaging\ArctisImaging.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

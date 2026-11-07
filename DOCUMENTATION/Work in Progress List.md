@@ -173,7 +173,7 @@ This file holds **open work**. A landed entry moves to [[Changelog]]; one that s
 	- [ ] **stage 4 follow-up: "Graph" in Vault.menu's New submenu and the row context menus** — only File > New and the folder menu have it → `link-graph`
 	- [ ] **stage 5: server vaults** — design only until a server exists → `link-graph-plan`
 	- [ ] **stage 1 follow-up: unexplained failure** — `VaultLock.Create` makes a second id → `link-graph`
-- [ ] **Release build fails on the SixLabors.ImageSharp 4.1.3 licence check (2026-10-26)** — `ValidateLicenseTask` passes only configurations named `Debug*` and the repo has no sixlabors.lic / SixLaborsLicenseKey; blocks Release+PROFILE builds and Release shipping; measured with a `DebugPerf` configuration (Optimize, TRACE;PROFILE) → `engine-profiling`
+- [ ] **Release build: check the SixLabors licence blocker is gone (2026-10-26)** — ImageSharp was removed 2026-11-06, which should clear the `ValidateLicenseTask` failure; no Release build has been run yet → `engine-profiling`, `other-raster-formats`
 - [ ] **Thorium productivity suite (user, 2026-10-02)** — Thorium houses notes, sheets and a todo board
 	- [ ] **sheets** → `ClaudeMemory/Context/sheets-plan.md`
 		- [ ] **S2a formulas NOT GUI-verified (2026-10-03)** — typing `=…`, F2 on a formula, recalc on edit/undo, values on copy; test-verified only → `sheets`
@@ -262,11 +262,28 @@ This file holds **open work**. A landed entry moves to [[Changelog]]; one that s
 - [ ] **byte-exact zlib port (2026-11-05)** — `Deflater` is close to zlib, not byte-identical (own Huffman lengths, not `trees.c`); the user says it may be needed later → png-deflate
 - [ ] **`MathConstants.Read` zeroes TeX params on rebake (2026-11-06)** — `Sub1`, `Sub2`, `Sup1-3`, `SubDrop`, `SupDrop`, `BigOpSpacing1/3/5` for latinmodern-math; the committed `.math.axml` was restored by hand → distance-field-format
 - [ ] **AuroraEditor does not boot (2026-11-06)** — `times.ttf` import skipped (`unknown charset 'Latex,Latin'`), preload then wants a `times` atlas; pre-existing → distance-field-format
-- [ ] **`TextureLoader` direct upload of stored KTX2 mips (2026-11-05)** — today KTX2 decodes level 0 like PNG → ktx2-container
+- [ ] **KTX2 from another tool (toktx) loaded in the engine; level-drop path for files over the device limit untested (2026-11-06)** → ktx2-container
 - [ ] **KTX2 Zstd / BasisLZ supercompression (2026-11-05)** — Zstd needs a decoder or package; Basis needs a native C++ transcoder (new dependency, flag first) → ktx2-container
 - [ ] **fuse R8/RG8 output into `PngDecoder.Expand` (2026-11-01)** — still copies through the `rgba` scratch row (and `packed` for Adam7) → png-decode-fast-paths
-- [ ] **Arctis JPEG decoder (2026-11-01)** — `ImageFiles` still falls back to ImageSharp → png-decode-fast-paths
-- [ ] **Arctis GIF decoder (2026-11-01)** — `ImageFiles` still falls back to ImageSharp → png-decode-fast-paths
+- [ ] **JPEG slower than target on small progressive files (2026-11-06)** — q90 now meets it (0.69-0.70 after per-scan refill); small progressive bricks is 0.78-0.80x ImageSharp after `RefineAc` bitmask stepping (-2 to -3%), target ≤0.7; refinement scan's remaining cost not located; IDCT variants exhausted → jpeg-gif-decoders
+- [ ] **JPEG encode speed unmeasured, scalar only (2026-11-06)** — no SIMD FDCT/colour/downsample, no target; `_Build/test.sh` and Perf suite not run since the swap → jpeg-encoder
+- [ ] **Arithmetic-coded JPEG (SOF9/SOF10) unsupported (2026-11-06)** — user's call; files that ImageSharp decoded now fail to load; no test file producible without a tool download → jpeg-gif-decoders
+- [ ] **GUI-verify pasting .jpg/.gif (2026-11-06)** — copied files into a Thorium note → jpeg-gif-decoders
+- [ ] **GUI-verify pasting .tga/.tif/.webp (2026-11-06)** — copied files into a Thorium note; tiled TIFF and predictor 2 from a real tool → other-raster-formats
+- [ ] **GUI-verify pasting a CMYK .jpg, a 16-bit or JPEG .tif and an RLE .bmp (2026-11-06)** — into a Thorium note; also tiled JPEG TIFF and real YCCK from a real tool → other-raster-formats, jpeg-gif-decoders
+- [ ] **WebP lossy decode unoptimised: 1.2–1.3× ImageSharp (2026-11-06)** — scalar, no SIMD; 1024² q90 p50 31–33 ms vs 25–26 ms, worst frame allocates 4.7 MB; no target set → webp-lossy
+- [ ] **WebP multi-partition streams untested (2026-11-06)** — libwebp 1.6 cannot encode them; needs an older libwebp → webp-lossy
+- [ ] **animated WebP/GIF: first frame only, no frames API (2026-11-06)** — timings, disposal and blending are one shared design → webp-lossy
+- [ ] **unencumbered image format roadmap (2026-11-06)** — Arctis.Imaging to cover most patent/copyright-free formats; excluded HEIC/HEIF; doubtful AVIF, JPEG 2000, JBIG2 → other-raster-formats
+	- [ ] **larger formats** — APNG, animated GIF frames, JPEG XL (WebP lossy landed 2026-11-06, lossless JPEG and JPEG-LS 2026-11-07, both unoptimised)
+	- [ ] **GUI-verify pasting the 2026-11-07 formats** — ICO/CUR, PNM/PAM, QOI, farbfeld, PCX, XBM, XPM, lossless JPEG, .jls into a Thorium note → ico-simple-rasters, lossless-jpeg
+	- [ ] **XPM named colours unsupported** — throws `NotSupportedException`; embedding the X11 rgb.txt table (~750 entries) was rejected → ico-simple-rasters
+	- [ ] **JPEG-LS restart intervals, point transform, mapping tables unsupported** — no reference encoder here produces them → lossless-jpeg
+	- [ ] **BMP/TGA/PNM/QOI/ICO encoders unoptimised (2026-11-07)** — raw TGA, binary PNM, 24-bit BMP are 3-70x ImageSharp's time (per-pixel conversion, no bulk rows) → simple-raster-encoders
+	- [ ] **palette quantizer for indexed formats (2026-11-07)** — encoders take exact palettes only; Wu/median-cut with optional dithering, to come with GIF encoding → simple-raster-encoders
+	- [ ] **GPU formats** — DDS plus BC1-BC7, ETC2/EAC, ASTC inside DDS and KTX2
+	- [ ] **HDR formats** — Radiance .hdr, OpenEXR (RLE/ZIP/PIZ/PXR24/B44/DWA), half/float layouts
+	- [ ] **layered** — PSD/PSB read, composite first
 - [ ] **re-measure AggressiveOptimization removal on boot, on Windows (2026-11-01)** — `Preload`/`PreloadAssets` zones via `--profile`; Linux numbers were noisy → png-decode-fast-paths
 ---
 # PHASE B — ECS rework + renderer/settings foundation (~Jul–Sep 2026)

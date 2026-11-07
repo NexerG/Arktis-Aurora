@@ -322,8 +322,5 @@
 		<Budget Zone="Planner.Save" P95="8" Max="8" AllocKB="4093"/>
 	</Test>
 	<Test Action="Perf.ImageDecode.Atlases.Arctis" Timeout="60000"/>
-	<Test Action="Perf.ImageDecode.Atlases.ImageSharp" Timeout="60000"/>
 	<Test Action="Perf.ImageDecode.Atlases.Adf" Timeout="60000"/>
-	<Test Action="Perf.ImageDecode.Formats.Arctis" Timeout="180000"/>
-	<Test Action="Perf.ImageDecode.Formats.ImageSharp" Timeout="180000"/>
 </TestSuite>

@@ -30,15 +30,26 @@ namespace Arctis.Imaging
             return checked(pitch * (header.Height - 1) + tight);
         }
 
-        /// <summary>Recognises a file by its leading bytes and reads its header.</summary>
-        public static bool TryIdentify(ReadOnlySpan<byte> data, out ImageHeader header)
+        /// <summary>Recognises a file by its leading bytes and reads its header; a format with no signature is tried
+        /// only when it is the hint, such as one taken from the file's extension.</summary>
+        public static bool TryIdentify(ReadOnlySpan<byte> data, out ImageHeader header, ImageFormat hint = ImageFormat.Unknown)
         {
             if (PngDecoder.TryReadHeader(data, out header)) return true;
             if (BmpDecoder.TryReadFileHeader(data, out header)) return true;
             if (Ktx2.TryReadHeader(data, out header)) return true;
             if (DistanceField.TryReadHeader(data, out header)) return true;
-            if (TryReadJpegHeader(data, out header)) return true;
-            if (TryReadGifHeader(data, out header)) return true;
+            if (JpegDecoder.TryReadHeader(data, out header)) return true;
+            if (GifDecoder.TryReadHeader(data, out header)) return true;
+            if (TiffDecoder.TryReadHeader(data, out header)) return true;
+            if (WebpDecoder.TryReadHeader(data, out header)) return true;
+            if (QoiDecoder.TryReadHeader(data, out header)) return true;
+            if (FarbfeldDecoder.TryReadHeader(data, out header)) return true;
+            if (XpmDecoder.TryReadHeader(data, out header)) return true;
+            if (IcoDecoder.TryReadHeader(data, out header)) return true;
+            if (PnmDecoder.TryReadHeader(data, out header)) return true;
+            if (hint == ImageFormat.Tga && TgaDecoder.TryReadHeader(data, out header)) return true;
+            if (hint == ImageFormat.Pcx && PcxDecoder.TryReadHeader(data, out header)) return true;
+            if (hint == ImageFormat.Xbm && XbmDecoder.TryReadHeader(data, out header)) return true;
             header = default;
             return false;
         }
@@ -49,9 +60,9 @@ namespace Arctis.Imaging
         /// <summary>Decodes an image into the destination in the options' layout and pitch.</summary>
         /// <exception cref="ImageFormatException">The file is malformed or exceeds the limits.</exception>
         /// <exception cref="NotSupportedException">The format is recognised but has no decoder.</exception>
-        public static ImageHeader Decode(ReadOnlySpan<byte> source, Span<byte> destination, in DecodeOptions options)
+        public static ImageHeader Decode(ReadOnlySpan<byte> source, Span<byte> destination, in DecodeOptions options, ImageFormat hint = ImageFormat.Unknown)
         {
-            if (!TryIdentify(source, out ImageHeader header)) throw new ImageFormatException("unrecognised image format");
+            if (!TryIdentify(source, out ImageHeader header, hint)) throw new ImageFormatException("unrecognised image format");
             Prepare(header, destination, options);
             switch (header.Format)
             {
@@ -62,6 +73,19 @@ namespace Arctis.Imaging
                     Ktx2.DecodeLevel(source, info, scheme, 0, destination, RowPitchOf(header.Width, options), options.Layout);
                     break;
                 case ImageFormat.Adf: DistanceField.Decode(source, destination, RowPitchOf(header.Width, options), options.Layout); break;
+                case ImageFormat.Tga: TgaDecoder.Decode(source, destination, RowPitchOf(header.Width, options), options.Layout); break;
+                case ImageFormat.Tiff: TiffDecoder.Decode(source, destination, RowPitchOf(header.Width, options), options.Layout); break;
+                case ImageFormat.Webp: WebpDecoder.Decode(source, destination, RowPitchOf(header.Width, options), options.Layout); break;
+                case ImageFormat.Jpeg: JpegDecoder.Decode(source, destination, RowPitchOf(header.Width, options), options.Layout); break;
+                case ImageFormat.Gif: GifDecoder.Decode(source, destination, RowPitchOf(header.Width, options), options.Layout); break;
+                case ImageFormat.JpegLs: JpegLsDecoder.Decode(source, destination, RowPitchOf(header.Width, options), options.Layout); break;
+                case ImageFormat.Ico: IcoDecoder.Decode(source, destination, RowPitchOf(header.Width, options), options.Layout); break;
+                case ImageFormat.Pnm: PnmDecoder.Decode(source, destination, RowPitchOf(header.Width, options), options.Layout); break;
+                case ImageFormat.Qoi: QoiDecoder.Decode(source, destination, RowPitchOf(header.Width, options), options.Layout); break;
+                case ImageFormat.Farbfeld: FarbfeldDecoder.Decode(source, destination, RowPitchOf(header.Width, options), options.Layout); break;
+                case ImageFormat.Pcx: PcxDecoder.Decode(source, destination, RowPitchOf(header.Width, options), options.Layout); break;
+                case ImageFormat.Xbm: XbmDecoder.Decode(source, destination, RowPitchOf(header.Width, options), options.Layout); break;
+                case ImageFormat.Xpm: XpmDecoder.Decode(source, destination, RowPitchOf(header.Width, options), options.Layout); break;
                 default: throw new NotSupportedException($"{header.Format} decoding is not available");
             }
             return header;
@@ -87,6 +111,17 @@ namespace Arctis.Imaging
             if (rowPitch < tight || pixels.Length < (long)rowPitch * (height - 1) + tight) throw new ArgumentException("pixel span is smaller than the image");
             deflate.Check();
             PngEncoder.Encode(pixels, width, height, rowPitch, layout, output, deflate);
+        }
+
+        /// <summary>Writes pixels as a baseline JPEG: R8 and RG8 as grey, RGBA8 and BGRA8 as YCbCr; alpha is dropped.</summary>
+        public static void EncodeJpeg(ReadOnlySpan<byte> pixels, int width, int height, int rowPitch, PixelLayout layout, Stream output, in JpegSettings settings = default)
+        {
+            if (width <= 0 || height <= 0 || width > 65535 || height > 65535) throw new ArgumentException($"invalid image size {width}x{height}");
+            int tight = width * BytesPerPixel(layout);
+            if (rowPitch == 0) rowPitch = tight;
+            if (rowPitch < tight || pixels.Length < (long)rowPitch * (height - 1) + tight) throw new ArgumentException("pixel span is smaller than the image");
+            settings.Check();
+            JpegEncoder.Encode(pixels, width, height, rowPitch, layout, output, settings);
         }
 
         /// <summary>Writes an RGBA8 distance-field atlas as ADF: R, G and B within ±1, alpha rebuilt as their median on decode.</summary>
@@ -142,62 +177,100 @@ namespace Arctis.Imaging
             Ktx2.Encode(levels, srgb, compress, output, deflate);
         }
 
+        /// <summary>Writes pixels as a BMP file in any header, pixel format and compression the settings name.</summary>
+        /// <exception cref="ArgumentException">The settings contradict each other, or an indexed format has fewer palette
+        /// entries than the image has colours.</exception>
+        public static void EncodeBmp(ReadOnlySpan<byte> pixels, int width, int height, int rowPitch, PixelLayout layout, Stream output, in BmpSettings settings = default)
+        {
+            CheckPixels(pixels, width, height, ref rowPitch, layout);
+            BmpSettings resolved = settings.Resolve(layout);
+            resolved.Check();
+            BmpEncoder.Encode(pixels, width, height, rowPitch, layout, output, resolved, true);
+        }
+
+        /// <summary>Writes pixels as a device-independent bitmap without a file header, as the clipboard holds it.</summary>
+        /// <exception cref="ArgumentException">The settings contradict each other, or an indexed format has fewer palette
+        /// entries than the image has colours.</exception>
+        public static void EncodeDib(ReadOnlySpan<byte> pixels, int width, int height, int rowPitch, PixelLayout layout, Stream output, in BmpSettings settings = default)
+        {
+            CheckPixels(pixels, width, height, ref rowPitch, layout);
+            BmpSettings resolved = settings.Resolve(layout);
+            resolved.Check();
+            BmpEncoder.Encode(pixels, width, height, rowPitch, layout, output, resolved, false);
+        }
+
+        /// <summary>Writes pixels as a TGA file in the pixel format, compression and origin the settings name.</summary>
+        /// <exception cref="ArgumentException">An indexed format meets more than 256 colours.</exception>
+        public static void EncodeTga(ReadOnlySpan<byte> pixels, int width, int height, int rowPitch, PixelLayout layout, Stream output, in TgaSettings settings = default)
+        {
+            CheckPixels(pixels, width, height, ref rowPitch, layout);
+            if (width > 65535 || height > 65535) throw new ArgumentException($"a TGA holds at most 65535 pixels a side, not {width}x{height}");
+            settings.Check();
+            TgaEncoder.Encode(pixels, width, height, rowPitch, layout, output, settings);
+        }
+
+        /// <summary>Writes pixels as a Netpbm file: PBM, PGM, PPM or PAM, raw or plain, at any maxval.</summary>
+        public static void EncodePnm(ReadOnlySpan<byte> pixels, int width, int height, int rowPitch, PixelLayout layout, Stream output, in PnmSettings settings = default)
+        {
+            CheckPixels(pixels, width, height, ref rowPitch, layout);
+            settings.Check();
+            PnmEncoder.Encode(pixels, width, height, rowPitch, layout, output, settings);
+        }
+
+        /// <summary>Writes pixels as a QOI file.</summary>
+        public static void EncodeQoi(ReadOnlySpan<byte> pixels, int width, int height, int rowPitch, PixelLayout layout, Stream output, in QoiSettings settings = default)
+        {
+            CheckPixels(pixels, width, height, ref rowPitch, layout);
+            settings.Check();
+            QoiEncoder.Encode(pixels, width, height, rowPitch, layout, output, settings);
+        }
+
+        /// <summary>Writes entries as a Windows icon, in the order given; PNG entries take the deflate settings.</summary>
+        public static void EncodeIco(ReadOnlySpan<IconEntry> entries, Stream output, in DeflateSettings deflate = default)
+        {
+            CheckEntries(entries, false);
+            deflate.Check();
+            IcoEncoder.Encode(entries, false, output, deflate);
+        }
+
+        /// <summary>Writes entries as a Windows cursor, each with its hotspot, in the order given.</summary>
+        public static void EncodeCur(ReadOnlySpan<IconEntry> entries, Stream output, in DeflateSettings deflate = default)
+        {
+            CheckEntries(entries, true);
+            deflate.Check();
+            IcoEncoder.Encode(entries, true, output, deflate);
+        }
+
+        private static void CheckPixels(ReadOnlySpan<byte> pixels, int width, int height, ref int rowPitch, PixelLayout layout)
+        {
+            if (width <= 0 || height <= 0) throw new ArgumentException($"invalid image size {width}x{height}");
+            if (layout > PixelLayout.RG8) throw new ArgumentException($"unknown pixel layout {layout}");
+            int tight = width * BytesPerPixel(layout);
+            if (rowPitch == 0) rowPitch = tight;
+            if (rowPitch < tight || pixels.Length < (long)rowPitch * (height - 1) + tight) throw new ArgumentException("pixel span is smaller than the image");
+        }
+
+        private static void CheckEntries(ReadOnlySpan<IconEntry> entries, bool cursor)
+        {
+            if (entries.Length == 0 || entries.Length > 65535) throw new ArgumentException($"an icon holds 1-65535 entries, not {entries.Length}");
+            for (int i = 0; i < entries.Length; i++)
+            {
+                IconEntry e = entries[i];
+                if (e.Image == null) throw new ArgumentException($"entry {i} has no image");
+                if (e.Image.Width > 256 || e.Image.Height > 256) throw new ArgumentException($"entry {i} is {e.Image.Width}x{e.Image.Height}; an icon entry is at most 256x256");
+                if (e.Encoding > IconEncoding.Bmp) throw new ArgumentException($"entry {i} has unknown encoding {e.Encoding}");
+                BmpPixelFormat f = e.BmpFormat;
+                if (f != BmpPixelFormat.Auto && (e.Encoding == IconEncoding.Png || f == BmpPixelFormat.Rgb565 || f == BmpPixelFormat.Argb1555 || f == BmpPixelFormat.Argb4444 || f > BmpPixelFormat.Argb32))
+                    throw new ArgumentException($"entry {i}: {f} is not an icon BMP format; use Indexed1/4/8, Rgb555, Rgb24, Xrgb32 or Argb32 with BMP encoding");
+                if (cursor ? e.HotspotX < 0 || e.HotspotY < 0 || e.HotspotX >= e.Image.Width || e.HotspotY >= e.Image.Height : e.HotspotX != 0 || e.HotspotY != 0)
+                    throw new ArgumentException(cursor ? $"entry {i}'s hotspot {e.HotspotX},{e.HotspotY} is outside its {e.Image.Width}x{e.Image.Height} image" : $"entry {i} has a hotspot; only cursors take one");
+            }
+        }
+
         private static void Prepare(in ImageHeader header, Span<byte> destination, in DecodeOptions options)
         {
             int needed = RequiredBytes(header, options);
             if (destination.Length < needed) throw new ArgumentException($"destination holds {destination.Length} bytes; the image needs {needed}");
         }
-
-        #region header probes
-        private static bool TryReadJpegHeader(ReadOnlySpan<byte> data, out ImageHeader header)
-        {
-            header = default;
-            if (data.Length < 4 || data[0] != 0xFF || data[1] != 0xD8) return false;
-            int i = 2;
-            while (i + 4 <= data.Length)
-            {
-                if (data[i] != 0xFF) return false;
-                byte marker = data[i + 1];
-                if (marker == 0xFF)
-                {
-                    i++;
-                    continue;
-                }
-                if (marker == 0x01 || (marker >= 0xD0 && marker <= 0xD7))
-                {
-                    i += 2;
-                    continue;
-                }
-                if (marker == 0xD9 || marker == 0xDA) return false;
-                int length = BinaryPrimitives.ReadUInt16BigEndian(data.Slice(i + 2));
-                if (length < 2) return false;
-                bool isFrame = marker >= 0xC0 && marker <= 0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC;
-                if (isFrame)
-                {
-                    if (i + 10 > data.Length) return false;
-                    int precision = data[i + 4];
-                    int height = BinaryPrimitives.ReadUInt16BigEndian(data.Slice(i + 5));
-                    int width = BinaryPrimitives.ReadUInt16BigEndian(data.Slice(i + 7));
-                    int components = data[i + 9];
-                    header = new ImageHeader(ImageFormat.Jpeg, width, height, components, precision, false);
-                    return true;
-                }
-                i += 2 + length;
-            }
-            return false;
-        }
-
-        private static bool TryReadGifHeader(ReadOnlySpan<byte> data, out ImageHeader header)
-        {
-            header = default;
-            if (data.Length < 10 || data[0] != (byte)'G' || data[1] != (byte)'I' || data[2] != (byte)'F' || data[3] != (byte)'8'
-                || (data[4] != (byte)'7' && data[4] != (byte)'9') || data[5] != (byte)'a')
-                return false;
-            int width = BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(6));
-            int height = BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(8));
-            header = new ImageHeader(ImageFormat.Gif, width, height, 4, 8, true);
-            return true;
-        }
-        #endregion
     }
 }

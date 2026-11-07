@@ -16,7 +16,8 @@ namespace ArctisAurora.Core.Filing
         private const uint hDrop = 15;
         private const uint dibV5 = 17;
 
-        private static readonly string[] imageExtensions = { ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp", ".tga", ".tif", ".tiff" };
+        private static readonly string[] imageExtensions = { ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp", ".tga", ".tif", ".tiff", ".ico", ".cur",
+            ".pbm", ".pgm", ".ppm", ".pnm", ".pam", ".qoi", ".ff", ".pcx", ".xbm", ".xpm", ".jls" };
 
         public static bool TryGet([NotNullWhen(true)] out Arctis.Imaging.Image? image)
         {

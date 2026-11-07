@@ -1,4 +1,6 @@
+using Arctis.Imaging;
 using ArctisAurora.Core.Registry;
+using ArctisAurora.Core.Registry.Assets;
 using ArctisAurora.Core.Testing;
 using ArctisAurora.Core.UI;
 using ArctisAurora.Core.UI.Containers;
@@ -113,6 +115,44 @@ namespace ArctisAurora.Tests
 
             yield return t.Golden("Full", full);
             yield return t.Golden("Quarter", quarter);
+        }
+
+        [A_XSDActionDependency("Visual.Ktx2StoredMips", "Test")]
+        private static IEnumerator<int> Ktx2StoredMips(TestContext t)
+        {
+            // fixture: a 64x64 chain, level 0 transparent on its left half, every smaller level opaque
+            string path = Path.Combine(Path.GetTempPath(), "Aurora.Visual.Ktx2StoredMips.ktx2");
+            Image[] levels = new Image[7];
+            for (int i = 0, size = 64; i < levels.Length; i++, size >>= 1)
+            {
+                Image level = new Image(size, size);
+                for (int y = 0; y < size; y++)
+                {
+                    Span<byte> row = level.Row(y);
+                    for (int x = 0; x < size; x++)
+                    {
+                        row[x * 4] = i == 0 ? (byte)255 : (byte)0;
+                        row[x * 4 + 1] = i == 0 ? (byte)0 : (byte)255;
+                        row[x * 4 + 2] = 0;
+                        row[x * 4 + 3] = i == 0 && x < size / 2 ? (byte)0 : (byte)255;
+                    }
+                }
+                levels[i] = level;
+            }
+            using (FileStream stream = File.Create(path))
+                ImageCodec.EncodeKtx2(levels, false, true, stream);
+
+            ImageControl picture = new ImageControl { source = path, preferredWidth = 16f, horizontalAlignment = HorizontalAlignment.Left, verticalAlignment = VerticalAlignment.Top };
+            t.Show(picture);
+            yield return 2;
+
+            TextureAsset? texture = TextureAsset.ForFile(path);
+            t.Check(texture != null && picture.sampler != null, "the KTX2 file loads as a texture");
+            t.Check(texture != null && texture.width == 64 && texture.height == 64, "the texture is level 0's 64x64");
+            (float left, float right)[]? rows = texture?.OpaqueRows();
+            t.Check(rows != null && rows.Length == 64 && rows[0].left == 0.5f && rows[0].right == 1f, "opaque rows come from level 0, opaque on its right half");
+            t.Show(new StackPanelControl());
+            File.Delete(path);
         }
     }
 }

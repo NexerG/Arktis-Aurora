@@ -95,7 +95,7 @@ namespace Arctis.Imaging.Tests
             Assert.Equal(200, header.Width);
             Assert.Equal(300, header.Height);
             Assert.Equal(24, header.BitsPerPixel);
-            Assert.Throws<NotSupportedException>(() => ImageCodec.Decode(jpeg, new byte[200 * 300 * 4], default));
+            Assert.Throws<ImageFormatException>(() => ImageCodec.Decode(jpeg, new byte[200 * 300 * 4], default));
         }
 
         [Fact]

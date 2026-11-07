@@ -30,14 +30,14 @@ namespace Arctis.Imaging
         /// <summary>One row of pixels.</summary>
         public Span<byte> Row(int y) => Pixels.AsSpan(y * RowPitch, RowPitch);
 
-        /// <summary>Decodes an image from its file bytes.</summary>
-        public static Image Load(ReadOnlySpan<byte> data, PixelLayout layout = PixelLayout.RGBA8, ImageLimits limits = default)
+        /// <summary>Decodes an image from its file bytes; the hint names a format that has no signature, such as TGA.</summary>
+        public static Image Load(ReadOnlySpan<byte> data, PixelLayout layout = PixelLayout.RGBA8, ImageLimits limits = default, ImageFormat hint = ImageFormat.Unknown)
         {
-            if (!ImageCodec.TryIdentify(data, out ImageHeader header)) throw new ImageFormatException("unrecognised image format");
+            if (!ImageCodec.TryIdentify(data, out ImageHeader header, hint)) throw new ImageFormatException("unrecognised image format");
             DecodeOptions options = new DecodeOptions(layout, 0, limits);
             options.Limits.Check(header.Width, header.Height);
             Image image = new Image(header.Width, header.Height, layout);
-            ImageCodec.Decode(data, image.Pixels, options);
+            ImageCodec.Decode(data, image.Pixels, options, hint);
             return image;
         }
 
@@ -91,6 +91,56 @@ namespace Arctis.Imaging
         {
             using FileStream file = File.Create(path);
             SavePng(file, deflate);
+        }
+
+        /// <summary>Writes the image as a JPEG.</summary>
+        public void SaveJpeg(Stream output, in JpegSettings settings = default) => ImageCodec.EncodeJpeg(Pixels, Width, Height, RowPitch, Layout, output, settings);
+
+        /// <summary>Writes the image as a JPEG file.</summary>
+        public void SaveJpeg(string path, in JpegSettings settings = default)
+        {
+            using FileStream file = File.Create(path);
+            SaveJpeg(file, settings);
+        }
+
+        /// <summary>Writes the image as a BMP.</summary>
+        public void SaveBmp(Stream output, in BmpSettings settings = default) => ImageCodec.EncodeBmp(Pixels, Width, Height, RowPitch, Layout, output, settings);
+
+        /// <summary>Writes the image as a BMP file.</summary>
+        public void SaveBmp(string path, in BmpSettings settings = default)
+        {
+            using FileStream file = File.Create(path);
+            SaveBmp(file, settings);
+        }
+
+        /// <summary>Writes the image as a TGA.</summary>
+        public void SaveTga(Stream output, in TgaSettings settings = default) => ImageCodec.EncodeTga(Pixels, Width, Height, RowPitch, Layout, output, settings);
+
+        /// <summary>Writes the image as a TGA file.</summary>
+        public void SaveTga(string path, in TgaSettings settings = default)
+        {
+            using FileStream file = File.Create(path);
+            SaveTga(file, settings);
+        }
+
+        /// <summary>Writes the image as a Netpbm file's bytes.</summary>
+        public void SavePnm(Stream output, in PnmSettings settings = default) => ImageCodec.EncodePnm(Pixels, Width, Height, RowPitch, Layout, output, settings);
+
+        /// <summary>Writes the image as a Netpbm file.</summary>
+        public void SavePnm(string path, in PnmSettings settings = default)
+        {
+            using FileStream file = File.Create(path);
+            SavePnm(file, settings);
+        }
+
+        /// <summary>Writes the image as a QOI.</summary>
+        public void SaveQoi(Stream output, in QoiSettings settings = default) => ImageCodec.EncodeQoi(Pixels, Width, Height, RowPitch, Layout, output, settings);
+
+        /// <summary>Writes the image as a QOI file.</summary>
+        public void SaveQoi(string path, in QoiSettings settings = default)
+        {
+            using FileStream file = File.Create(path);
+            SaveQoi(file, settings);
         }
 
         /// <summary>Writes an RGBA8 distance-field atlas as an ADF file.</summary>

@@ -4,6 +4,7 @@
 		  xsi:schemaLocation="http://arctisaurora/AuroraTestTypes ../../Schemas/TestTypeSchema.xsd" >
 	<Test Action="Visual.PanelAndLabel"/>
 	<Test Action="Visual.ImageScaled"/>
+	<Test Action="Visual.Ktx2StoredMips"/>
 	<Test Action="Visual.TabStrip"/>
 	<Test Action="Visual.Expander"/>
 </TestSuite>

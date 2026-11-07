@@ -884,7 +884,7 @@ namespace ArctisAurora.Core.UI.Tex
         {
             try
             {
-                return ImageFiles.TryIdentify(File.ReadAllBytes(path), out int width, out int height) ? (width, height) : (0, 0);
+                return ImageFiles.TryIdentify(path, out int width, out int height) ? (width, height) : (0, 0);
             }
             catch (Exception)
             {

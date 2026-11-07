@@ -5,11 +5,11 @@ using System.Numerics;
 
 namespace Arctis.Imaging
 {
-    // Windows bitmaps: core, info and V4/V5 headers; 1/4/8-bit palettes, 16/24/32-bit, plain or bit fields.
+    // Windows bitmaps: core, info and V4/V5 headers; 1/4/8-bit palettes, RLE4/RLE8, 16/24/32-bit, plain or bit fields.
     internal static class BmpDecoder
     {
         internal const int FileHeaderSize = 14;
-        private const uint Rgb = 0, BitFields = 3, AlphaBitFields = 6;
+        private const uint Rgb = 0, Rle8 = 1, Rle4 = 2, BitFields = 3, AlphaBitFields = 6;
 
         private struct Info
         {
@@ -38,20 +38,35 @@ namespace Arctis.Imaging
         }
 
         // Decodes pixel rows; pixelOffset is from the start of the DIB header, or -1 to follow the palette.
-        internal static void Decode(ReadOnlySpan<byte> dib, int pixelOffset, Span<byte> destination, int pitch, PixelLayout layout)
+        internal static void Decode(ReadOnlySpan<byte> dib, int pixelOffset, Span<byte> destination, int pitch, PixelLayout layout) =>
+            Decode(dib, pixelOffset, destination, pitch, layout, false);
+
+        // An icon entry's DIB: its header holds twice the height, and a 1-bit AND mask follows the colour rows.
+        internal static void DecodeIcon(ReadOnlySpan<byte> dib, Span<byte> destination, int pitch, PixelLayout layout) =>
+            Decode(dib, -1, destination, pitch, layout, true);
+
+        private static void Decode(ReadOnlySpan<byte> dib, int pixelOffset, Span<byte> destination, int pitch, PixelLayout layout, bool icon)
         {
             if (!TryReadInfo(dib, out Info info)) throw new ImageFormatException("bitmap header is invalid");
-            if (info.compression != Rgb && info.compression != BitFields && info.compression != AlphaBitFields)
+            if (icon)
+            {
+                info.height /= 2;
+                info.topDown = false;
+            }
+            bool rle = info.compression == Rle8 || info.compression == Rle4;
+            if (info.compression != Rgb && info.compression != BitFields && info.compression != AlphaBitFields && !rle)
                 throw new NotSupportedException($"bitmap compression {info.compression} is not supported");
-            if (info.compression != Rgb && info.bitCount != 16 && info.bitCount != 32)
+            if ((info.compression == BitFields || info.compression == AlphaBitFields) && info.bitCount != 16 && info.bitCount != 32)
                 throw new ImageFormatException("bitmap bit fields need 16 or 32 bits per pixel");
+            if (rle && info.bitCount != (info.compression == Rle8 ? 8 : 4))
+                throw new ImageFormatException($"bitmap RLE{(info.compression == Rle8 ? 8 : 4)} needs {(info.compression == Rle8 ? 8 : 4)} bits per pixel");
 
             int entrySize = info.headerSize == 12 ? 3 : 4;
             int paletteStart = info.headerSize + info.masksAfterHeader;
             if (pixelOffset < 0) pixelOffset = paletteStart + info.paletteCount * entrySize;
             long stride = ((long)info.width * info.bitCount + 31) / 32 * 4;
             long rowBytes = ((long)info.width * info.bitCount + 7) / 8;
-            if (pixelOffset < paletteStart || pixelOffset + stride * (info.height - 1) + rowBytes > dib.Length)
+            if (pixelOffset < paletteStart || (rle ? pixelOffset > dib.Length : pixelOffset + stride * (info.height - 1) + rowBytes > dib.Length))
                 throw new ImageFormatException("bitmap pixel data runs past the end");
             if (paletteStart + (long)info.paletteCount * entrySize > dib.Length) throw new ImageFormatException("bitmap palette runs past the end");
 
@@ -61,6 +76,11 @@ namespace Arctis.Imaging
             {
                 ReadOnlySpan<byte> e = dib.Slice(paletteStart + i * entrySize);
                 palette[i] = e[2] | (uint)e[1] << 8 | (uint)e[0] << 16 | 0xFF000000u;
+            }
+            if (rle)
+            {
+                DecodeRle(dib.Slice(pixelOffset), info, palette, destination, pitch, layout);
+                return;
             }
 
             Field r = new Field(info.rMask), g = new Field(info.gMask), b = new Field(info.bMask), a = new Field(info.aMask);
@@ -115,9 +135,82 @@ namespace Arctis.Imaging
                 ArrayPool<byte>.Shared.Return(rgba);
             }
 
+            // an icon's AND mask gives the alpha unless its 32-bit colour rows carry alpha of their own
+            long maskStart = pixelOffset + stride * info.height, maskStride = ((long)info.width + 31) / 32 * 4;
+            if (icon && !(info.bitCount == 32 && anyAlpha) && maskStart + maskStride * info.height <= dib.Length)
+            {
+                for (int row = 0; row < info.height; row++)
+                    ApplyMask(dib.Slice((int)(maskStart + row * maskStride)), destination.Slice((info.height - 1 - row) * pitch), info.width, layout);
+                return;
+            }
+
             // a 32-bit bitmap whose alpha is all zero has no alpha, not a transparent picture
             if (info.bitCount == 32 && !anyAlpha)
                 for (int y = 0; y < info.height; y++) PixelRows.MakeOpaque(destination.Slice(y * pitch), info.width, layout);
+        }
+
+        // RLE8 or RLE4 runs, literal runs and escapes into a cleared frame, so pixels a delta or end of line skips stay
+        // transparent black; a stream cut short decodes what it holds.
+        private static void DecodeRle(ReadOnlySpan<byte> src, in Info info, uint[] palette, Span<byte> destination, int pitch, PixelLayout layout)
+        {
+            int width = info.width, height = info.height;
+            bool four = info.compression == Rle4;
+            byte[] frame = ArrayPool<byte>.Shared.Rent(checked(width * height * 4));
+            try
+            {
+                Span<byte> pixels = frame.AsSpan(0, width * height * 4);
+                pixels.Clear();
+                int i = 0, x = 0, row = 0;
+                while (i + 1 < src.Length && row < height)
+                {
+                    int n = src[i], v = src[i + 1];
+                    i += 2;
+                    if (n > 0)
+                    {
+                        for (int k = 0; k < n; k++, x++)
+                            if (x < width) BinaryPrimitives.WriteUInt32LittleEndian(pixels.Slice((row * width + x) * 4), palette[four ? (k & 1) == 0 ? v >> 4 : v & 15 : v]);
+                    }
+                    else if (v == 0)
+                    {
+                        x = 0;
+                        row++;
+                    }
+                    else if (v == 1) break;
+                    else if (v == 2)
+                    {
+                        if (i + 1 >= src.Length) break;
+                        x += src[i];
+                        row += src[i + 1];
+                        i += 2;
+                    }
+                    else
+                    {
+                        int bytes = four ? (v + 1) / 2 : v;
+                        if (i + bytes > src.Length) throw new ImageFormatException("bitmap RLE literal runs past the end");
+                        for (int k = 0; k < v; k++, x++)
+                        {
+                            int index = four ? (k & 1) == 0 ? src[i + k / 2] >> 4 : src[i + k / 2] & 15 : src[i + k];
+                            if (x < width) BinaryPrimitives.WriteUInt32LittleEndian(pixels.Slice((row * width + x) * 4), palette[index]);
+                        }
+                        i += (bytes + 1) & ~1;
+                    }
+                }
+                for (int y = 0; y < height; y++)
+                    PixelRows.FromRgba(pixels.Slice(y * width * 4), destination.Slice((info.topDown ? y : height - 1 - y) * pitch), width, layout);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(frame);
+            }
+        }
+
+        // Alpha from one mask row: a set bit is transparent.
+        private static void ApplyMask(ReadOnlySpan<byte> mask, Span<byte> row, int width, PixelLayout layout)
+        {
+            int at = layout == PixelLayout.RG8 ? 1 : 3, size = layout == PixelLayout.RG8 ? 2 : 4;
+            if (layout == PixelLayout.R8) return;
+            for (int x = 0; x < width; x++)
+                row[x * size + at] = (mask[x >> 3] & (0x80 >> (x & 7))) != 0 ? (byte)0 : (byte)255;
         }
 
         private static bool TryReadInfo(ReadOnlySpan<byte> dib, out Info info)
@@ -131,6 +224,7 @@ namespace Arctis.Imaging
                 info.width = BinaryPrimitives.ReadUInt16LittleEndian(dib.Slice(4));
                 info.height = BinaryPrimitives.ReadUInt16LittleEndian(dib.Slice(6));
                 info.bitCount = BinaryPrimitives.ReadUInt16LittleEndian(dib.Slice(10));
+                if (info.bitCount <= 8) info.paletteCount = 1 << info.bitCount;
             }
             else if (headerSize >= 40 && headerSize <= dib.Length)
             {

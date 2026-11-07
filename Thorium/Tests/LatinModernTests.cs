@@ -688,8 +688,7 @@ namespace Thorium.Tests
                     px[3] = (byte)(x < 20 ? 255 : 0);
                 }
             picture.SavePng(Path.Combine(folder, "pic.png"));
-            using (SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32> jpeg = SixLabors.ImageSharp.Image.LoadPixelData<SixLabors.ImageSharp.PixelFormats.Rgba32>(picture.Pixels, 40, 20))
-                SixLabors.ImageSharp.ImageExtensions.SaveAsJpeg(jpeg, Path.Combine(folder, "photo.jpg"));
+            picture.SaveJpeg(Path.Combine(folder, "photo.jpg"));
             string path = Path.Combine(folder, "doc.tex");
             File.WriteAllText(path, "\\documentclass{article}\n\\begin{document}\n\\section{Export}\nHello world, a fine figure.\\label{here}\n\n" +
                                     "\\begin{figure}[h]\\centering\\includegraphics{pic}\\includegraphics{photo}\\caption{Two}\\end{figure}\n\n" +
