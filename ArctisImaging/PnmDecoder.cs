@@ -27,6 +27,7 @@ namespace Arctis.Imaging
             bool bits = info.kind == 1 || info.kind == 4, plain = info.kind <= 3, wide = maxval > 255;
             long rowBytes = bits ? (width + 7) / 8 : (long)width * depth * (wide ? 2 : 1);
             if (!plain && info.rasterStart + rowBytes * info.height > data.Length) throw new ImageFormatException("Netpbm raster runs past the end");
+            if (!plain && !bits && maxval == 255 && DecodeDirect(data, in info, destination, pitch, layout)) return;
 
             byte[] rgba = ArrayPool<byte>.Shared.Rent(width * 4);
             Span<byte> scale = stackalloc byte[256];
@@ -73,6 +74,31 @@ namespace Arctis.Imaging
             {
                 ArrayPool<byte>.Shared.Return(rgba);
             }
+        }
+
+        // Binary maxval-255 rows straight from the raster into the layout; false leaves the image to the general path.
+        private static bool DecodeDirect(ReadOnlySpan<byte> data, in Info info, Span<byte> destination, int pitch, PixelLayout layout)
+        {
+            int width = info.width, depth = info.depth, rowBytes = width * depth;
+            bool bgra = layout == PixelLayout.BGRA8, wide = bgra || layout == PixelLayout.RGBA8;
+            if (depth == 2 || (depth >= 3 && !wide)) return false;
+            for (int y = 0; y < info.height; y++)
+            {
+                ReadOnlySpan<byte> src = data.Slice(info.rasterStart + y * rowBytes);
+                Span<byte> row = destination.Slice(y * pitch);
+                if (depth == 3) PixelRows.FromRgb(src, row, width, bgra);
+                else if (depth == 4 && bgra) ImageOps.CopySwizzled(src.Slice(0, rowBytes), row);
+                else if (depth == 4) src.Slice(0, rowBytes).CopyTo(row);
+                else if (wide) PixelRows.FromGrey(src, row, width);
+                else if (layout == PixelLayout.R8) src.Slice(0, width).CopyTo(row);
+                else
+                    for (int x = 0; x < width; x++)
+                    {
+                        row[x * 2] = src[x];
+                        row[x * 2 + 1] = 255;
+                    }
+            }
+            return true;
         }
 
         private static bool TryReadInfo(ReadOnlySpan<byte> data, out Info info)

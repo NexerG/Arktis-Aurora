@@ -83,6 +83,58 @@ namespace Arctis.Imaging.Tests
             Assert.False(ImageCodec.TryIdentify(Text("P8 1 1 255\n", 0), out _));
         }
 
+        [Theory]
+        [InlineData("PpmRgb.ppm", PixelLayout.BGRA8)]
+        [InlineData("PgmGrey.pgm", PixelLayout.BGRA8)]
+        [InlineData("PgmGrey.pgm", PixelLayout.R8)]
+        [InlineData("PgmGrey.pgm", PixelLayout.RG8)]
+        public void RawDecodesIntoEveryLayout(string file, PixelLayout layout)
+        {
+            byte[] rgba = Image.Load(Fixture(Path.ChangeExtension(file, ".png"))).Pixels;
+            Assert.Equal(FromRgba(rgba, layout), Image.Load(Fixture(file), layout).Pixels);
+        }
+
+        [Theory]
+        [InlineData("P6 37 3 255\n", 3, PixelLayout.RGBA8)]
+        [InlineData("P6 37 3 255\n", 3, PixelLayout.BGRA8)]
+        [InlineData("P5 37 3 255\n", 1, PixelLayout.RGBA8)]
+        [InlineData("P5 37 3 255\n", 1, PixelLayout.R8)]
+        [InlineData("P7\nWIDTH 37\nHEIGHT 3\nDEPTH 4\nMAXVAL 255\nTUPLTYPE RGB_ALPHA\nENDHDR\n", 4, PixelLayout.BGRA8)]
+        public void OddWidthRowsDecodeExactly(string header, int depth, PixelLayout layout)
+        {
+            byte[] raster = new byte[37 * 3 * depth];
+            for (int i = 0; i < raster.Length; i++) raster[i] = (byte)(i * 7 + 3);
+            byte[] rgba = new byte[37 * 3 * 4];
+            for (int p = 0; p < 37 * 3; p++)
+                for (int k = 0; k < 4; k++)
+                    rgba[p * 4 + k] = k == 3 && depth < 4 ? (byte)255 : raster[p * depth + (depth == 1 ? 0 : k)];
+            Assert.Equal(FromRgba(rgba, layout), Image.Load(Text(header, raster), layout).Pixels);
+        }
+
+        // RGBA8 pixels in another layout, for images whose colour channels are equal when the layout is grey.
+        private static byte[] FromRgba(byte[] rgba, PixelLayout layout)
+        {
+            int n = rgba.Length / 4, bpp = layout == PixelLayout.R8 ? 1 : layout == PixelLayout.RG8 ? 2 : 4;
+            byte[] pixels = new byte[n * bpp];
+            for (int p = 0; p < n; p++)
+            {
+                if (bpp == 4)
+                {
+                    bool swap = layout == PixelLayout.BGRA8;
+                    pixels[p * 4] = rgba[p * 4 + (swap ? 2 : 0)];
+                    pixels[p * 4 + 1] = rgba[p * 4 + 1];
+                    pixels[p * 4 + 2] = rgba[p * 4 + (swap ? 0 : 2)];
+                    pixels[p * 4 + 3] = rgba[p * 4 + 3];
+                }
+                else
+                {
+                    pixels[p * bpp] = rgba[p * 4];
+                    if (bpp == 2) pixels[p * 2 + 1] = rgba[p * 4 + 3];
+                }
+            }
+            return pixels;
+        }
+
         private static byte[] Encode(Image image, in PnmSettings settings)
         {
             MemoryStream output = new MemoryStream();

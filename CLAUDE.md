@@ -96,6 +96,9 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
   that will now break. No caveats means no caveats section - don't invent one.
 - **Architecture is terse by default too.** Full reasoning when asked "why", when asked for options,
   or in plan mode. Don't volunteer the deep dive.
+- **Performance numbers go in a table, never in prose or bullets.** One row per case; columns for
+  before, after and change, plus a reference column (CharLS, ImageSharp…) when there is one; units in
+  the header; a range when runs spread, not the best run.
 
 ## 6. Mid-Implementation Changes
 

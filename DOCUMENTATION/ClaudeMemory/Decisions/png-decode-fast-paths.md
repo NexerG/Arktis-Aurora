@@ -134,6 +134,7 @@ All private, in `Arctis.Imaging.PngDecoder`; no public API change.
 	- `Decode` rents `lines` as `(2 * block + 1) * (rowBytes + 1)` (was `block + 1`).
 - `Expand(raw, rgba, width, c, palette)` -> `Expand(raw, output, width, step, c, palette, bgra)`: writes RGBA8 or BGRA8 directly, pixel x at `x * step * 4`.
 	- RGBA8/BGRA8 output writes straight into the destination row (Adam7: at the pass's final pixel positions via `step = dx`).
+	- Colour types 0 and 2, 8-bit, no tRNS key, `step == 1` call `PixelRows.FromGrey` / `FromRgb` (moved out of `Expand` 2026-11-07, shared with `PnmDecoder`); the interlaced scalar loops stay. See [[ico-simple-rasters]].
 	- R8/RG8 output still goes Expand -> `rgba` scratch -> `PixelRows.FromRgba` (Adam7: -> `packed` -> per-pixel scatter).
 	- Grey8 no-key, step 1: Vector128 shuffle widens 16 grey bytes to 64 output bytes. RGB8 no-key, step 1: shuffle 12 -> 16 bytes, OR alpha. RGBA16 step 1: 2 pixels per iteration, byte-swap shuffle, widen, `(v*255+32895)>>16` (same as `To8`), narrow. Other cases: pointer loops with depth/key tests outside the hot cases.
 	- New helpers `Store(byte*, uint)` (little-endian store) and `Big16(byte*)`.

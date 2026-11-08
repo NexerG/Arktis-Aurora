@@ -1,11 +1,13 @@
 ﻿_Build -> _Build/Program.cs
 Arctis.Imaging -> ArctisImaging/BmpDecoder.cs
+Arctis.Imaging -> ArctisImaging/BmpEncoder.cs
 Arctis.Imaging -> ArctisImaging/Crc32.cs
 Arctis.Imaging -> ArctisImaging/Deflater.cs
 Arctis.Imaging -> ArctisImaging/DistanceField.cs
 Arctis.Imaging -> ArctisImaging/FarbfeldDecoder.cs
 Arctis.Imaging -> ArctisImaging/GifDecoder.cs
 Arctis.Imaging -> ArctisImaging/IcoDecoder.cs
+Arctis.Imaging -> ArctisImaging/IcoEncoder.cs
 Arctis.Imaging -> ArctisImaging/Image.cs
 Arctis.Imaging -> ArctisImaging/ImageCodec.cs
 Arctis.Imaging -> ArctisImaging/ImageOps.cs
@@ -20,9 +22,12 @@ Arctis.Imaging -> ArctisImaging/PixelRows.cs
 Arctis.Imaging -> ArctisImaging/PngDecoder.cs
 Arctis.Imaging -> ArctisImaging/PngEncoder.cs
 Arctis.Imaging -> ArctisImaging/PnmDecoder.cs
+Arctis.Imaging -> ArctisImaging/PnmEncoder.cs
 Arctis.Imaging -> ArctisImaging/QoiDecoder.cs
+Arctis.Imaging -> ArctisImaging/QoiEncoder.cs
 Arctis.Imaging -> ArctisImaging/SrgbTable.cs
 Arctis.Imaging -> ArctisImaging/TgaDecoder.cs
+Arctis.Imaging -> ArctisImaging/TgaEncoder.cs
 Arctis.Imaging -> ArctisImaging/TiffDecoder.cs
 Arctis.Imaging -> ArctisImaging/Types.cs
 Arctis.Imaging -> ArctisImaging/Vp8Decoder.cs

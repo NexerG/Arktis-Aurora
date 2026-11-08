@@ -51,7 +51,7 @@ Scratch bench `Program.cs` (not committed), Release, Ryzen 9 9900X, synthetic 20
 - End to end the wide kernels barely show because entropy coding / inflate / deflate dominate.
 
 ## Verification
-- Test-verified: `ArctisImaging.Tests` 433/433 on net10.0 under each forced tier — default (512), `DOTNET_PreferredVectorBitWidth=256`, `DOTNET_EnableAVX2=0` (128), `DOTNET_EnableHWIntrinsic=0` (scalar). PreferredVectorBitWidth=256 and EnableAVX2=0 turn `Vector512.IsHardwareAccelerated` off; `DOTNET_EnableAVX512F=0` does not on .NET 10.
+- Test-verified: `ArctisImaging.Tests` 433/433 on net10.0 under each forced tier — default (512), `DOTNET_PreferredVectorBitWidth=256`, `DOTNET_EnableAVX2=0` (128), `DOTNET_EnableHWIntrinsic=0` (scalar). PreferredVectorBitWidth=256 and EnableAVX2=0 turn `Vector512.IsHardwareAccelerated` off; `DOTNET_EnableAVX512F=0` does not on .NET 10 (it is IGNORED there); `DOTNET_EnableAVX512=0` does drop to the 256 tier. Confirmed again with the XBM expand in [[ico-simple-rasters]].
 - 11 bench cases' outputs hashed, byte-identical to the pre-change baseline under all four tiers on net8.0 and net10.0. Builds clean Release net8.0 + net10.0, 0 warnings.
 - Tests cover widths 37 and 301 for every PNG colour type/depth, CRC at every length 0-616, progressive JPEG fixtures.
 - Not checked: ARM64, an AVX-512 CPU without VBMI or with only AVX2 hardware (simulated by env vars only), test suite on net8 (bench hashes only), `_Build/test.sh` engine suite.
