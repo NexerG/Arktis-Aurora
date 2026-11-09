@@ -124,6 +124,17 @@ namespace Arctis.Imaging
             JpegEncoder.Encode(pixels, width, height, rowPitch, layout, output, settings);
         }
 
+        /// <summary>Writes pixels as a lossless JPEG: R8 and RG8 as grey, RGBA8 and BGRA8 as RGB; alpha is dropped.</summary>
+        public static void EncodeLosslessJpeg(ReadOnlySpan<byte> pixels, int width, int height, int rowPitch, PixelLayout layout, Stream output, in JpegLosslessSettings settings = default)
+        {
+            if (width <= 0 || height <= 0 || width > 65535 || height > 65535) throw new ArgumentException($"invalid image size {width}x{height}");
+            int tight = width * BytesPerPixel(layout);
+            if (rowPitch == 0) rowPitch = tight;
+            if (rowPitch < tight || pixels.Length < (long)rowPitch * (height - 1) + tight) throw new ArgumentException("pixel span is smaller than the image");
+            settings.Check();
+            JpegEncoder.EncodeLossless(pixels, width, height, rowPitch, layout, output, settings);
+        }
+
         /// <summary>Writes an RGBA8 distance-field atlas as ADF: R, G and B within ±1, alpha rebuilt as their median on decode.</summary>
         /// <exception cref="ArgumentException">A pixel's alpha is not the median of its R, G and B.</exception>
         public static void EncodeAdf(ReadOnlySpan<byte> rgba, int width, int height, int rowPitch, Stream output)

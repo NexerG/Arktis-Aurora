@@ -3,8 +3,9 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.Buffers.Text;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Text;
+using System.Text.Unicode;
 
 namespace Arctis.Imaging
 {
@@ -43,7 +44,7 @@ namespace Arctis.Imaging
                 : width * depth * sampleBytes;
             byte[] rgba = ArrayPool<byte>.Shared.Rent(width * 4);
             byte[] samples = ArrayPool<byte>.Shared.Rent(width * 4 * 2);
-            byte[] line = ArrayPool<byte>.Shared.Rent(rowBytes);
+            byte[] line = ArrayPool<byte>.Shared.Rent(rowBytes + 8);
             bool colour = layout == PixelLayout.RGBA8 || layout == PixelLayout.BGRA8;
             bool direct = !plain && maxval == 255 && (kind switch
             {
@@ -52,10 +53,20 @@ namespace Arctis.Imaging
                 PnmKind.Pam => tuple == PamTupleType.RgbAlpha && layout == PixelLayout.RGBA8,
                 _ => false
             });
+            bool text = plain && (kind == PnmKind.Ppm ? colour : kind == PnmKind.Pgm);
+            ulong[] tokens = text ? ArrayPool<ulong>.Shared.Rent(256) : Array.Empty<ulong>();
+            if (text)
+                for (int v = 0; v < 256; v++) tokens[v] = Token(scale[v]);
             try
             {
                 for (int y = 0; y < height; y++)
                 {
+                    if (text)
+                    {
+                        WriteDirect(pixels.Slice(y * pitch), samples, width, layout, kind);
+                        output.Write(line, 0, WriteTokens(samples.AsSpan(0, width * depth), tokens, line));
+                        continue;
+                    }
                     if (direct)
                     {
                         WriteDirect(pixels.Slice(y * pitch), line, width, layout, kind);
@@ -113,10 +124,11 @@ namespace Arctis.Imaging
                 ArrayPool<byte>.Shared.Return(rgba);
                 ArrayPool<byte>.Shared.Return(samples);
                 ArrayPool<byte>.Shared.Return(line);
+                if (text) ArrayPool<ulong>.Shared.Return(tokens);
             }
         }
 
-        // One raw maxval-255 row converted straight from the source.
+        // One row of 8-bit samples converted straight from the source.
         private static void WriteDirect(ReadOnlySpan<byte> src, Span<byte> line, int width, PixelLayout layout, PnmKind kind)
         {
             switch (kind)
@@ -142,7 +154,8 @@ namespace Arctis.Imaging
 
         private static void WriteHeader(Stream output, PnmKind kind, PamTupleType tuple, bool plain, int width, int height, int depth, int maxval)
         {
-            StringBuilder text = new StringBuilder(96);
+            Span<byte> text = stackalloc byte[128];
+            int written;
             if (kind == PnmKind.Pam)
             {
                 string type = tuple switch
@@ -154,16 +167,61 @@ namespace Arctis.Imaging
                     PamTupleType.Rgb => "RGB",
                     _ => "RGB_ALPHA"
                 };
-                text.Append("P7\nWIDTH ").Append(width).Append("\nHEIGHT ").Append(height).Append("\nDEPTH ").Append(depth)
-                    .Append("\nMAXVAL ").Append(maxval).Append("\nTUPLTYPE ").Append(type).Append("\nENDHDR\n");
+                Utf8.TryWrite(text, $"P7\nWIDTH {width}\nHEIGHT {height}\nDEPTH {depth}\nMAXVAL {maxval}\nTUPLTYPE {type}\nENDHDR\n", out written);
             }
             else
             {
                 int magic = kind == PnmKind.Pbm ? 1 : kind == PnmKind.Pgm ? 2 : 3;
-                text.Append('P').Append(plain ? magic : magic + 3).Append('\n').Append(width).Append(' ').Append(height).Append('\n');
-                if (kind != PnmKind.Pbm) text.Append(maxval).Append('\n');
+                if (!plain) magic += 3;
+                if (kind == PnmKind.Pbm) Utf8.TryWrite(text, $"P{magic}\n{width} {height}\n", out written);
+                else Utf8.TryWrite(text, $"P{magic}\n{width} {height}\n{maxval}\n", out written);
             }
-            output.Write(Encoding.ASCII.GetBytes(text.ToString()));
+            output.Write(text.Slice(0, written));
+        }
+
+        // A sample's ASCII digits in the low bytes, first digit lowest, and their count in the top byte.
+        private static ulong Token(int sample)
+        {
+            ulong token = 0;
+            int count = 0;
+            do
+            {
+                token = token << 8 | (byte)('0' + sample % 10);
+                sample /= 10;
+                count++;
+            }
+            while (sample > 0);
+            return token | (ulong)count << 56;
+        }
+
+        // One row of 8-bit values as ASCII through the token table, wrapped the same way as WritePlain.
+        private static int WriteTokens(ReadOnlySpan<byte> values, ulong[] tokens, byte[] line)
+        {
+            ref byte dst = ref MemoryMarshal.GetArrayDataReference(line);
+            int at = 0, column = 0;
+            for (int i = 0; i < values.Length; i++)
+            {
+                ulong token = tokens[values[i]];
+                int digits = (int)(token >> 56);
+                if (column > 0)
+                {
+                    if (column + 1 + digits > PlainLine)
+                    {
+                        Unsafe.Add(ref dst, at++) = (byte)'\n';
+                        column = 0;
+                    }
+                    else
+                    {
+                        Unsafe.Add(ref dst, at++) = (byte)' ';
+                        column++;
+                    }
+                }
+                Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, at), token);
+                at += digits;
+                column += digits;
+            }
+            Unsafe.Add(ref dst, at++) = (byte)'\n';
+            return at;
         }
 
         // One row of samples as ASCII, wrapped before 70 columns: bits without separators, numbers with spaces.

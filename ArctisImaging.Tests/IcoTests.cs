@@ -48,6 +48,13 @@ namespace Arctis.Imaging.Tests
                 {
                     uint c = colour(x, y);
                     if (bitCount == 32) BinaryPrimitives.WriteUInt32LittleEndian(dib.AsSpan(pixels + r * stride + x * 4), c);
+                    else if (bitCount == 24)
+                    {
+                        int at = pixels + r * stride + x * 3;
+                        dib[at] = (byte)c;
+                        dib[at + 1] = (byte)(c >> 8);
+                        dib[at + 2] = (byte)(c >> 16);
+                    }
                     else dib[pixels + r * stride + (x * bitCount >> 3)] |= (byte)(c << (8 - bitCount - (x * bitCount & 7)));
                     if (masked(x, y)) dib[mask + r * maskStride + (x >> 3)] |= (byte)(0x80 >> (x & 7));
                 }
@@ -101,6 +108,31 @@ namespace Arctis.Imaging.Tests
             byte[] dib = IconDib(2, 1, 32, Array.Empty<uint>(), (x, y) => 0x00102030u, (x, y) => x == 1);
             Image image = Image.Load(Icon(1, dib, dib.Length));
             Assert.Equal(new byte[] { 0x10, 0x20, 0x30, 255, 0x10, 0x20, 0x30, 0 }, image.Pixels);
+        }
+
+        // 17 wide: the first mask byte is clear, the second alternates, the third has one bit.
+        [Theory]
+        [InlineData(PixelLayout.RGBA8)]
+        [InlineData(PixelLayout.RG8)]
+        public void TwentyFourBitEntryTakesAlphaFromTheMask(PixelLayout layout)
+        {
+            Func<int, int, bool> masked = (x, y) => x >= 8 && (x & 1) == y || x == 16;
+            Func<int, int, uint> colour = (x, y) => (uint)(x * 0x0A0B0C + y * 0x010203);
+            byte[] dib = IconDib(17, 2, 24, Array.Empty<uint>(), colour, masked);
+            byte[] file = Icon(1, dib, dib.Length);
+            Assert.True(ImageCodec.TryIdentify(file, out ImageHeader header));
+            DecodeOptions options = new DecodeOptions(layout);
+            byte[] pixels = new byte[ImageCodec.RequiredBytes(header, options)];
+            ImageCodec.Decode(file, pixels, options);
+            int size = layout == PixelLayout.RG8 ? 2 : 4;
+            for (int y = 0; y < 2; y++)
+                for (int x = 0; x < 17; x++)
+                {
+                    int at = (y * 17 + x) * size;
+                    uint c = colour(x, y);
+                    Assert.Equal(masked(x, y) ? 0 : 255, pixels[at + size - 1]);
+                    if (layout == PixelLayout.RGBA8) Assert.Equal(new byte[] { (byte)(c >> 16), (byte)(c >> 8), (byte)c }, pixels.AsSpan(at, 3).ToArray());
+                }
         }
 
         [Fact]

@@ -8,7 +8,7 @@ namespace Arctis.Imaging
 {
     // Baseline JPEG (T.81) written the way libjpeg-turbo writes it: its YCbCr formulas, downsampling and edge padding,
     // islow forward DCT, the Annex K quantisers scaled by quality, standard or two-pass optimal Huffman tables.
-    internal static class JpegEncoder
+    internal static partial class JpegEncoder
     {
         private const int ConstBits = 13, Pass1Bits = 2;
 

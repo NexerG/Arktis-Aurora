@@ -1,6 +1,8 @@
 using System;
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace Arctis.Imaging
 {
@@ -9,6 +11,8 @@ namespace Arctis.Imaging
     {
         private const int HeaderSize = 18;
         private const int Mapped = 1, TrueColour = 2, Grey = 3, RunLength = 8;
+
+        private enum Direct { None, Bgra32, Bgr24, Rgb555, Grey8, GreyAlpha16, Mapped8 }
 
         private struct Info
         {
@@ -27,6 +31,7 @@ namespace Arctis.Imaging
         }
 
         // Decodes every row, flipping to top-down and left-to-right.
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         internal static void Decode(ReadOnlySpan<byte> data, Span<byte> destination, int pitch, PixelLayout layout)
         {
             if (!TryReadInfo(data, out Info info)) throw new ImageFormatException("TGA header is invalid");
@@ -37,6 +42,9 @@ namespace Arctis.Imaging
 
             bool alpha = info.alphaBits > 0;
             uint[] palette = (info.imageType & 7) == Mapped ? ReadPalette(data, info, alpha) : Array.Empty<uint>();
+            Direct direct = DirectFor(info, layout, alpha);
+            Span<uint> table = direct == Direct.Mapped8 ? stackalloc uint[256] : default;
+            if (direct == Direct.Mapped8) BuildTable(palette, info, alpha, layout == PixelLayout.BGRA8, table);
             byte[] raw = ArrayPool<byte>.Shared.Rent(rowBytes);
             byte[] rgba = ArrayPool<byte>.Shared.Rent(info.width * 4);
             bool anyAlpha = false;
@@ -53,9 +61,16 @@ namespace Arctis.Imaging
                         src = raw;
                     }
                     else src = data.Slice(info.pixelStart + row * rowBytes, rowBytes);
-                    ConvertRow(src, rgba.AsSpan(0, info.width * 4), info, palette, alpha, ref anyAlpha);
                     int y = info.topDown ? row : info.height - 1 - row;
-                    PixelRows.FromRgba(rgba, destination.Slice(y * pitch), info.width, layout);
+                    Span<byte> dst = destination.Slice(y * pitch);
+                    if (direct == Direct.None)
+                    {
+                        ConvertRow(src, rgba.AsSpan(0, info.width * 4), info, palette, alpha, ref anyAlpha);
+                        PixelRows.FromRgba(rgba, dst, info.width, layout);
+                        continue;
+                    }
+                    DecodeRow(direct, src, dst, info.width, layout, alpha, table);
+                    if (alpha && !anyAlpha) anyAlpha = HasAlpha(direct, src, dst, info.width);
                 }
             }
             finally
@@ -70,10 +85,78 @@ namespace Arctis.Imaging
                 for (int y = 0; y < info.height; y++) PixelRows.MakeOpaque(destination.Slice(y * pitch), info.width, layout);
         }
 
+        // The row kernel that decodes this file into this layout, or None for the per-pixel path.
+        private static Direct DirectFor(in Info info, PixelLayout layout, bool alpha)
+        {
+            if (info.rightToLeft) return Direct.None;
+            switch (info.imageType & 7)
+            {
+                case TrueColour:
+                    if (info.depth == 32) return Direct.Bgra32;
+                    if (info.depth == 24) return Direct.Bgr24;
+                    return info.depth == 15 || !alpha ? Direct.Rgb555 : Direct.None;
+                case Grey:
+                    if (info.depth == 8) return layout == PixelLayout.RG8 ? Direct.None : Direct.Grey8;
+                    return layout == PixelLayout.RG8 && alpha ? Direct.GreyAlpha16 : Direct.None;
+                default:
+                    return info.depth == 8 && (layout == PixelLayout.RGBA8 || layout == PixelLayout.BGRA8) ? Direct.Mapped8 : Direct.None;
+            }
+        }
+
+        // The colour map indexed by stored byte, with the first-entry offset and the out-of-range colour folded in.
+        private static void BuildTable(uint[] palette, in Info info, bool alpha, bool bgra, Span<uint> table)
+        {
+            for (int i = 0; i < table.Length; i++)
+            {
+                int index = i - info.mapFirst;
+                uint c = (uint)index < (uint)info.mapLength ? palette[index] : alpha ? 0 : 0xFF000000u;
+                table[i] = bgra ? (c & 0xFF00FF00u) | (c >> 16 & 0xFF) | (c & 0xFF) << 16 : c;
+            }
+        }
+
+        // One stored left-to-right row straight into the destination layout.
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private static void DecodeRow(Direct direct, ReadOnlySpan<byte> src, Span<byte> dst, int width, PixelLayout layout, bool alpha, ReadOnlySpan<uint> table)
+        {
+            switch (direct)
+            {
+                case Direct.Bgra32:
+                    PixelRows.Row32(src, dst, width, layout, !alpha);
+                    break;
+                case Direct.Bgr24:
+                    PixelRows.Row24(src, dst, width, layout);
+                    break;
+                case Direct.Rgb555:
+                    PixelRows.Row16(src, dst, width, layout, false);
+                    break;
+                case Direct.Grey8:
+                    if (layout == PixelLayout.R8) src.Slice(0, width).CopyTo(dst);
+                    else PixelRows.FromGrey(src, dst, width);
+                    break;
+                case Direct.GreyAlpha16:
+                    src.Slice(0, width * 2).CopyTo(dst);
+                    break;
+                default:
+                    PixelRows.LookupRow(src, table, width, dst);
+                    break;
+            }
+        }
+
+        // True when a row decoded by DecodeRow carries any alpha.
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private static bool HasAlpha(Direct direct, ReadOnlySpan<byte> src, ReadOnlySpan<byte> dst, int width) => direct switch
+        {
+            Direct.Bgra32 => PixelRows.HasAnyAlpha(src.Slice(0, width * 4), 0xFF000000u),
+            Direct.GreyAlpha16 => PixelRows.HasAnyAlpha(src.Slice(0, width * 2), 0xFF00FF00u) || (width & 1) != 0 && src[width * 2 - 1] != 0,
+            Direct.Mapped8 => PixelRows.HasAnyAlpha(dst.Slice(0, width * 4), 0xFF000000u),
+            _ => true
+        };
+
         // Fills one row of stored pixels from packets, which may run on across rows.
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static void ReadRunLengthRow(ReadOnlySpan<byte> data, Span<byte> raw, int bpp, ref int pos, ref int left, ref bool run, ref int runAt)
         {
-            for (int at = 0; at < raw.Length; at += bpp)
+            for (int at = 0; at < raw.Length;)
             {
                 if (left == 0)
                 {
@@ -87,11 +170,33 @@ namespace Arctis.Imaging
                         pos += bpp;
                     }
                 }
-                int from = run ? runAt : pos;
-                if (from + bpp > data.Length) throw new ImageFormatException("TGA run-length data ends early");
-                for (int b = 0; b < bpp; b++) raw[at + b] = data[from + b];
-                if (!run) pos += bpp;
-                left--;
+                int count = Math.Min(left, (raw.Length - at) / bpp), bytes = count * bpp;
+                if (run)
+                {
+                    if (runAt + bpp > data.Length) throw new ImageFormatException("TGA run-length data ends early");
+                    Repeat(data.Slice(runAt, bpp), raw.Slice(at, bytes));
+                }
+                else
+                {
+                    if (pos + bytes > data.Length) throw new ImageFormatException("TGA run-length data ends early");
+                    data.Slice(pos, bytes).CopyTo(raw.Slice(at));
+                    pos += bytes;
+                }
+                at += bytes;
+                left -= count;
+            }
+        }
+
+        // Fills span with copies of one stored pixel.
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private static void Repeat(ReadOnlySpan<byte> pixel, Span<byte> span)
+        {
+            if (pixel.Length == 4) MemoryMarshal.Cast<byte, uint>(span).Fill(MemoryMarshal.Read<uint>(pixel));
+            else if (pixel.Length == 1) span.Fill(pixel[0]);
+            else
+            {
+                pixel.CopyTo(span);
+                for (int filled = pixel.Length; filled < span.Length; filled *= 2) span.Slice(0, Math.Min(filled, span.Length - filled)).CopyTo(span.Slice(filled));
             }
         }
 

@@ -60,7 +60,18 @@ The copy-like formats were 3-70x ImageSharp because they converted per pixel (TG
 - `TgaEncoder.WriteDirect` (private): raw, non-indexed, left-to-right rows (origin BottomLeft or TopLeft). Argb32 from BGRA8 copies, from RGBA8 `ImageOps.CopySwizzled`; Rgb24 from RGBA8/BGRA8 `ToBgr`; Grey8 from R8 copies, from RGBA8/BGRA8 a luma loop; GreyAlpha16 from RG8 copies. RLE, indexed, 16-bit and right-to-left origins keep the old path.
 - `PnmEncoder.WriteDirect` (private): binary output at maxval 255. P6 from RGBA8/BGRA8 `ToRgb`; P5 from R8 copies, from RG8 takes every other byte, from colour a luma loop; PAM RGB_ALPHA from RGBA8 copies. Plain, other maxvals, PBM and other PAM tuple types keep the old path.
 - `BmpEncoder.Write`: non-icon, non-indexed 24/32-bit rows from RGBA8/BGRA8 are written straight from the source. 24-bit `ToBgr` then only the row padding is cleared; 32-bit copy (BGRA8) or `CopySwizzled` (RGBA8), Xrgb32 still zeroes the alpha byte. The `ToRgba` pass and the whole-row `Clear` are skipped.
-- Left untouched on purpose: QOI (0.66-0.85), TGA RLE (0.71-1.08), BMP 16-bit (0.36-0.68). Also untouched: ICO, BMP RLE and indexed, and the PNM header's StringBuilder (about 370 B once per encode).
+- TGA RLE encode fast path (2026-11-09): private `TgaEncoder.RleRow(src, Span<uint> values, layout)` returns `ReadOnlySpan<uint>`. Argb32/Rgb24 from RGBA8/BGRA8 and Grey8 from R8 build the compare row in one pass: BGRA8 is read in place via `MemoryMarshal.Cast`, RGBA8 through `ImageOps.CopySwizzled`, R8 widened. Rgb24 keeps the alpha byte in the value and `WriteRunLength` compares only the low bpp bytes (mask). `WriteRunLength` and `WriteRaw` work on refs and throw `ArgumentException` when `line` is too short; `Put(uint v, int bpp, ref byte d, int at)` (was `Span<byte> line`) stores 4/2/1 bytes unaligned. 4-byte raw packets are block copies; 3-byte pixels are 4-byte unaligned stores advancing 3, so `line` is rented `width * (bpp + 1) + 1` (was `width * (bpp + 1)`) for every TGA encode. Other formats/layouts and right-to-left keep the per-pixel switch. Output bytes unchanged (see the equality check in [[other-raster-formats]] "TGA decode fast paths"). Ratio = Arctis / ImageSharp 3.1.11, same process, one reused MemoryStream, median of 6 after 40 warm-up, two passes averaged, 3 processes before and after:
+
+| Encode case | Before ratio | After ratio | ImageSharp ms |
+|---|---|---|---|
+| Photo 32-bit RLE | 0.59-0.68 | 0.17-0.18 | 11.4 |
+| Photo 24-bit RLE | 0.32-0.34 | 0.11-0.13 | 19.2-20.1 |
+| Atlas 32-bit RLE | 1.02-1.23 | 0.43-0.48 | 78.7-80.7 |
+| Atlas 24-bit RLE | 0.63-0.68 | 0.27-0.30 | 123.6-128.2 |
+| Atlas 32-bit raw (code unchanged) | 0.71-0.74 | 0.72-0.74 | 6.4-7.4 |
+
+  Absolute atlas 32-bit RLE: 82.5-99.1 ms before, 34.2-38.0 ms after. The planned Vector512/256/128 scans for run ends were NOT added: the checkpoint (RLE atlas <= 0.7x ImageSharp) was already met.
+- Left untouched on purpose: QOI (0.66-0.85), BMP 16-bit (0.36-0.68). (TGA RLE was listed here until 2026-11-09.) Also untouched: ICO, BMP RLE and indexed. (The PNM header's StringBuilder was replaced 2026-11-08, see "Plain PNM token path".)
 - `PixelRows.Pack24` carries AggressiveOptimization (user, 2026-11-07), like `ImageOps.CopySwizzled`: an exception to rule 42a beyond decode loops, because an encode also runs once per image. Without it the bench's first case that calls `Pack24` (BMP 24-bit, photo set) ran entirely in tier-0 at 8.25-9.86x ImageSharp (1.32x with `DOTNET_TieredCompilation=0`); with it, 0.80-0.82x. Cost accepted: no tier-1 PGO recompile for `Pack24`.
 
 **SIMD kernels and block reads (second round, 2026-11-07).**
@@ -87,7 +98,7 @@ Scratch console bench, not a test: Release, net10.0, Windows, same process; sour
 | TGA 8-bit grey | 0.34-0.47 | 0.47-0.48 |
 | PPM binary | 0.49-0.54 | 0.74-0.78 |
 | PGM binary | 0.36-0.38 | 0.79-0.80 |
-| PPM plain | 1.63-1.67 | 1.27-1.28 |
+| PPM plain (before the token path; now 0.29-0.31 / 0.33-0.37, see "Plain PNM token path") | 1.63-1.67 | 1.27-1.28 |
 | QOI 4-channel (identical bytes) | 0.82-0.84 | 0.66-0.67 |
 | QOI 3-channel | 0.80-0.85 | 0.75-0.80 |
 
@@ -95,7 +106,30 @@ Scratch console bench, not a test: Release, net10.0, Windows, same process; sour
 - Absolute, second round, run 1, atlas, ms (Arctis vs ImageSharp): BMP 24 4.45 vs 9.78; TGA 24 4.44 vs 9.03; TGA 32 5.45 vs 7.76; PPM 3.94 vs 5.34.
 - Retracted: the earlier "1.3-1.5x on the copy-like cases, unprofiled" (written 2026-11-07 after the first round); the ratios above supersede it.
 - TGA RLE output size (before the fast paths, bytes unchanged since): 8 198 563 vs 8 443 449 B (photo), 41 952 830 vs 46 208 473 B (atlas, 9.2 % smaller).
-- Allocation per encode (first bench): Arctis 3-20 B (BMP/TGA/QOI), 369-388 B (PNM, header StringBuilder); ImageSharp 99-324 B.
+- Allocation per encode (first bench): Arctis 3-20 B (BMP/TGA/QOI), 369-388 B (PNM, header StringBuilder; since 2026-11-08 PNM is 3-20 B too); ImageSharp 99-324 B.
+
+**Plain PNM token path (2026-11-08).**
+- `PnmEncoder.Encode`: new local `text` = `plain && (kind == Ppm ? colour layout (RGBA8/BGRA8) : kind == Pgm)`, any maxval. Rows go through the existing private `WriteDirect` into the rented `samples` buffer (8-bit samples before scaling), then the new writer. `line` is rented with 8 bytes of slack.
+- `PnmEncoder.Token(int sample)` (private) -> `ulong`: the sample's ASCII digits in the low bytes (first digit in byte 0), digit count in the top byte.
+- `PnmEncoder.WriteTokens(ReadOnlySpan<byte> values, ulong[] tokens, byte[] line)` (private) -> bytes written: per value one table lookup, the `WritePlain` wrap rule (newline when column + 1 + digits > 70, else a space), one unaligned 8-byte store.
+- Token table: `ulong[256]` rented from `ArrayPool<ulong>` once per encode (2 KB, over aurora-code rule 4's 1 KB stackalloc limit); entry v = Token(scale[v]), scale = `(v*maxval+127)/255`.
+- `PnmEncoder.WriteHeader`: StringBuilder + `Encoding.ASCII.GetBytes` replaced by `stackalloc byte[128]` and `Utf8.TryWrite` with an interpolated string. `WritePlain` unchanged; still serves plain PBM and plain PPM from R8/RG8. No public API change, no data XML.
+- **Every sample comes from an 8-bit source, so there are only 256 distinct samples per encode at any maxval; each is formatted once into a table keyed by the pre-scale byte.** Old path per sample: `ToRgba` row, per-pixel scale into a ushort row, `Utf8Formatter.TryFormat` plus a digit-count branch chain. Keying the table by the scaled value was rejected: at maxval > 255 it needs 65536 entries.
+- `WriteDirect` reused for the row conversion: it already yields exactly the 8-bit pre-scale values for PPM (`PixelRows.ToRgb`) and PGM (copy / every other byte / luma).
+- No AggressiveOptimization on the new methods (rule 42a; tiered JIT measured fine).
+- Binary P6 left alone (user choice, 2026-11-08). Atlas set to `Stream.Null` 2.6-3.2 ms vs to the MemoryStream 4.0-5.9 ms, so about 40 % of binary time is the copy into the stream. Rejected: special-casing `MemoryStream` via `TryGetBuffer` to write rows into its buffer; it would flatter the bench and do nothing for file saves.
+- Bench (scratch console, Release net10.0, Windows, ImageSharp 3.1.11, same photo and atlas sets, median of 6 passes, 3 processes each side alternating), ms for the whole set:
+
+| Case | before | after | ImageSharp | ratio before | ratio after |
+|---|---|---|---|---|---|
+| PPM plain, photo | 23.4-26.8 | 5.58-5.86 | 18.7-19.6 | 1.19-1.41 | 0.29-0.31 |
+| PPM plain, atlas | 342-356 | 92.8-100.9 | 271-291 | 1.20-1.30 | 0.33-0.37 |
+| PPM binary, photo (code unchanged) | 0.17-0.20 | 0.15-0.26 | 0.44-0.53 | 0.38-0.46 | 0.28-0.51 |
+| PPM binary, atlas (code unchanged) | 4.78-5.66 | 3.99-5.06 | 6.46-7.70 | 0.72-0.78 | 0.62-0.66 |
+
+- Binary's code path did not change except the header; its shift is run-to-run noise, not a win. Allocation per encode: 369-388 B before, 3-20 B after (ImageSharp 171-284 B).
+- Verified: `dotnet test ArctisImaging.Tests` (net10.0) 459 passed; Release net8.0 + net10.0 clean, 0 warnings; scratch byte-equality vs HEAD ee5c6cf, 28 980 encode cases identical (every PnmKind incl. Auto, plain and raw, maxvals 1/2/100/255/256/1000/65535, RGBA8/BGRA8/R8/RG8, widths 1-101 plus 23/1408/3001, padded pitches, random and patterned pixels, exceptions compared too). Not checked: net8.0 test run, ARM, `_Build/test.sh`.
+- Gaps: plain PBM and plain PPM from R8/RG8 still on `WritePlain`, unmeasured; binary at maxval != 255 and PAM tuple types other than RGB_ALPHA from RGBA8 still per-pixel.
 
 **ImageSharp 3.1.11 has no ICO/CUR support at all.**
 No Formats.Icon namespace; ICO arrives in ImageSharp 4.x (cached locally as 4.1.3, with the licence change). ICO was not benchmarked. This retracts the earlier claim that ImageSharp 3.1 had ICO/CUR encoders ([[ico-simple-rasters]]).
@@ -111,10 +145,11 @@ test-verified (unit). `dotnet test ArctisImaging.Tests` (net10.0): 433 passed.
 
 ## Known gaps
 - Xrgb32 icon entries (32-bit, alpha byte 0) rely on the AND mask, as Windows and our decoder do; Pillow reads the zero alpha byte and shows them fully transparent.
-- Still over 0.7 (user's target is <= 0.7 for every case): TGA 32 raw (photo up to 0.87, atlas 0.70-0.73), TGA RLE atlas 1.06-1.08, PPM binary atlas 0.74-0.78, PGM atlas 0.79-0.80, PPM plain 1.27-1.67, QOI 0.75-0.85.
-- PPM's remaining cost is the copy into the stream itself, about 0.7 of 3.5 ms in scratch, unavoidable through the Stream API.
+- Still over 0.7 (user's target is <= 0.7 for every case): TGA 32 raw (photo up to 0.87, atlas 0.72-0.74 after 2026-11-09; memory-bound copy/swizzle + Write, left out on purpose), PPM binary atlas 0.62-0.78 (last measured 0.62-0.66 on 2026-11-08, code unchanged, noise), PGM atlas 0.79-0.80, QOI 0.75-0.85. PPM plain is no longer over (0.29-0.37).
+- PPM binary's remaining cost is the copy into the stream itself, about 40 % of its time (atlas to `Stream.Null` 2.6-3.2 ms vs MemoryStream 4.0-5.9 ms), unavoidable through the Stream API.
 - **Open, NOT decided: TGA default origin.** The user earlier picked changing the default to TopLeft; enum reorder vs a new `TgaOrigin.Auto` is unanswered. With block reads BottomLeft TGA 32 is already 0.70-0.73 on the atlases, so the change may no longer be needed. The default is still BottomLeft.
 - Vector512 slightly slower than Vector256 here, kept by user choice.
+- TGA RLE fast path still excludes 16-bit (Rgb555/Argb1555), indexed, Grey8 from colour layouts, GreyAlpha16 RLE and right-to-left origins (per-pixel).
 - Row fast paths cover only the pairs listed above. Other layout/format pairs (TGA Argb32 from R8, PAM RGB, PAM grey, BGRA8 PAM RGB_ALPHA) still use the per-pixel path.
 - Row fast paths verified by a scratch byte-equality check (9688 cases against HEAD's encoders, all identical) and 433 unit tests; not checked: net8.0 test run, ARM / non-SSSE3 hardware (the scalar tail is the only path there).
 - Second round (SIMD kernels, block reads): scratch equality vs HEAD 6d11197, 11072 cases (9488 encodes + rejections) identical. Coverage: RGBA8/BGRA8/R8/RG8, widths 1-101 plus 1408 and 3001 with heights 150-189 (several 256 KB blocks), padded pitches, every non-indexed TGA format x 4 origins, BMP Auto/Rgb24/Xrgb32/Argb32 x headers x top-down/bottom-up, PNM kinds x maxvals x tuple types. Kernel variants checked against scalar at widths 1-1408, both byte orders; the bench's ImageSharp round-trip decode reported no mismatches. 433 tests passed, ArctisImaging builds clean Release net8.0+net10.0, 0 warnings. Not checked: `_Build/test.sh`, net8.0 test run, ARM, a machine without VBMI, a machine without AVX-512.

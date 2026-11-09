@@ -29,7 +29,10 @@ namespace Arctis.Imaging
         // one pooled run: 9-bit symbol lookups (length << 8 | symbol) for DC tables 0-3 and AC tables 4-7, whole-coefficient
         // lookups for the AC tables (value << 16 | run << 8 | length), libjpeg's maxcode and valoffset, symbols, quantisers
         private const int SymbolFastAt = 0, AcFastAt = 8 << FastBits, MaxCodeAt = AcFastAt + (4 << WholeBits), OffsetAt = MaxCodeAt + 8 * 18;
-        private const int ValuesAt = OffsetAt + 8 * 17, QuantAt = ValuesAt + 8 * 256, TablesLength = QuantAt + 4 * 64;
+        private const int ValuesAt = OffsetAt + 8 * 17, QuantAt = ValuesAt + 8 * 256;
+
+        // then whole-difference lookups for the DC tables (value << 8 | length), which lossless scans decode through
+        private const int DcWholeAt = QuantAt + 4 * 64, TablesLength = DcWholeAt + (4 << WholeBits);
 
         // a sequential scan of at least this many blocks and bits per block refills unconditionally
         private const int DenseScanBlocks = 4096, DenseScanBits = 15;
@@ -291,6 +294,10 @@ namespace Arctis.Imaging
             // an AC code whose value bits also fit in the whole-coefficient lookup decodes in one step
             Span<int> whole = t < 4 ? default : tables.AsSpan(AcFastAt + ((t - 4) << WholeBits), 1 << WholeBits);
             whole.Clear();
+
+            // a DC code whose difference bits also fit decodes in one step; category 16 is 32768 with no bits
+            Span<int> difference = t < 4 ? tables.AsSpan(DcWholeAt + (t << WholeBits), 1 << WholeBits) : default;
+            difference.Clear();
             int code = 0, p = 0;
             for (int l = 1; l <= 16; l++)
             {
@@ -301,6 +308,18 @@ namespace Arctis.Imaging
                 {
                     int symbol = symbols[p];
                     if (l <= FastBits) fast.Slice(code << (FastBits - l), 1 << (FastBits - l)).Fill(l << 8 | symbol);
+                    if (difference.Length > 0)
+                    {
+                        int bitCount = symbol == 16 ? 0 : symbol;
+                        if (symbol > 16 || l + bitCount > WholeBits) continue;
+                        int spare = WholeBits - l - bitCount;
+                        for (int bits = 0; bits < 1 << bitCount; bits++)
+                        {
+                            int value = symbol == 16 ? 32768 : bitCount == 0 ? 0 : bits < 1 << (bitCount - 1) ? bits + (-1 << bitCount) + 1 : bits;
+                            difference.Slice(code << (WholeBits - l) | bits << spare, 1 << spare).Fill(value << 8 | (l + bitCount));
+                        }
+                        continue;
+                    }
                     int size = symbol & 15;
                     if (whole.Length == 0 || size == 0 || l + size > WholeBits) continue;
                     int free = WholeBits - l - size;
@@ -1499,11 +1518,96 @@ namespace Arctis.Imaging
         private static Vector256<short> Pair(short k0, short k1) => Vector256.Create((ushort)k0 | k1 << 16).AsInt16();
 
         // One row of RGBA8 from CMYK, YCCK turned to CMYK first; an Adobe file stores every ink inverted.
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static void ConvertCmykRow(ReadOnlySpan<byte> c0, ReadOnlySpan<byte> c1, ReadOnlySpan<byte> c2, ReadOnlySpan<byte> c3, Span<byte> target, int width, bool ycck, bool inverted)
         {
-            for (int x = 0; x < width; x++)
+            ref byte p0 = ref MemoryMarshal.GetReference(c0), p1 = ref MemoryMarshal.GetReference(c1), p2 = ref MemoryMarshal.GetReference(c2), p3 = ref MemoryMarshal.GetReference(c3);
+            ref byte t = ref MemoryMarshal.GetReference(target);
+            int x = 0;
+            if (Vector512.IsHardwareAccelerated && Avx512BW.IsSupported)
             {
-                int c = c0[x], m = c1[x], y = c2[x], k = c3[x];
+                // 32 pixels in 16-bit lanes, packed and stored like ConvertRow's
+                Vector512<short> bias = Vector512.Create((short)128), two = Vector512.Create((short)2), full = Vector512.Create((short)255);
+                Vector512<short> kr = Vector512.Create(Pair(26345, 16384), Pair(26345, 16384)), kg = Vector512.Create(Pair(-22554, 18734), Pair(-22554, 18734)), kb = Vector512.Create(Pair(-14942, 16384), Pair(-14942, 16384));
+                Vector512<int> half = Vector512.Create(32768);
+                Vector512<long> first = Vector512.Create(0L, 1, 8, 9, 2, 3, 10, 11), second = Vector512.Create(4L, 5, 12, 13, 6, 7, 14, 15);
+                for (; x + 32 <= width; x += 32)
+                {
+                    Vector512<short> c = Avx512BW.ConvertToVector512Int16(Vector256.LoadUnsafe(ref p0, (nuint)x));
+                    Vector512<short> m = Avx512BW.ConvertToVector512Int16(Vector256.LoadUnsafe(ref p1, (nuint)x));
+                    Vector512<short> y = Avx512BW.ConvertToVector512Int16(Vector256.LoadUnsafe(ref p2, (nuint)x));
+                    Vector512<short> k = Avx512BW.ConvertToVector512Int16(Vector256.LoadUnsafe(ref p3, (nuint)x));
+                    if (ycck)
+                    {
+                        Vector512<short> luma = c, cb = m - bias, cr = y - bias;
+                        c = full - Vector512.Min(Vector512.Max(luma + cr + Product(cr, two, kr, Vector512<int>.Zero), Vector512<short>.Zero), full);
+                        m = full - Vector512.Min(Vector512.Max(luma - cr + Product(cb, cr, kg, half), Vector512<short>.Zero), full);
+                        y = full - Vector512.Min(Vector512.Max(luma + cb + cb + Product(cb, two, kb, Vector512<int>.Zero), Vector512<short>.Zero), full);
+                    }
+                    if (!inverted)
+                    {
+                        c = full - c;
+                        m = full - m;
+                        y = full - y;
+                        k = full - k;
+                    }
+                    Vector512<short> r = Times(c.AsUInt16(), k.AsUInt16()).AsInt16(), g = Times(m.AsUInt16(), k.AsUInt16()).AsInt16(), b = Times(y.AsUInt16(), k.AsUInt16()).AsInt16();
+                    Vector512<byte> rb = Avx512BW.PackUnsignedSaturate(r, b), ga = Avx512BW.PackUnsignedSaturate(g, full);
+                    Vector512<short> rg = Avx512BW.UnpackLow(rb, ga).AsInt16(), ba = Avx512BW.UnpackHigh(rb, ga).AsInt16();
+                    Vector512<long> low = Avx512BW.UnpackLow(rg, ba).AsInt64(), high = Avx512BW.UnpackHigh(rg, ba).AsInt64();
+                    Avx512F.PermuteVar8x64x2(low, first, high).AsByte().StoreUnsafe(ref t, (nuint)(x * 4));
+                    Avx512F.PermuteVar8x64x2(low, second, high).AsByte().StoreUnsafe(ref t, (nuint)(x * 4 + 64));
+                }
+            }
+            if (Vector256.IsHardwareAccelerated && Avx2.IsSupported)
+            {
+                Vector256<short> bias = Vector256.Create((short)128), two = Vector256.Create((short)2), full = Vector256.Create((short)255);
+                Vector256<short> kr = Pair(26345, 16384), kg = Pair(-22554, 18734), kb = Pair(-14942, 16384);
+                Vector256<int> half = Vector256.Create(32768);
+                for (; x + 16 <= width; x += 16)
+                {
+                    Vector256<short> c = Avx2.ConvertToVector256Int16(Vector128.LoadUnsafe(ref p0, (nuint)x));
+                    Vector256<short> m = Avx2.ConvertToVector256Int16(Vector128.LoadUnsafe(ref p1, (nuint)x));
+                    Vector256<short> y = Avx2.ConvertToVector256Int16(Vector128.LoadUnsafe(ref p2, (nuint)x));
+                    Vector256<short> k = Avx2.ConvertToVector256Int16(Vector128.LoadUnsafe(ref p3, (nuint)x));
+                    if (ycck)
+                    {
+                        Vector256<short> luma = c, cb = m - bias, cr = y - bias;
+                        c = full - Vector256.Min(Vector256.Max(luma + cr + Product(cr, two, kr, Vector256<int>.Zero), Vector256<short>.Zero), full);
+                        m = full - Vector256.Min(Vector256.Max(luma - cr + Product(cb, cr, kg, half), Vector256<short>.Zero), full);
+                        y = full - Vector256.Min(Vector256.Max(luma + cb + cb + Product(cb, two, kb, Vector256<int>.Zero), Vector256<short>.Zero), full);
+                    }
+                    if (!inverted)
+                    {
+                        c = full - c;
+                        m = full - m;
+                        y = full - y;
+                        k = full - k;
+                    }
+                    Vector256<short> r = Times(c.AsUInt16(), k.AsUInt16()).AsInt16(), g = Times(m.AsUInt16(), k.AsUInt16()).AsInt16(), b = Times(y.AsUInt16(), k.AsUInt16()).AsInt16();
+                    Vector256<byte> rb = Avx2.PackUnsignedSaturate(r, b), ga = Avx2.PackUnsignedSaturate(g, full);
+                    Vector256<short> rg = Avx2.UnpackLow(rb, ga).AsInt16(), ba = Avx2.UnpackHigh(rb, ga).AsInt16();
+                    Vector256<short> low = Avx2.UnpackLow(rg, ba), high = Avx2.UnpackHigh(rg, ba);
+                    Avx2.Permute2x128(low, high, 0x20).AsByte().StoreUnsafe(ref t, (nuint)(x * 4));
+                    Avx2.Permute2x128(low, high, 0x31).AsByte().StoreUnsafe(ref t, (nuint)(x * 4 + 32));
+                }
+            }
+            if (Sse2.IsSupported || AdvSimd.Arm64.IsSupported)
+            {
+                for (; x + 16 <= width; x += 16)
+                {
+                    (Vector128<ushort> c0v, Vector128<ushort> c1v) = Vector128.Widen(Vector128.LoadUnsafe(ref p0, (nuint)x));
+                    (Vector128<ushort> m0, Vector128<ushort> m1) = Vector128.Widen(Vector128.LoadUnsafe(ref p1, (nuint)x));
+                    (Vector128<ushort> y0, Vector128<ushort> y1) = Vector128.Widen(Vector128.LoadUnsafe(ref p2, (nuint)x));
+                    (Vector128<ushort> k0, Vector128<ushort> k1) = Vector128.Widen(Vector128.LoadUnsafe(ref p3, (nuint)x));
+                    ref byte o = ref Unsafe.Add(ref t, x * 4);
+                    StoreCmykPixels(ref o, c0v, m0, y0, k0, ycck, inverted);
+                    StoreCmykPixels(ref Unsafe.Add(ref o, 32), c1v, m1, y1, k1, ycck, inverted);
+                }
+            }
+            for (; x < width; x++)
+            {
+                int c = Unsafe.Add(ref p0, x), m = Unsafe.Add(ref p1, x), y = Unsafe.Add(ref p2, x), k = Unsafe.Add(ref p3, x);
                 if (ycck)
                 {
                     int luma = c, cb = m - 128, cr = y - 128;
@@ -1518,12 +1622,50 @@ namespace Arctis.Imaging
                     y = 255 - y;
                     k = 255 - k;
                 }
-                Span<byte> o = target.Slice(x * 4, 4);
-                o[0] = Times(c, k);
-                o[1] = Times(m, k);
-                o[2] = Times(y, k);
-                o[3] = 255;
+                ref byte o = ref Unsafe.Add(ref t, x * 4);
+                o = Times(c, k);
+                Unsafe.Add(ref o, 1) = Times(m, k);
+                Unsafe.Add(ref o, 2) = Times(y, k);
+                Unsafe.Add(ref o, 3) = 255;
             }
+        }
+
+        // Eight pixels from widened CMYK or YCCK samples, through the same steps as the scalar loop.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static void StoreCmykPixels(ref byte target, Vector128<ushort> c, Vector128<ushort> m, Vector128<ushort> y, Vector128<ushort> k, bool ycck, bool inverted)
+        {
+            Vector128<ushort> full = Vector128.Create((ushort)255);
+            if (ycck)
+            {
+                Vector128<int> bias = Vector128.Create(128);
+                Vector128<int> l0 = Vector128.WidenLower(c).AsInt32(), l1 = Vector128.WidenUpper(c).AsInt32();
+                Vector128<int> cb0 = Vector128.WidenLower(m).AsInt32() - bias, cb1 = Vector128.WidenUpper(m).AsInt32() - bias;
+                Vector128<int> cr0 = Vector128.WidenLower(y).AsInt32() - bias, cr1 = Vector128.WidenUpper(y).AsInt32() - bias;
+                c = full - Vector128.Narrow(YccChannel(l0, cb0, cr0, 0, 91881), YccChannel(l1, cb1, cr1, 0, 91881));
+                m = full - Vector128.Narrow(YccChannel(l0, cb0, cr0, -22554, -46802), YccChannel(l1, cb1, cr1, -22554, -46802));
+                y = full - Vector128.Narrow(YccChannel(l0, cb0, cr0, 116130, 0), YccChannel(l1, cb1, cr1, 116130, 0));
+            }
+            if (!inverted)
+            {
+                c = full - c;
+                m = full - m;
+                y = full - y;
+                k = full - k;
+            }
+            StoreZipped(ref target, Times(c, k) | Vector128.ShiftLeft(Times(m, k), 8), Times(y, k) | Vector128.Create((ushort)0xFF00));
+        }
+
+        // luma + (cb * kb + cr * kr) >> 16, rounded and clamped to a byte, in four int lanes.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static Vector128<uint> YccChannel(Vector128<int> luma, Vector128<int> cb, Vector128<int> cr, int kb, int kr) =>
+            Vector128.Min(Vector128.Max(luma + Vector128.ShiftRightArithmetic(cb * Vector128.Create(kb) + cr * Vector128.Create(kr) + Vector128.Create(32768), 16), Vector128<int>.Zero), Vector128.Create(255)).AsUInt32();
+
+        // Eight pixels from (r | g << 8) and (b | a << 8) lanes.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static void StoreZipped(ref byte target, Vector128<ushort> rg, Vector128<ushort> ba)
+        {
+            ZipLow(rg, ba).AsByte().StoreUnsafe(ref target);
+            ZipHigh(rg, ba).AsByte().StoreUnsafe(ref target, 16);
         }
 
         // a * b / 255, rounded
@@ -1531,6 +1673,27 @@ namespace Arctis.Imaging
         {
             int t = a * b + 128;
             return (byte)((t + (t >> 8)) >> 8);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static Vector512<ushort> Times(Vector512<ushort> a, Vector512<ushort> b)
+        {
+            Vector512<ushort> t = a * b + Vector512.Create((ushort)128);
+            return Vector512.ShiftRightLogical(t + Vector512.ShiftRightLogical(t, 8), 8);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static Vector256<ushort> Times(Vector256<ushort> a, Vector256<ushort> b)
+        {
+            Vector256<ushort> t = a * b + Vector256.Create((ushort)128);
+            return Vector256.ShiftRightLogical(t + Vector256.ShiftRightLogical(t, 8), 8);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static Vector128<ushort> Times(Vector128<ushort> a, Vector128<ushort> b)
+        {
+            Vector128<ushort> t = a * b + Vector128.Create((ushort)128);
+            return Vector128.ShiftRightLogical(t + Vector128.ShiftRightLogical(t, 8), 8);
         }
 
         // Four pixels, one per int lane, from the low or high half of eight widened samples per component.

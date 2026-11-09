@@ -18,9 +18,14 @@
 | `PngDecoder.Expand` | gray8 (16 grey bytes broadcast to every 128-bit lane, pshufb per lane), RGB8 (`PermuteVar16x32` / `PermuteVar8x32` gives each lane its 12 bytes, then pshufb), RGBA16 (pshufb byte swap, portable Widen/Narrow); Avx512BW and Avx2 above the Vector128 ones |
 | `PixelRows.Pack24` | VBMI-only `Vector512.Shuffle` tier replaced by Avx512BW in-lane `Shuffle` + `Avx512F.PermuteVar16x32` (no VBMI needed); new Avx2 tier (`Avx2.Shuffle` + `Avx2.PermuteVar8x32`, 8 px/step); Vector128 x4 kept |
 | `JpegDecoder.ConvertRow` | Avx512BW (32 px/step in 16-bit lanes, `Avx512F.PermuteVar8x64x2` restores order, plus a 16-px int path); private `Product(Vector512<short>...)`. Avx2 gate now `Vector256.IsHardwareAccelerated && Avx2.IsSupported`; Vector128 tier is a plain `if` (falls through) |
+| `JpegDecoder.ConvertCmykRow` (2026-11-08) | Avx512BW (32 px/step in 16-bit lanes, qword permutes), Avx2 (16 px, `Permute2x128`), Vector128 (16 px, int-lane YCbCr, zip store); scalar tail; `[AggressiveOptimization]`. 512/256 reuse `ConvertRow`'s `Product` and `Pair`; see [[jpeg-gif-decoders]] |
 | `JpegDecoder.ColumnSums`, `Interleave` | Avx512BW (32 px); same gate/fall-through change |
+| `PcxDecoder.ReadLine` literal scan (2026-11-08) | 512 (Avx512BW, 64 B/step), 256 (Avx2, 32 B), 128 (portable `Vector128`, 16 B); store the input vector unconditionally, advance by tzcnt of the bytes >= 0xC0 mask. The 512 tier measured slower than 256 on Zen 5 (8-12% in isolation) and was kept by user choice; see [[ico-simple-rasters]] |
+| `PixelRows.BitIndices`, `PackedIndices`, `LookupIndices` (moved from `PcxDecoder` 2026-11-08; also used by `BmpDecoder.DecodeIndexed`) | 512 (Avx512BW), 256 (Avx2), 128 (portable `Vector128`, no `IsHardwareAccelerated` gate); byte shuffle from 16-byte tables, the 128 tier uses variable-index `Vector128.Shuffle`; see [[ico-simple-rasters]] |
+| `PcxDecoder.InterleavePlanes` (2026-11-08) | portable `WidenLower/WidenUpper` + shift ladder at 512 (64 px, Avx512BW-gated), 256 (32 px, Avx2-gated), 128 (16 px); no permute needed |
 | `JpegDecoder.HasAc` | Vector512 (two loads), Vector256 (four loads) |
 | `JpegDecoder.TransformAll` (progressive only) | `Vector512.IsHardwareAccelerated && Avx512F.IsSupported`: two horizontally adjacent blocks of one component that both have AC go through `IdctAvx512Pair`. Private `Row512`, `Butterfly(Vector512...)`, `Transpose(Vector512...)` (both 8x8 halves at once; qword permutes do Permute2x128's job), `StorePairRows` |
+| `JpegEncoder.PredictRow` (lossless encode differences, 2026-11-09) | Vector512, Vector256, Vector128 (portable `Widen`, prediction in shorts, subtract, store); scalar tail; per-tier timing not measured, AVX-512 machine only |
 | `DistanceField.Interleave` (ADF decode) | Avx512BW (64 px, qword permutes) and Avx2 (32 px, Permute2x128) above SSE2 |
 
 CRC fold constants per distance D bits = (reflect(x^(D+32) mod P) << 1, reflect(x^(D-32) mod P) << 1): D=2048 (0x011542778a, 0x01322d1430), 1024 (0x01e88ef372, 0x014a7fe880), 512 = existing k1k2, 384 (0x003db1ecdc, 0x0174359406), 256 (0x00f1da05aa, 0x015a546366), 128 = existing k3k4. Derivation checked by reproducing k1k2 and k3k4 exactly.
@@ -35,7 +40,7 @@ CRC fold constants per distance D bits = (reflect(x^(D+32) mod P) << 1, reflect(
 - .NET 10.0.12: every form 0.24-0.34.
 - So on .NET 8 a portable Shuffle is accelerated only with an inline constant index, and portable has no dword permute, so compaction would need VBMI. Rejected: portable with inline indices — works for in-lane shuffles only; Pack24/RGB8 compaction would still need VBMI.
 
-**JPEG 512 IDCT = paired blocks** (user fork F1-b). One 8x8 block is exactly eight Vector256 rows, so 512 bits means two blocks at once. Only in `TransformAll` (progressive): baseline/sequential JPEGs transform a block as soon as it is decoded (`SequentialBlock`), so pairing them would mean holding one block back — not done.
+**JPEG 512 IDCT = paired blocks** (user fork F1-b). One 8x8 block is exactly eight Vector256 rows, so 512 bits means two blocks at once. Only in `TransformAll` (progressive): baseline/sequential JPEGs transform a block as soon as it is decoded (`SequentialBlock`), so pairing them would mean holding one block back. Tried 2026-11-08 in a scratch copy and rejected: 2-8% slower on dense files. The progressive pairing itself measured no gain on Zen 5 (one photo pair; code left in place, undecided). See [[jpeg-gif-decoders]] "Sequential decode trials (2026-11-08)".
 
 **Crc32 wide tiers are net9+ only.** .NET 8 has no `Pclmulqdq.V256/V512`; the net8 build keeps the 128 fold.
 

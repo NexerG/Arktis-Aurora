@@ -59,7 +59,19 @@ All decode tables (9-bit symbol lookups for DC 0-3/AC 4-7, 11-bit whole-coeffici
 - **YCCK (Adobe transform 2)** goes through libjpeg's ycck->cmyk step (CMY = 255 - YCbCr->RGB, K passed through), then the same inverted CMYK conversion; matches Pillow/libjpeg.
 - **Arithmetic coding (SOF9/SOF10) stays unsupported (user, 2026-11-06).** Default encoders do not write it; it comes from `jpegtran -arithmetic` archiving and some DICOM pipelines. Nothing installed here can produce a test file (Pillow cannot, jpegtran is not installed), so supporting it needs a tool download. Cost: such files now fail to load, where ImageSharp decoded them. 12-bit, lossless and hierarchical were never supported.
 - Tests: `JpegTests.FourComponentsMatchPillow` (Cmyk, Ycck, within 1 of Pillow) and `CmykWithoutAdobeMarkerIsNotInverted`; fixtures `Ycck.jpg`/`.png`, `CmykPlain.jpg`, `Cmyk.png`. The old `CmykIsNotSupported` behaviour is gone.
-- Unprofiled: the CMYK row conversion is scalar and was never measured. Not checked: YCCK from a real Photoshop file (the fixture is a hand-built flat 8x8).
+- Not checked: YCCK from a real Photoshop file (the fixture is a hand-built flat 8x8).
+
+### SIMD conversion (2026-11-08)
+- `ConvertCmykRow` has Avx512BW (32 px/step), Avx2 (16 px/step) and portable Vector128 (16 px/step) tiers plus a scalar tail; `[MethodImpl(AggressiveOptimization)]`, signature unchanged. Byte-identical to the old scalar code and to Pillow.
+- New private helpers: `StoreCmykPixels(ref byte, Vector128<ushort> c, m, y, k, bool ycck, bool inverted)` (8 px, 128 tier), `YccChannel(Vector128<int> luma, cb, cr, int kb, int kr)`, `StoreZipped(ref byte, Vector128<ushort> rg, ba)` (via `ZipLow`/`ZipHigh`), and `Times(Vector512/256/128<ushort>, ...)` beside the scalar `Times(int, int)`.
+- 512/256 tiers reuse `ConvertRow`'s `Product(Vector512/256<short>...)` pmaddwd helpers and `Pair` constants; their pack/unpack/permute store sequence is duplicated from `ConvertRow`, which is untouched.
+- **Math in 16-bit lanes.** `Times` (`t = a*b + 128; (t + (t >> 8)) >> 8`) fits `ushort` exactly: a*b+128 <= 65153, plus t>>8 <= 65407. YCCK's YCbCr part uses the same pmaddwd constants as `ConvertRow`, clamped with Min/Max in short lanes, then 255 - x. The 128 tier does YCbCr in int lanes (portable has no pmaddwd) and narrows to ushort for `Times`. Each tier follows the scalar order literally: YCCK step, inversion if not Adobe-inverted, then `Times`.
+- **Rejected: pmulhuw `(t * 257) >> 16` for `Times`** - not proven equal to the exact formula.
+- **Rejected: a shared store helper extracted from `ConvertRow`** - would touch a measured hot path; the store sequence is duplicated instead.
+- **Rejected and reverted (user, 2026-11-08): byte-interleave RGB tiers in `ConvertRow`** (the `!ycc` path: Adobe transform 0, JPEG-in-TIFF RGB). Built at 512 (widen + pack, 32 px), 256 (16 px) and 128 (r|g<<8 beside b|0xFF00, zipped); measured 8.62-8.73 ms vs 8.60-8.65 before, no gain. Stubbing `ConvertRow` out entirely only drops the RGB set to 8.34-8.37 ms, so RGB conversion is ~0.3 ms of 8.6 ms. `ConvertRow` stays as it was.
+- **Conversion share measured first** (scratch copy with `ConvertCmykRow` stubbed, old inputs): CMYK 11.94-12.09 -> 8.91-9.07 ms, YCCK 10.15-10.94 -> 4.12-4.21 ms; the scalar conversion was ~3 ms of CMYK and ~6 ms of YCCK.
+- Tests: `FourComponentsMatchPillow` gained `CmykWide` and `YcckWide`; new `RgbMatchesPillow` (`RgbWide`). Fixtures `CmykWide`, `YcckWide`, `RgbWide` (.jpg/.png): 83x11 crop of `Brick.png` at (301, 517); 83 = 2x32 + 16 + 3 so every tier and the scalar tail run. CmykWide = Pillow 13 Adobe CMYK q90 4:4:4:4; YcckWide = imagecodecs/libjpeg-turbo YCCK q90 (Y and K 2x2, Cb/Cr 1x1); RgbWide = Pillow `keep_rgb=True` q90 4:4:4 (Adobe transform 0). PNGs are Pillow's decode. Suite is 497 tests.
+- Test-verified: 497/497 on net10.0 under default (512 tier), `DOTNET_EnableAVX512=0` (256) and `DOTNET_EnableAVX2=0` (128). Tests allow a difference of 1; exact match (0 bytes differ from Pillow) was checked only in the scratch bench, on the Wide files and the 1024² inputs. Not checked: ARM64 (AdvSimd path compiled, never run), net8.0, a real Photoshop YCCK file, GUI paste into Thorium.
 
 ## Speed (measured 2026-11-06)
 Scratch bench = best of 7 in-process, ms per decode; ImageSharp 3.1.11 in the same process.
@@ -223,5 +235,83 @@ Speed. Scratch bench outside the repo: old `RefineAc` (copy of the previous tree
 - The scratch cross-check and benches are not in the repo.
 
 - 512/256-bit tiers for `ConvertRow`, `ColumnSums`, `Interleave`, `HasAc` and the paired progressive IDCT (`IdctAvx512Pair`): see [[simd-width-tiers]].
+
+## Measured against native references (2026-11-08)
+
+- Method: scratch console bench, not committed (no perf tests, see [[other-raster-formats]]). Release, net10.0, Windows, AMD Ryzen 9 9900X, default tiering. Entry: `ImageCodec.Decode` into a preallocated RGBA8 buffer.
+- Inputs: `Brick.png` + `Brick2.png` (two 1024² opaque photos) encoded per case: Pillow 13 (Adobe CMYK JPEG), imagecodecs/libjpeg-turbo 3.2 (YCCK JPEG). 2-image set per pass; 40 warm-up passes, 6 timed, median ms for the set; 3 Arctis processes alternated with 3 reference processes; ratio paired per round (below 1 = Arctis faster). Arctis allocated 24 B per set.
+- References are native C called from CPython 3.14: cross-runtime, indicative only. libjpeg-turbo returns raw CMYK with no RGB conversion; Arctis converts to RGBA8, so the CMYK/YCCK ratios favour libjpeg-turbo.
+- Correctness: outputs byte-identical to Pillow's decode (Pillow's CMYK->RGB for CMYK/YCCK).
+
+| Case | Arctis ms | Reference ms | Ratio |
+|---|---|---|---|
+| JPEG baseline RGB 4:2:0 q90 (control) | 3.89-4.92 | libjpeg-turbo 3.2 4.88-5.07 | 0.78-0.97x, faster |
+
+- **Superseded 2026-11-08.** The CMYK and YCCK rows that stood here (CMYK 11.93-12.09 ms, 1.09-1.11x; YCCK 10.20-10.58 ms, 1.38-1.42x) are void. The CMYK row used K = 0 throughout (Pillow's RGB to CMYK), and the YCCK row was most likely measured on solid-black images (constant-K Pillow CMYK fed un-inverted to the YCCK encoder). The table below replaces them.
+
+### CMYK, YCCK and RGB after the SIMD conversion (2026-11-08)
+
+Same method as above, 2x 1024² per set, 3 rounds with before and after processes alternated. Reference = imagecodecs 2026.10.10 libjpeg-turbo `jpeg8_decode` from CPython (cross-runtime, indicative; it returns raw CMYK with no RGB conversion, so the comparison favours it). 0 B allocated per set. Output byte-identical to Pillow's decode for all three cases at all three tiers.
+
+| Case (2x 1024², ms) | Before | After | Change | libjpeg-turbo 3.2 |
+|---|---|---|---|---|
+| CMYK (Adobe, Pillow q90) | 13.00-14.76 | 10.25-10.37 | -21 to -30% | 12.09-12.13 |
+| YCCK (libjpeg-turbo q90) | 15.52-16.25 | 6.81-7.28 | -53 to -56% | 9.52-9.73 |
+| RGB (Adobe transform 0, 4:4:4), unchanged code | 8.60-8.65 | - | - | 9.71-9.92 |
+
+- Ratios vs libjpeg-turbo after: CMYK 0.85-0.86x, YCCK 0.70-0.76x (below 1 = Arctis faster). Cold first decode after: CMYK ~35-41 ms, YCCK ~36-38 ms (before 42 / 50-54 ms).
+- **New bench inputs.** Pillow's RGB to CMYK sets K = 0 everywhere. CMYK and YCCK inputs are now built as K = 255 - max(R,G,B), C/M/Y = 255 - round(v * 255 / max), which round-trips the multiplicative CMYK to RGB model (mean |diff| vs the source photo 1.2-2.2). The YCCK encoder (imagecodecs `jpeg8_encode(..., colorspace='CMYK', outcolorspace='YCCK')`) must be given inverted inks (255 - cmyk), because an Adobe-marked file stores inks inverted.
+- Not checked: ARM64, net8.0, real-alpha images, a real YCCK file from a real tool.
+
+## Sequential decode trials (2026-11-08)
+
+Nothing landed; two sequential-JPEG speed-ups tried in scratch copies of `JpegDecoder` and rejected, plus a stage split of RGB/4:4:4 decoding. Recorded so they are not retried blind. Touched: `BuildTable` (whole-coefficient AC table), `SequentialBlock`, `DecodeSequential`, `Natural`, `ProgressiveBlock` AC-first loop, `TransformAll`, `IdctAvx512Pair`.
+
+- Method: scratch console bench (not committed), as in "Measured against native references": 40 warm-up passes, 6 timed, median per 2-image set, 3 rounds with builds alternated; machine was noisy (one round of the current build read 9.78 ms on RGB). 2x 1024² Brick photos q90, Ryzen 9 9900X, net10.0.
+- Exactness for every trial: SHA-256 of the RGBA8 decode identical to the current build on 104 JPEGs (ArctisImaging.Tests fixtures, C:\Windows\Web, Downloads, the bench inputs); all 104 decode.
+
+**Where RGB JPEG time goes (why the RGB path was not optimised).** Stage split by stubbing stages in scratch copies, ms per 2-image set:
+
+| Stage | RGB 4:4:4 (Adobe transform 0) | YCbCr 4:4:4 (same photo) |
+|---|---|---|
+| Total | 8.33-8.77 | 5.69-6.07 |
+| Entropy (incl. DC/EOB, block clear) | 6.1-6.5 | 3.9-4.2 |
+| IDCT | 1.9-2.2 | 1.6-1.8 |
+| Output / conversion | 0.1-0.3 | 0.1-0.3 |
+| File bytes | 1,215,342 | 596,408 |
+| libjpeg-turbo 3.2 (CPython, indicative) | 9.71-9.92 | 6.62 |
+
+- RGB files are ~2x the bytes of YCbCr 4:4:4 because the channels are not decorrelated. Every one of the 98,304 blocks has AC (no DC-only blocks; YCbCr 4:4:4 has 15,862 DC-only).
+- Counted: 1,662,785 whole-table coefficients, 142,654 slow-path symbols of which 99,771 are EOB/ZRL (about one per block). Only 2.5% of real coefficients take the slow path (YCbCr 4:4:4: 3.6%).
+- So the RGB cost is the Huffman data itself; colour conversion is ~3%, and byte-interleave RGB conversion tiers were already rejected the same day.
+
+**Rejected: EOB and ZRL in the whole-coefficient table, branchless form.** Different from the 2026-11-07 "Entropy attempts" item (flag bit and a branch). EOB entry = run 80, value 0, so `k += (fast >> 8) & 127` lands past 63 and the loop ends without a test; ZRL = run 15, value 0. `Natural` padded to 144 entries with 80..143 pointing at a 65th dummy block slot (`stackalloc short[65]`). The progressive AC-first loop took a fast entry only when `(fast >> 16) != 0`, so its EOB-run/refinement handling was unchanged. Within noise everywhere:
+
+| Case (ms) | Before | After |
+|---|---|---|
+| RGB | 8.28-8.35 | 8.22-8.30 |
+| YCbCr 4:4:4 | 5.71-5.75 | 5.64-6.13 |
+| 4:2:0 | 4.14-4.31 | 4.09-4.14 |
+| Progressive | 12.16-12.52 | 12.46-12.62 |
+| CMYK | 9.92-9.98 | 9.91-10.06 |
+| YCCK | 6.71-6.80 | 6.66-6.75 |
+
+The slow EOB lookup is not where the entropy time goes. The 2026-11-07 flag-bit rejection stands.
+
+**Rejected: paired AVX-512 IDCT for sequential scans.** Each component held back one decoded block (128-byte copy into a per-component slot plus its plane offset). The next block of that component, if horizontally adjacent in the same block row, went through `IdctAvx512Pair` with it; otherwise the held block was transformed alone; held blocks flushed at scan end. 2-8% slower on dense files:
+
+| Case (ms) | Before | After |
+|---|---|---|
+| RGB | 8.28-8.35 | 8.33-9.00 |
+| YCbCr 4:4:4 | 5.71-5.75 | 6.15-6.51 |
+| CMYK | 9.92-9.98 | 10.06-10.71 |
+| YCCK | 6.71-6.80 | 6.96-7.28 |
+| 4:2:0 | 4.14-4.31 | 3.90-4.15 (noise) |
+
+Both levers together: no better than either.
+
+**The pair IDCT itself shows no measurable gain on Zen 5.** With the existing progressive pairing in `TransformAll` switched off (`paired = false`, scratch), progressive 2x 1024² q90 read 12.18-12.38 ms on vs 12.26-12.34 off. Two AVX2 IDCTs cost about what one `IdctAvx512Pair` does. One progressive photo pair only; the pairing code was left in place (not removed, not re-decided).
+
+Not checked: other CPUs (Intel AVX-512, where pairing might differ), ARM64, net8.0, more progressive files for the pairing result. Scratch trial code and the hash tool are not in the repo. Nothing in the repo changed, so there is no build/test claim.
 
 Related: [[other-raster-formats]], [[png-decode-fast-paths]], [[png-deflate]], [[lossless-jpeg]], [[simd-width-tiers]]

@@ -2,6 +2,8 @@ using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.IO;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace Arctis.Imaging
 {
@@ -38,7 +40,7 @@ namespace Arctis.Imaging
             byte[]? indices = indexed ? ArrayPool<byte>.Shared.Rent(checked(width * height)) : null;
             byte[] rgba = ArrayPool<byte>.Shared.Rent(width * 4);
             uint[] values = ArrayPool<uint>.Shared.Rent(width);
-            byte[] line = ArrayPool<byte>.Shared.Rent(width * (bpp + 1));
+            byte[] line = ArrayPool<byte>.Shared.Rent(width * (bpp + 1) + 1);
             try
             {
                 if (indexed) colours = BmpEncoder.BuildPalette(pixels, width, height, pitch, layout, format == TgaPixelFormat.IndexedAlpha8, palette, indices);
@@ -77,6 +79,7 @@ namespace Arctis.Imaging
                     TgaPixelFormat.GreyAlpha16 => layout == PixelLayout.RG8,
                     _ => false
                 });
+                bool rleRow = settings.Rle && !indexed && !rightToLeft && (format == TgaPixelFormat.Argb32 || format == TgaPixelFormat.Rgb24 ? colour : format == TgaPixelFormat.Grey8 && layout == PixelLayout.R8);
                 Span<uint> row = values.AsSpan(0, width);
                 if (direct && !topDown) WriteBottomUp(pixels, width, height, pitch, layout, format, bpp, output);
                 else for (int stored = 0; stored < height; stored++)
@@ -86,6 +89,11 @@ namespace Arctis.Imaging
                     {
                         WriteDirect(pixels.Slice(y * pitch), line, width, layout, format);
                         output.Write(line, 0, width * bpp);
+                        continue;
+                    }
+                    if (rleRow)
+                    {
+                        output.Write(line, 0, WriteRunLength(RleRow(pixels.Slice(y * pitch), row, layout), bpp, line));
                         continue;
                     }
                     if (!indexed) PixelRows.ToRgba(pixels.Slice(y * pitch), rgba, width, layout);
@@ -178,39 +186,65 @@ namespace Arctis.Imaging
             }
         }
 
+        // One row's pixels as the values RLE compares, read in place when the source is BGRA8.
+        private static ReadOnlySpan<uint> RleRow(ReadOnlySpan<byte> src, Span<uint> values, PixelLayout layout)
+        {
+            if (layout == PixelLayout.BGRA8) return MemoryMarshal.Cast<byte, uint>(src.Slice(0, values.Length * 4));
+            if (layout == PixelLayout.RGBA8) ImageOps.CopySwizzled(src.Slice(0, values.Length * 4), MemoryMarshal.AsBytes(values));
+            else for (int x = 0; x < values.Length; x++) values[x] = src[x];
+            return values;
+        }
+
         private static int WriteRaw(ReadOnlySpan<uint> row, int bpp, Span<byte> line)
         {
+            if (line.Length < row.Length * bpp + 1) throw new ArgumentException("line is shorter than the row");
+            ref byte d = ref MemoryMarshal.GetReference(line);
             int at = 0;
-            for (int x = 0; x < row.Length; x++) at = Put(row[x], bpp, line, at);
+            for (int x = 0; x < row.Length; x++) at = Put(row[x], bpp, ref d, at);
             return at;
         }
 
         // Run packets for 2 or more equal pixels, raw packets up to the next equal pair; at most 128 pixels a packet.
+        // Only the low bpp bytes of a value are compared and written.
         private static int WriteRunLength(ReadOnlySpan<uint> row, int bpp, Span<byte> line)
         {
-            int at = 0, x = 0, width = row.Length;
+            int width = row.Length;
+            if (line.Length < width * (bpp + 1) + 1) throw new ArgumentException("line is shorter than the worst-case packets");
+            uint mask = bpp == 4 ? uint.MaxValue : (1u << bpp * 8) - 1;
+            ref uint p = ref MemoryMarshal.GetReference(row);
+            ref byte d = ref MemoryMarshal.GetReference(line);
+            int at = 0, x = 0;
             while (x < width)
             {
+                uint v = Unsafe.Add(ref p, x);
                 int run = 1;
-                while (x + run < width && run < 128 && row[x + run] == row[x]) run++;
+                while (x + run < width && run < 128 && ((Unsafe.Add(ref p, x + run) ^ v) & mask) == 0) run++;
                 if (run >= 2)
                 {
-                    line[at++] = (byte)(0x80 | (run - 1));
-                    at = Put(row[x], bpp, line, at);
+                    Unsafe.Add(ref d, at++) = (byte)(0x80 | (run - 1));
+                    at = Put(v, bpp, ref d, at);
                     x += run;
                     continue;
                 }
                 int start = x++;
-                while (x < width && x - start < 128 && !(x + 1 < width && row[x] == row[x + 1])) x++;
-                line[at++] = (byte)(x - start - 1);
-                for (int i = start; i < x; i++) at = Put(row[i], bpp, line, at);
+                while (x < width && x - start < 128 && !(x + 1 < width && ((Unsafe.Add(ref p, x) ^ Unsafe.Add(ref p, x + 1)) & mask) == 0)) x++;
+                Unsafe.Add(ref d, at++) = (byte)(x - start - 1);
+                if (bpp == 4)
+                {
+                    MemoryMarshal.AsBytes(row.Slice(start, x - start)).CopyTo(line.Slice(at));
+                    at += (x - start) * 4;
+                }
+                else for (int i = start; i < x; i++) at = Put(Unsafe.Add(ref p, i), bpp, ref d, at);
             }
             return at;
         }
 
-        private static int Put(uint v, int bpp, Span<byte> line, int at)
+        // Stores the low bpp bytes of v; a 3-byte pixel is stored as 4, so line has a byte of slack past the end.
+        private static int Put(uint v, int bpp, ref byte d, int at)
         {
-            for (int k = 0; k < bpp; k++) line[at + k] = (byte)(v >> (k * 8));
+            if (bpp >= 3) Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, at), v);
+            else if (bpp == 2) Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, at), (ushort)v);
+            else Unsafe.Add(ref d, at) = (byte)v;
             return at + bpp;
         }
     }

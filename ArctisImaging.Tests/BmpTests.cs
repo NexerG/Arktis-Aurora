@@ -86,6 +86,68 @@ namespace Arctis.Imaging.Tests
             Assert.Equal(new byte[] { 30, 20, 10, 0, 30, 20, 10, 100, 30, 20, 10, 1, 30, 20, 10, 101 }, image.Pixels);
         }
 
+        // 61 wide so every SIMD tier and the scalar tail run; rows bottom-up and top-down, a padded pitch left untouched.
+        [Theory]
+        [InlineData("32")]
+        [InlineData("24")]
+        [InlineData("555")]
+        [InlineData("565")]
+        public void DirectRowsWriteEveryLayout(string kind)
+        {
+            const int width = 61, height = 3;
+            int bitCount = kind == "32" ? 32 : kind == "24" ? 24 : 16;
+            byte[] masks = new byte[12];
+            BinaryPrimitives.WriteUInt32LittleEndian(masks, 0xF800);
+            BinaryPrimitives.WriteUInt32LittleEndian(masks.AsSpan(4), 0x07E0);
+            BinaryPrimitives.WriteUInt32LittleEndian(masks.AsSpan(8), 0x001F);
+            byte[] rgba = new byte[width * height * 4];
+            Func<int, int, byte[]> pixel = (x, y) =>
+            {
+                uint h = (uint)(x * 73856093 ^ y * 19349663) * 2654435761u;
+                byte b = (byte)h, g = (byte)(h >> 8), r = (byte)(h >> 16), a = (byte)(h >> 24 | 1);
+                int v = kind == "555" ? (int)(h & 0x7FFF) : (int)(h & 0xFFFF);
+                byte[] source = kind == "32" ? new byte[] { b, g, r, a } : kind == "24" ? new byte[] { b, g, r } : new byte[] { (byte)v, (byte)(v >> 8) };
+                if (kind == "555")
+                {
+                    r = Replicate((v >> 10) & 31, 5);
+                    g = Replicate((v >> 5) & 31, 5);
+                    b = Replicate(v & 31, 5);
+                }
+                else if (kind == "565")
+                {
+                    r = Replicate(v >> 11, 5);
+                    g = Replicate((v >> 5) & 63, 6);
+                    b = Replicate(v & 31, 5);
+                }
+                int at = (y * width + x) * 4;
+                rgba[at] = r;
+                rgba[at + 1] = g;
+                rgba[at + 2] = b;
+                rgba[at + 3] = kind == "32" ? a : (byte)255;
+                return source;
+            };
+            foreach (bool topDown in new bool[] { false, true })
+            {
+                byte[] dib = Dib(width, topDown ? -height : height, bitCount, kind == "565" ? 3u : 0u, kind == "565" ? masks : Array.Empty<byte>(), pixel);
+                foreach (PixelLayout layout in new PixelLayout[] { PixelLayout.RGBA8, PixelLayout.BGRA8, PixelLayout.R8, PixelLayout.RG8 })
+                {
+                    int size = layout == PixelLayout.R8 ? 1 : layout == PixelLayout.RG8 ? 2 : 4, pitch = width * size + 7;
+                    byte[] pixels = new byte[pitch * height];
+                    Array.Fill(pixels, (byte)0xA5);
+                    ImageCodec.DecodeDib(dib, pixels, new DecodeOptions(layout, pitch));
+                    byte[] expected = new byte[width * size];
+                    for (int y = 0; y < height; y++)
+                    {
+                        PixelRows.FromRgba(rgba.AsSpan(y * width * 4), expected, width, layout);
+                        Assert.Equal(expected, pixels.AsSpan(y * pitch, width * size).ToArray());
+                        for (int i = width * size; i < pitch; i++) Assert.Equal(0xA5, pixels[y * pitch + i]);
+                    }
+                }
+            }
+        }
+
+        private static byte Replicate(int c, int bits) => (byte)(bits == 5 ? c << 3 | c >> 2 : c << 2 | c >> 4);
+
         [Fact]
         public void BitFields565ScaleToEightBits()
         {
@@ -186,6 +248,198 @@ namespace Arctis.Imaging.Tests
         {
             byte[] stream = { 0, 5, 1, 2 };
             Assert.Throws<ImageFormatException>(() => Image.LoadDib(RleDib(5, 1, 8, RlePalette(256), stream)));
+        }
+
+        // BGR0 palette entries that differ in every channel; read back as RGBA, indices past the count as opaque black.
+        private static byte[] IndexedPalette(int entries)
+        {
+            byte[] palette = new byte[entries * 4];
+            for (int i = 0; i < entries; i++)
+            {
+                palette[i * 4] = (byte)(i * 13 + 7);
+                palette[i * 4 + 1] = (byte)(i * 29 + 3);
+                palette[i * 4 + 2] = (byte)(i * 53 + 11);
+            }
+            return palette;
+        }
+
+        private static void PutIndexed(byte[] rgba, int at, int index, byte[] palette)
+        {
+            bool known = index * 4 < palette.Length;
+            rgba[at] = known ? palette[index * 4 + 2] : (byte)0;
+            rgba[at + 1] = known ? palette[index * 4 + 1] : (byte)0;
+            rgba[at + 2] = known ? palette[index * 4] : (byte)0;
+            rgba[at + 3] = 255;
+        }
+
+        // Decodes into every layout with a padded pitch and checks each row against the RGBA8 reference.
+        private static void AssertEveryLayout(byte[] dib, byte[] rgba, int width, int height)
+        {
+            foreach (PixelLayout layout in new PixelLayout[] { PixelLayout.RGBA8, PixelLayout.BGRA8, PixelLayout.R8, PixelLayout.RG8 })
+            {
+                int size = layout == PixelLayout.R8 ? 1 : layout == PixelLayout.RG8 ? 2 : 4, pitch = width * size + 7;
+                byte[] pixels = new byte[pitch * height];
+                Array.Fill(pixels, (byte)0xA5);
+                ImageCodec.DecodeDib(dib, pixels, new DecodeOptions(layout, pitch));
+                byte[] expected = new byte[width * size];
+                for (int y = 0; y < height; y++)
+                {
+                    PixelRows.FromRgba(rgba.AsSpan(y * width * 4), expected, width, layout);
+                    Assert.Equal(expected, pixels.AsSpan(y * pitch, width * size).ToArray());
+                    for (int i = width * size; i < pitch; i++) Assert.Equal(0xA5, pixels[y * pitch + i]);
+                }
+            }
+        }
+
+        // 245 wide so every index and lookup tier and the scalar tail run; both row orders; short palettes leave indices
+        // past their count opaque black.
+        [Theory]
+        [InlineData(1, 2)]
+        [InlineData(4, 16)]
+        [InlineData(4, 5)]
+        [InlineData(8, 256)]
+        [InlineData(8, 7)]
+        public void IndexedRowsWriteEveryLayout(int bitCount, int entries)
+        {
+            const int width = 245, height = 3;
+            byte[] palette = IndexedPalette(entries), rgba = new byte[width * height * 4];
+            Func<int, int, byte[]> pixel = (x, y) =>
+            {
+                int index = (int)((uint)(x * 73856093 ^ y * 19349663) * 2654435761u >> 24) & ((1 << bitCount) - 1);
+                PutIndexed(rgba, (y * width + x) * 4, index, palette);
+                return new byte[] { (byte)index };
+            };
+            foreach (bool topDown in new bool[] { false, true })
+            {
+                byte[] dib = Dib(width, topDown ? -height : height, bitCount, 0, palette, pixel);
+                BinaryPrimitives.WriteInt32LittleEndian(dib.AsSpan(32), entries);
+                AssertEveryLayout(dib, rgba, width, height);
+            }
+        }
+
+        // A bit-field channel widened to 8 bits by repeating its bits, the BMP decoder's rule.
+        private static byte Widen(uint v, uint mask)
+        {
+            if (mask == 0) return 0;
+            int shift = System.Numerics.BitOperations.TrailingZeroCount(mask), bits = System.Numerics.BitOperations.PopCount(mask);
+            uint c = (v & mask) >> shift;
+            if (bits >= 8) return (byte)(c >> (bits - 8));
+            uint wide = c << (8 - bits);
+            for (int filled = bits; filled < 8; filled *= 2) wide |= wide >> filled;
+            return (byte)wide;
+        }
+
+        // 245 wide so every tier and the scalar tail run; both row orders, all layouts, a padded pitch left untouched;
+        // a 32-bit bitmap whose alpha is zero everywhere comes out opaque.
+        [Theory]
+        [InlineData("1555")]
+        [InlineData("4444")]
+        [InlineData("444x")]
+        [InlineData("rgba")]
+        [InlineData("abgr")]
+        [InlineData("1010102")]
+        [InlineData("scattered")]
+        [InlineData("xrgb")]
+        [InlineData("zero")]
+        [InlineData("rgbazero")]
+        public void BitFieldRowsWriteEveryLayout(string kind)
+        {
+            const int width = 245, height = 3;
+            uint[] masks = kind switch
+            {
+                "1555" => new uint[] { 0x7C00, 0x03E0, 0x001F, 0x8000 },
+                "4444" => new uint[] { 0x0F00, 0x00F0, 0x000F, 0xF000 },
+                "444x" => new uint[] { 0x0F00, 0x00F0, 0x000F, 0 },
+                "abgr" => new uint[] { 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF },
+                "1010102" => new uint[] { 0x3FF00000, 0x000FFC00, 0x000003FF, 0xC0000000 },
+                "scattered" => new uint[] { 0x00F00F00, 0x000000F5, 0x0A000000, 0xF0000000 },
+                "xrgb" => new uint[] { 0x00FF0000, 0x0000FF00, 0x000000FF, 0 },
+                "zero" => new uint[] { 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000 },
+                _ => new uint[] { 0x000000FF, 0x0000FF00, 0x00FF0000, 0xFF000000 },
+            };
+            int bitCount = kind is "1555" or "4444" or "444x" ? 16 : 32;
+            bool noAlpha = kind.EndsWith("zero");
+            byte[] rgba = new byte[width * height * 4];
+            Func<int, int, byte[]> pixel = (x, y) =>
+            {
+                uint v = (uint)(x * 73856093 ^ y * 19349663) * 2654435761u;
+                if (bitCount == 16) v &= 0xFFFF;
+                if (noAlpha) v &= ~masks[3];
+                int at = (y * width + x) * 4;
+                rgba[at] = Widen(v, masks[0]);
+                rgba[at + 1] = Widen(v, masks[1]);
+                rgba[at + 2] = Widen(v, masks[2]);
+                rgba[at + 3] = masks[3] == 0 || noAlpha ? (byte)255 : Widen(v, masks[3]);
+                byte[] bytes = new byte[bitCount / 8];
+                for (int i = 0; i < bytes.Length; i++) bytes[i] = (byte)(v >> (i * 8));
+                return bytes;
+            };
+            foreach (bool topDown in new bool[] { false, true })
+            {
+                byte[] dib = kind == "zero"
+                    ? Dib(width, topDown ? -height : height, 32, 0, Array.Empty<byte>(), pixel)
+                    : Dib(width, topDown ? -height : height, bitCount, 3, Array.Empty<byte>(), pixel, 124, masks);
+                AssertEveryLayout(dib, rgba, width, height);
+            }
+        }
+
+        // Runs past the width, odd literals, a short end of line, a delta across rows and an early end: skipped pixels
+        // come out transparent black in every layout.
+        [Theory]
+        [InlineData(4)]
+        [InlineData(8)]
+        public void RleWritesEveryLayout(int bitCount)
+        {
+            const int width = 245, height = 4;
+            bool four = bitCount == 4;
+            byte[] palette = IndexedPalette(four ? 16 : 256), rgba = new byte[width * height * 4];
+            MemoryStream stream = new MemoryStream();
+            int x = 0, row = 0;
+            void Put(int index)
+            {
+                if (x < width && row < height) PutIndexed(rgba, ((height - 1 - row) * width + x) * 4, index, palette);
+                x++;
+            }
+            void Run(int n, int a, int b)
+            {
+                stream.WriteByte((byte)n);
+                stream.WriteByte((byte)(four ? a << 4 | b : a));
+                for (int k = 0; k < n; k++) Put((k & 1) == 0 || !four ? a : b);
+            }
+            void Literal(params int[] indices)
+            {
+                stream.WriteByte(0);
+                stream.WriteByte((byte)indices.Length);
+                int bytes = four ? (indices.Length + 1) / 2 : indices.Length;
+                for (int k = 0; k < bytes; k++)
+                    stream.WriteByte((byte)(four ? indices[k * 2] << 4 | (k * 2 + 1 < indices.Length ? indices[k * 2 + 1] : 0) : indices[k]));
+                if ((bytes & 1) != 0) stream.WriteByte(0);
+                foreach (int index in indices) Put(index);
+            }
+            void EndOfLine()
+            {
+                stream.Write(new byte[] { 0, 0 });
+                x = 0;
+                row++;
+            }
+
+            Run(200, 3, 9);
+            Literal(1, 14, 2, 7, 11, 5, 8);
+            Run(255, 6, 12);
+            EndOfLine();
+            Run(10, 4, 4);
+            Literal(5, 6, 7);
+            stream.Write(new byte[] { 0, 2, 3, 0 });
+            x += 3;
+            Run(2, 8, 10);
+            EndOfLine();
+            Literal(13, 2, 9);
+            stream.Write(new byte[] { 0, 2, 5, 1 });
+            x += 5;
+            row++;
+            Run(4, 15, 1);
+            stream.Write(new byte[] { 0, 1 });
+            AssertEveryLayout(RleDib(width, height, bitCount, palette, stream.ToArray()), rgba, width, height);
         }
 
         private static byte[] Fixture(string file) => File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", file));

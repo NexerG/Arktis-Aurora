@@ -50,4 +50,4 @@ Not checked: the engine suite `_Build/test.sh` (including the LatinModern PDF-ex
 - The Perf `Image.Decode.*.Jpeg.Q90` sample is now Arctis-encoded, so baseline numbers in [[jpeg-gif-decoders]] predate the change and are not directly comparable.
 - The Pillow fixture generator script is not in the repo.
 
-Related: [[jpeg-gif-decoders]], [[png-deflate]], [[other-raster-formats]]
+Related: [[jpeg-gif-decoders]], [[png-deflate]], [[other-raster-formats]], [[lossless-jpeg]] (lossless SOF3 output is a partial of this encoder, 2026-11-09)

@@ -103,6 +103,16 @@ namespace Arctis.Imaging
             SaveJpeg(file, settings);
         }
 
+        /// <summary>Writes the image as a lossless JPEG.</summary>
+        public void SaveLosslessJpeg(Stream output, in JpegLosslessSettings settings = default) => ImageCodec.EncodeLosslessJpeg(Pixels, Width, Height, RowPitch, Layout, output, settings);
+
+        /// <summary>Writes the image as a lossless JPEG file.</summary>
+        public void SaveLosslessJpeg(string path, in JpegLosslessSettings settings = default)
+        {
+            using FileStream file = File.Create(path);
+            SaveLosslessJpeg(file, settings);
+        }
+
         /// <summary>Writes the image as a BMP.</summary>
         public void SaveBmp(Stream output, in BmpSettings settings = default) => ImageCodec.EncodeBmp(Pixels, Width, Height, RowPitch, Layout, output, settings);
 

@@ -63,4 +63,18 @@ Conversion between layouts goes through an RGBA row and `PixelRows.FromRgba` (Re
 - Atlases not switched to KTX2.
 - Level-drop path for files over the device limit untested; real third-party `.ktx2` in the engine still unchecked.
 
+## Measured against native references (2026-11-08)
+
+- Method: scratch console bench, not committed (no perf tests, see [[other-raster-formats]]). Release, net10.0, Windows, AMD Ryzen 9 9900X, default tiering. Entry: `ImageCodec.Decode` into a preallocated RGBA8 buffer.
+- Inputs: `Brick.png` + `Brick2.png` (two 1024² opaque photos) encoded with `ImageCodec.EncodeKtx2` (one RGBA8 level, none or ZLIB). 2-image set per pass; 40 warm-up passes, 6 timed, median ms for the set; 3 Arctis processes alternated with 3 reference processes; ratio paired per round (below 1 = Arctis faster). Arctis allocated 24 B per set.
+- References are native C called from CPython 3.14: cross-runtime, indicative only. libktx is not installed, so there is no container-level reference; the ZLIB case compares Arctis's inflate against inflating the same level payload.
+- Correctness: KTX2 output byte-identical to the stored/inflated payload.
+
+| Case | Arctis ms | Reference ms | Ratio |
+|---|---|---|---|
+| KTX2 none (RGBA8, 4 MB per image) | 0.27-0.29 | no meaningful reference (a numpy copy measured 2.10-2.30, Python overhead) | - |
+| KTX2 ZLIB | 12.78-13.42 | libdeflate 1.26 12.26-12.73; zlib-ng 2.3.3 16.09-16.86; zlib 1.3.2 25.58-26.04 | 1.00-1.06x libdeflate, faster than zlib-ng and zlib |
+
+- Not checked: ARM64, net8.0, lower SIMD tiers, libktx.
+
 Related: [[png-deflate]], [[managed-inflate]], [[png-decode-fast-paths]]

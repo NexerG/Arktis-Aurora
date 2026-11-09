@@ -202,6 +202,23 @@ namespace Arctis.Imaging
         }
     }
 
+    /// <summary>How a lossless JPEG is written; the default is TurboJPEG's predictor 1.</summary>
+    public readonly struct JpegLosslessSettings
+    {
+        private readonly int predictor;
+
+        /// <summary>Creates settings; a zero predictor takes the default.</summary>
+        public JpegLosslessSettings(int predictor) => this.predictor = predictor;
+
+        /// <summary>The T.81 predictor (1-7) each sample's difference is taken from.</summary>
+        public int Predictor => predictor != 0 ? predictor : 1;
+
+        internal void Check()
+        {
+            if (Predictor < 1 || Predictor > 7) throw new ArgumentException($"lossless jpeg predictor {Predictor} is outside 1-7");
+        }
+    }
+
     /// <summary>How a BMP stores one pixel. Indexed formats take an exact palette of the image's colours, without alpha.</summary>
     public enum BmpPixelFormat : byte
     {

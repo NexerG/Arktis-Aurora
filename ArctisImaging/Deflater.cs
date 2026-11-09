@@ -9,17 +9,17 @@ using System.Runtime.Intrinsics.X86;
 
 namespace Arctis.Imaging
 {
-    /// <summary>zlib (RFC 1950) and DEFLATE (RFC 1951) compression; the match search follows zlib's deflate_slow.</summary>
+    /// <summary>zlib (RFC 1950) and DEFLATE (RFC 1951) compression; zlib's deflate_slow over 4-byte hash chains and a 3-byte slot.</summary>
     public static unsafe class Deflater
     {
         private const int MinMatch = 3, MaxMatch = 258, WSize = 32768, WMask = WSize - 1, TooFar = 4096;
         private const int MaxDist = WSize - (MaxMatch + MinMatch + 1), HashSize = 1 << 15;
-        private const int BlockSymbols = 16383, MaxStored = 65535, EndOfBlock = 256;
+        private const int BlockSymbols = 16383, MaxStored = 65535, EndOfBlock = 256, MinRunFill = 16;
         private const int LitlenCodes = 286, DistCodes = 30, LengthCodes = 19;
 
         // work layout, in ints
         private const int LitFreq = 0, DistFreq = 288, ClFreq = 320, LitLens = 340, DistLens = 628, ClLens = 660;
-        private const int LitCodes = 680, DistCodesAt = 968, ClCodes = 1000, Rle = 1020, Scratch = 1340, WorkSize = 1916;
+        private const int LitCodes = 680, DistCodesAt = 968, ClCodes = 1000, Rle = 1020, Scratch = 1340, SymTable = 1916, DistTable = 2428, WorkSize = 2460;
 
         // length - 3 to its code index; distance - 1 below 256, then 256 + ((distance - 1) >> 7), to its code
         private static readonly byte[] lengthCodeOf = LengthCodeTable(), distCodeOf = DistCodeTable();
@@ -31,7 +31,7 @@ namespace Arctis.Imaging
         public static void Deflate(ReadOnlySpan<byte> input, Stream output, in DeflateSettings settings = default)
         {
             settings.Check();
-            int[] chains = ArrayPool<int>.Shared.Rent(HashSize + WSize);
+            int[] chains = ArrayPool<int>.Shared.Rent(2 * HashSize + WSize);
             ushort[] symbols = ArrayPool<ushort>.Shared.Rent(2 * BlockSymbols);
             int[] work = ArrayPool<int>.Shared.Rent(WorkSize);
             byte[] buffer = ArrayPool<byte>.Shared.Rent(1 << 16);
@@ -67,7 +67,7 @@ namespace Arctis.Imaging
             // input and match search
             private readonly byte* data;
             private readonly int n, hashShift;
-            private readonly int* head, prev;
+            private readonly int* head, head3, prev;
             private readonly int goodLength, maxLazy, niceLength, maxChain;
 
             // the block being gathered: symbols, frequencies, bytes covered
@@ -80,7 +80,8 @@ namespace Arctis.Imaging
                 this.data = data;
                 this.n = n;
                 head = chains;
-                prev = chains + HashSize;
+                head3 = chains + HashSize;
+                prev = chains + 2 * HashSize;
                 symDist = symbols;
                 symLen = symbols + BlockSymbols;
                 this.work = work;
@@ -95,6 +96,7 @@ namespace Arctis.Imaging
                 int hashBits = Math.Clamp(BitOperations.Log2((uint)n) + 1, 8, 15);
                 hashShift = 32 - hashBits;
                 new Span<int>(head, 1 << hashBits).Clear();
+                new Span<int>(head3, 1 << hashBits).Clear();
                 new Span<int>(work, ClFreq).Clear();
             }
 
@@ -104,24 +106,32 @@ namespace Arctis.Imaging
                 int strstart = 0, matchLength = MinMatch - 1, matchStart = 0;
                 bool matchAvailable = false;
                 byte* window = data;
-                int length = n, lazy = maxLazy, maxInsert = n - MinMatch;
+                int length = n, lazy = maxLazy, maxInsert = n - MinMatch, longMatch = 16 * maxLazy;
                 while (strstart < length)
                 {
-                    int hashHead = 0;
-                    if (strstart <= maxInsert) hashHead = Insert(strstart);
+                    int hashHead = 0, near = 0;
+                    if (strstart <= maxInsert) hashHead = Insert(strstart, out near);
                     int prevLength = matchLength, prevMatch = matchStart;
                     matchLength = MinMatch - 1;
-                    if (hashHead != 0 && prevLength < lazy && strstart - hashHead <= MaxDist)
+                    if (prevLength < lazy && (hashHead != 0 && strstart - hashHead <= MaxDist || near != 0 && strstart - near <= TooFar))
                     {
-                        matchLength = LongestMatch(strstart, hashHead, prevLength, ref matchStart);
+                        matchLength = LongestMatch(strstart, hashHead, near, prevLength, ref matchStart);
                         if (matchLength == MinMatch && strstart - matchStart > TooFar) matchLength = MinMatch - 1;
                     }
 
                     if (prevLength >= MinMatch && matchLength <= prevLength)
                     {
-                        bool full = TallyMatch(strstart - 1 - prevMatch, prevLength);
-                        for (int k = prevLength - 2; k > 0; k--)
-                            if (++strstart <= maxInsert) Insert(strstart);
+                        int distance = strstart - 1 - prevMatch, last = strstart + prevLength - 2;
+                        bool full = TallyMatch(distance, prevLength);
+                        if (prevLength > longMatch) strstart = last - 1;
+                        else if (distance == 1 && prevLength >= MinRunFill)
+                        {
+                            InsertRun(strstart + 1, last - 3);
+                            strstart = last - 3;
+                        }
+                        int insertEnd = last < maxInsert ? last : maxInsert;
+                        while (strstart < insertEnd) Insert(++strstart, out _);
+                        strstart = last;
                         matchAvailable = false;
                         matchLength = MinMatch - 1;
                         strstart++;
@@ -142,18 +152,39 @@ namespace Arctis.Imaging
                 WriteBlock(true);
             }
 
-            private readonly int Insert(int pos)
+            // Links pos into its 4-byte chain and the 3-byte slot; near = the slot's previous position.
+            private readonly int Insert(int pos, out int near)
             {
-                byte* p = data + pos;
-                int h = (int)((uint)(p[0] | p[1] << 8 | p[2] << 16) * 2654435761u >> hashShift);
+                uint v = Bytes(pos);
+                int h = (int)(v * 2654435761u >> hashShift), h3 = (int)((v & 0xFFFFFF) * 2654435761u >> hashShift);
                 int match = head[h];
+                near = head3[h3];
                 prev[pos & WMask] = match;
                 head[h] = pos;
+                head3[h3] = pos;
                 return match;
             }
 
-            // zlib's longest_match: walks the hash chain for a match longer than prevLength.
-            private readonly int LongestMatch(int strstart, int cur, int prevLength, ref int matchStart)
+            // Inserts from..to inside a run of one byte value, whose bucket's head is from - 1: each links to the one before.
+            private readonly void InsertRun(int from, int to)
+            {
+                uint v = Bytes(from);
+                head[(int)(v * 2654435761u >> hashShift)] = to;
+                head3[(int)((v & 0xFFFFFF) * 2654435761u >> hashShift)] = to;
+                int at = from & WMask, count = to - from + 1, first = WSize - at < count ? WSize - at : count;
+                Ascending(prev + at, from - 1, first);
+                if (first < count) Ascending(prev, from - 1 + first, count - first);
+            }
+
+            // 4 bytes at pos; 3 at the last position
+            private readonly uint Bytes(int pos)
+            {
+                byte* p = data + pos;
+                return pos + 3 < n ? Unsafe.ReadUnaligned<uint>(p) : (uint)(p[0] | p[1] << 8 | p[2] << 16);
+            }
+
+            // zlib's longest_match over the 4-byte chain, after the 3-byte slot's candidate near.
+            private readonly int LongestMatch(int strstart, int cur, int near, int prevLength, ref int matchStart)
             {
                 int lookahead = n - strstart;
                 int maxLen = lookahead < MaxMatch ? lookahead : MaxMatch;
@@ -166,6 +197,19 @@ namespace Arctis.Imaging
                 int* links = prev;
                 byte* scan = window + strstart;
                 ushort scanStart = *(ushort*)scan, scanEnd = *(ushort*)(scan + bestLen - 1);
+                if (bestLen < MinMatch && near != 0 && strstart - near <= TooFar)
+                {
+                    byte* m3 = window + near;
+                    if (*(ushort*)m3 == scanStart && m3[2] == scan[2])
+                    {
+                        int len = 3 + Common(scan + 3, m3 + 3, maxLen - 3);
+                        matchStart = near;
+                        bestLen = len;
+                        if (len >= nice) return bestLen;
+                        scanEnd = *(ushort*)(scan + bestLen - 1);
+                    }
+                }
+                if (cur == 0 || strstart - cur > MaxDist) return bestLen;
                 do
                 {
                     byte* match = window + cur;
@@ -287,22 +331,32 @@ namespace Arctis.Imaging
             private void WriteSymbols()
             {
                 int* lc = work + LitCodes, ll = work + LitLens, dc = work + DistCodesAt, dl = work + DistLens;
-                ushort* distances = symDist, values = symLen;
-                int symbols = count;
+                uint* table = (uint*)(work + SymTable), dist = (uint*)(work + DistTable);
                 fixed (byte* lengthCodes = lengthCodeOf, distanceCodes = distCodeOf)
-                    for (int i = 0; i < symbols; i++)
+                {
+                    // literal c at c, length - 3 at 256 + value with its extra bits: code | bits << 24
+                    for (int c = 0; c < 256; c++) table[c] = (uint)lc[c] | (uint)ll[c] << 24;
+                    for (int v = 0; v < 256; v++)
                     {
-                        int distance = distances[i], value = values[i];
-                        if (distance == 0)
-                        {
-                            bits.Put((uint)lc[value], ll[value]);
-                            continue;
-                        }
-                        int code = 257 + lengthCodes[value], e = LengthExtra(code - 257);
-                        bits.Put((uint)lc[code] | (uint)(value & ((1 << e) - 1)) << ll[code], ll[code] + e);
-                        int d = distance - 1, dcode = distanceCodes[d < 256 ? d : 256 + (d >> 7)], de = DistExtra(dcode);
-                        bits.Put((uint)dc[dcode] | (uint)(d & ((1 << de) - 1)) << dl[dcode], dl[dcode] + de);
+                        int code = 257 + lengthCodes[v], e = LengthExtra(code - 257);
+                        table[256 + v] = (uint)lc[code] | (uint)(v & ((1 << e) - 1)) << ll[code] | (uint)(ll[code] + e) << 24;
                     }
+                    // distance code: code | code length << 16 | code + extra length << 24
+                    for (int i = 0; i < DistCodes; i++) dist[i] = (uint)dc[i] | (uint)dl[i] << 16 | (uint)(dl[i] + DistExtra(i)) << 24;
+
+                    // a literal takes the same path with a zero mask, so its distance part writes 0 bits
+                    ushort* distances = symDist, values = symLen;
+                    for (int i = 0, symbols = count; i < symbols; i++)
+                    {
+                        int distance = distances[i], m = -distance >> 31;
+                        uint entry = table[values[i] + (256 & m)];
+                        bits.Put(entry & 0xFFFFFF, (int)(entry >> 24));
+                        int d = (distance - 1) & m;
+                        uint de = dist[distanceCodes[d < 256 ? d : 256 + (d >> 7)]];
+                        int shift = (int)(de >> 16) & 0xFF, total = (int)(de >> 24);
+                        bits.Put(((de & 0xFFFF) | (uint)(d & ((1 << (total - shift)) - 1)) << shift) & (uint)m, total & m);
+                    }
+                }
                 bits.Put((uint)lc[EndOfBlock], ll[EndOfBlock]);
             }
         }
@@ -567,6 +621,22 @@ namespace Arctis.Imaging
             }
             while (i < max && a[i] == b[i]) i++;
             return i;
+        }
+
+        // dst[k] = value + k for k < count
+        private static void Ascending(int* dst, int value, int count)
+        {
+            int k = 0;
+            if (Vector512.IsHardwareAccelerated)
+                for (Vector512<int> v = Vector512.Create(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15) + Vector512.Create(value); k + 16 <= count; k += 16, v += Vector512.Create(16))
+                    v.Store(dst + k);
+            if (Vector256.IsHardwareAccelerated)
+                for (Vector256<int> v = Vector256.Create(0, 1, 2, 3, 4, 5, 6, 7) + Vector256.Create(value + k); k + 8 <= count; k += 8, v += Vector256.Create(8))
+                    v.Store(dst + k);
+            if (Vector128.IsHardwareAccelerated)
+                for (Vector128<int> v = Vector128.Create(0, 1, 2, 3) + Vector128.Create(value + k); k + 4 <= count; k += 4, v += Vector128.Create(4))
+                    v.Store(dst + k);
+            for (; k < count; k++) dst[k] = value + k;
         }
 
         // length - 3 to its code index 0-28 (symbol 257 + index)

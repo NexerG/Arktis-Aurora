@@ -66,7 +66,8 @@ Linux cloud container, Release, .NET 10.0.114, second of two runs per encoder, s
 
 ## Known gaps
 - Byte-exact zlib port (option b) deferred.
-- `Deflater` encode is ~7 % slower than classic zlib 6; optimised 2026-11-06 (update below), still ~1.55x .NET's zlib-ng on Windows.
+- `Deflater` encode is ~7 % slower than classic zlib 6; optimised 2026-11-06 (update below), still ~1.1x .NET's zlib-ng on Windows on atlas-like data only (2026-11-08, after the 4-byte chain update); on UI-screenshot goldens it is faster than zlib-ng since the 2026-11-08 update.
+- Atlas-style chain-walk gap to zlib-ng (~1.1x) remains; libdeflate-style 4-byte chains + one-slot 3-byte table landed 2026-11-08 (last update); `deflate_medium` not done. Goldens output still 1.4 % larger than zlib-ng.
 - Atlases not re-baked; `importerVersion` still 9.
 
 ## Update 2026-11-06 — Windows measurements
@@ -118,5 +119,120 @@ Scratch console bench (not a test), Release, net10.0, Windows. Input = Thorium's
 - ~18 % faster; .NET zlib-ng is still ~1.55x faster at 1.8 % larger output.
 
 **Verification.** test-verified (unit): `dotnet test ArctisImaging.Tests -f net10.0` 124 passed. Bench also deflates lengths 0-40 and +/-40 around 5552, 11104 and 1 MiB (284 lengths) and inflates them through `ZLibStream`, which checks Adler-32: all match. net8.0 builds clean. Not checked: ARM / scalar Adler path on hardware, in-engine suite, Linux.
+
+## Update 2026-11-08 — inserts inside matches
+
+**What changed (`Arctis.Imaging.Deflater`, all private; no public signature changed):**
+- New const `MinRunFill = 16`.
+- New `Encoder.InsertRun(from, to)`: inserts from..to inside a one-byte run; sets `head[Hash(from)] = to` and `prev[i] = i - 1`, split where the window wraps at `WMask`.
+- New `Encoder.Hash(pos)`: 3-byte multiplicative hash from one unaligned 32-bit read masked to 24 bits; byte form for the last position (`pos + 3 >= n`). `Insert` calls it.
+- New primitive `Ascending(int* dst, int value, int count)`: dst[k] = value + k; Vector512 / Vector256 / Vector128 tiers plus scalar tail (index vectors spelled out, `VectorN<T>.Indices` is .NET 9+ and the library also targets net8.0).
+- `Encoder.Run` match branch: computes the insert end once (`min(last, maxInsert)`) instead of testing per byte; local `longMatch = 16 * maxLazy`. Length > longMatch inserts only `last`; else distance 1 and length >= `MinRunFill` goes through `InsertRun` for s+2..s+L-3, then the last two positions are inserted normally.
+
+**Why.**
+- Corpus changed: the 12 font/icon atlases are ADF now (aab68a7), so PNG encoding today is mostly test goldens/actuals/diffs (`TestRunner`), `DocumentEditorControl` image saves, KTX2 zlib and PDF streams. Primary corpus = Thorium's 62 golden PNGs (143 139 058 filtered bytes); the atlases (extracted from `aab68a7^`, 133 187 456 bytes) stay as the large-image regression check. User agreed.
+- Diagnosis: on goldens `Deflater` was 156-174 ms vs zlib-ng 62-66 ms; at MaxChain 4 it was still 124 ms, so the cost was the per-byte insert of long flat runs, not the chain walk.
+- Run fill is output-identical: inside a distance-1 match every position s+2..s+L-3 hashes to the same bucket whose head is s+1 (inserted just before), so zlib's per-byte loop produces prev[i] = i - 1 and head = s+L-3 exactly. Only distance 1 is detected (implies equal bytes for free); other periods would need hash-collision handling.
+- Step 2 (user asked to try it): zlib-ng's `insert_match` rule, skip interior inserts for matches > 16 x max_insert_length (= MaxLazy; 257-258 at defaults). Changes output; it is the only output-changing part. The dropped attempt in the 2026-11-06 update ("not inserting positions deep inside byte runs", +5 % time, +1.4 % size) was a different rule; this one measured faster on both corpora. Landed; the user confirmed keeping it.
+- Not done: libdeflate-style 4-byte chains + one-slot 3-byte table (step 3), `deflate_medium`.
+
+**Measurements.** Windows, AMD Ryzen 9 9900X, Release net10.0, scratch console bench (not a test), 3 processes x 6 passes, passes 3-5 range; HEAD = a copy of the pre-change `Deflater` in the same process.
+
+| corpus | HEAD ms | step 1 ms | step 1+2 ms | zlib-ng Optimal ms |
+|---|---|---|---|---|
+| 62 goldens | 157-173 | 58-60 | 46-52 | 63-69 |
+| 12 atlases | 827-871 | 780-830 | 759-784 | 547-587 |
+
+| corpus | HEAD bytes | step 1 bytes | step 1+2 bytes | zlib-ng bytes |
+|---|---|---|---|---|
+| 62 goldens | 1 329 774 | 1 329 774 | 1 329 096 | 1 311 129 |
+| 12 atlases | 16 142 144 | 16 142 144 | 16 158 570 | 16 433 998 |
+
+- Goldens ~3.3x faster than HEAD, ~1.3x faster than zlib-ng, still 1.4 % larger. Atlases ~8 % faster; zlib-ng still ~1.4x faster there (chain walk dominates, untouched). Step 2 costs +0.10 % size on atlases, -0.05 % on goldens.
+
+**Verification.** test-verified (unit): `dotnet test ArctisImaging.Tests -f net10.0` 459 passed. Bench: step 1 alone byte-identical to HEAD on 12/12 atlases and 62/62 goldens; with step 2 every output inflates back through `ZLibStream`; 284 lengths (0-40, +/-40 around 5552, 11104, 1 MiB) inflate and checksum through `ZLibStream`; same checks pass with DOTNET_EnableAVX512F=0, DOTNET_EnableAVX2=0 and DOTNET_EnableHWIntrinsic=0. ArctisImaging builds clean for net8.0 and net10.0 (Release). Not checked: ARM, Linux, in-engine suite (`_Build/test.sh`), PDF output in a viewer, small-input (PDF glyph stream) timing.
+
+## Update 2026-11-08 — symbol writing, chain hopping dropped
+
+**What changed (`Arctis.Imaging.Deflater`, all private; no public signature changed):**
+- New work-layout consts `SymTable = 1916` (512 uints) and `DistTable = 2428` (32 uints); `WorkSize` 1916 -> 2460.
+- `Encoder.WriteSymbols` is branch-free. Per block it builds `table[512]` (literal c at c; length-3 value v at 256 + v, extra bits pre-merged; entry = code | bit count << 24) and `dist[30]` (code | code length << 16 | code + extra length << 24).
+- Per symbol: mask `m = -distance >> 31`; `table[value + (256 & m)]` is written in one `Put`; the distance part is written with value and length ANDed with m (a literal writes 0 bits). Still two `BitWriter.Put` calls per symbol.
+- `LongestMatch` unchanged (attempt B below reverted). Output byte-identical to the previous (step 1+2) output.
+
+**Profile that drove it** (Windows, Ryzen 9 9900X, Release net10.0, scratch bench with Stopwatch timers around WriteBlock / WriteSymbols / Adler32, one pass, after step 1+2):
+
+| corpus | total ms | search + tally ms | trees + header ms | symbols ms | Adler ms | total at MaxChain 4 ms |
+|---|---|---|---|---|---|---|
+| 62 goldens | 47 | 39 | 1 | 6 | 1.6 | 31 |
+| 12 atlases | 802 | 722 | 8 | 70 | 2.5 | 354 |
+
+- Counts per pass: goldens 0.92 M searches, 14.6 M chain steps, 6.4 M single inserts, 8.1 M run-filled positions; atlases 10.1 M searches, 231 M chain steps (22.9/search), 76 M single inserts, 17 M run-filled, 24.1 M `Common` calls, 4.1 M literals, 5.4 M matches.
+- Goldens are 98.9 % zero bytes after filtering, atlases 78.6 %. Chain walk ~16 ms of goldens, ~450 ms of atlases (default vs MaxChain 4).
+
+**SIMD map.** `Common`, `Adler32`, `Ascending` and the `PngEncoder` filters all have 512/256/128 tiers. Not vectorisable in a useful way: the chain walk (each step's address is the previous load), bit writing (each symbol's position depends on all earlier bits), inserts (scatter where neighbours share a bucket; an 8-wide hash compute would save little since the cost is the head load/store).
+
+**A (kept): branch-free symbol writing.** Hypothesis: literal/match branch mispredicts (~7 ns/symbol). Symbol phase on atlases 70 -> 55 ms (one pass), so mispredicts were only part of it; still ~5.8 ns/symbol. Remaining suspect is `bits` living in the Encoder struct (acc/fill/pos round-trip memory per `Put`) - not measured; the 2026-11-06 update already recorded "a local BitWriter copy in WriteSymbols no change".
+
+| corpus | before ms | after A ms | bytes (both) |
+|---|---|---|---|
+| 12 atlases | 736-751 | 725-742 | 16 158 570 |
+| 62 goldens | 46-51 | 47-54 | 1 329 096 |
+
+3 processes x 6 passes, passes 3-5; "before" = step 1+2 code copied into the same process. Atlases ~1.5-2 % faster; goldens unchanged within noise.
+
+**B (tried, reverted): zlib-ng's LONGEST_MATCH_SLOW chain hopping.** After a better match of length L, follow the hash chain of the offset 0..L-3 whose next entry is furthest back, plus the head of the hash at L-4; candidate = chain entry - offset, limit shifted by offset; any offset whose chain ends ends the search. One process, pass 5:
+
+| corpus | before ms | B ms | before bytes | B bytes |
+|---|---|---|---|---|
+| 12 atlases | 742 | 851 | 16 158 570 | 16 142 635 |
+| 62 goldens | 51 | 66 | 1 329 096 | 1 328 126 |
+
+Slower on both (the per-improvement scan of up to L prev entries costs more than the steps it saves; zlib-ng only uses it at level 9), so reverted under the agreed rule (keep only if both corpora faster and atlases grow <= 0.1 %).
+
+**Hazard for any future offset-chain attempt.** `prev` comes from an `ArrayPool` buffer that is never cleared, and step 2 (and the end of input) leaves positions uninserted. A hop reads `prev[matchStart + i]` for such positions; inside the first 32 KB of a call that is garbage from an earlier `Deflate` call and can point forward, i.e. a candidate >= strstart (distance <= 0, `Common` reading past the input). The plain chain walk is safe because it only follows entries of inserted positions and stops at `limit`. Any offset-chain technique needs `prev[0..min(n, WSize))` cleared per call and must not treat a hole as a chain end.
+
+**Verification.** test-verified (unit): `dotnet test ArctisImaging.Tests -f net10.0` 459 passed. Bench: A byte-identical to the previous (step 1+2) output on 12/12 atlases and 62/62 goldens, also under DOTNET_EnableAVX512F=0, DOTNET_EnableAVX2=0, DOTNET_EnableHWIntrinsic=0; 284 lengths inflate and checksum through `ZLibStream`. ArctisImaging builds clean (Release, net8.0 + net10.0). Not checked: ARM, Linux, in-engine suite, PDF output in a viewer.
+
+**Known gaps.** Symbol writing still ~5.8 ns/symbol on atlases, cause not measured. Atlas chain-walk gap to zlib-ng unchanged (~1.4x). Not done: libdeflate 4+3-byte hash (landed in the update below; gap now ~1.1x), `deflate_medium`, a register-held bit accumulator in `WriteSymbols`.
+
+## Update 2026-11-08 — 4-byte chains and a 3-byte slot
+
+Supersedes the "15 hash bits (multiplicative over 3 bytes ...)" detail above for the chains (the slot is still 3-byte). The 2026-11-06 option (c) rejection still stands for a plain 4-byte hash.
+
+**What changed (`Arctis.Imaging.Deflater`, all private; no public signature changed; output changes):**
+- `Deflate`: `chains` rented as `2 * HashSize + WSize` (was `HashSize + WSize`), laid out `head`, `head3`, `prev`.
+- New field `Encoder.head3` (int*): the 3-byte slot, one entry per bucket holding the latest position; cleared `1 << hashBits` entries per call, as `head`.
+- `Encoder.Insert(int pos)` -> `Insert(int pos, out int near)`: one 32-bit load, 4-byte chain hash `v * 2654435761 >> hashShift`, slot hash `(v & 0xFFFFFF) * 2654435761 >> hashShift`; returns the chain head, `near` = the slot's previous position; both loads happen before the three stores (prev, head, head3). Inserts inside matches pass `out _`.
+- Removed `Encoder.Hash(int pos)`; new `Encoder.Bytes(int pos)`: 4 bytes at pos, 3 at the last position (`pos + 3 >= n`), shared by `Insert` and `InsertRun`.
+- `Encoder.InsertRun` fills to `last - 3` (was `last - 2`) because a position now needs 4 bytes inside the run; also sets `head3`. Still output-identical to a per-byte insert loop under the new hash.
+- `Encoder.Run`: a search runs when `prevLength < lazy` and either the chain head is within `MaxDist` or the slot's position is within `TooFar`.
+- `Encoder.LongestMatch(strstart, cur, near, prevLength, ref matchStart)`: with no match of >= 3 yet, checks `near` first (3 bytes, then `Common` to extend); then walks the 4-byte chain only if its head is valid. Class summary: "zlib's deflate_slow over 4-byte hash chains and a 3-byte slot".
+
+**Why: the profile above put ~60 % of atlas time in the chain walk at ~2 ns per step, latency-bound on `prev` (128 KB, in L2), so only fewer steps help.** A 4-byte chain shares 4 bytes, so far fewer candidates per walk; the 3-byte slot recovers 3-byte matches, which TOO_FAR (4096) already limits to nearby ones.
+
+Measured in scratch first (both round-trip through `ZLibStream`), Release net10.0, 3 processes, passes 4-5:
+
+| corpus | before ms | plain 4-byte ms | 4-byte + 3-byte slot ms | before bytes | plain 4-byte bytes | 4+3 bytes |
+|---|---|---|---|---|---|---|
+| 12 atlases | 738-784 | 539-554 | 601-627 | 16 158 570 | 16 642 400 | 16 157 249 |
+| 62 goldens | 46-47 | 43-48 | 47-49 | 1 329 096 | 1 329 591 | 1 329 395 |
+
+Plain 4-byte stays rejected (+3.0 % on atlases, larger than zlib-ng). The user chose 4+3 knowing the goldens trade.
+
+**Insert order: both loads before the stores.** On zero bytes both hashes are 0, so `head[0]` and `head3[0]` are exactly 128 KB apart; storing `head3` before loading `head` made the load wait on the store (4K aliasing). Goldens 49 -> 47-48 ms in scratch, output byte-identical. Tried, no help: moving `head3` by 64 B (16 ints). (This departed from the agreed plan with the user's approval.)
+
+Final measurement of the repo build (3 processes x 6 passes, passes 3-5; "before" = the step 1+2 Deflater copy in the same process, i.e. before branch-free symbol writing, worth ~1.5-2 % on atlases; zlib-ng = .NET `ZLibStream` Optimal):
+
+| corpus | before ms | now ms | zlib-ng ms | before bytes | now bytes | zlib-ng bytes |
+|---|---|---|---|---|---|---|
+| 12 atlases | 764-837 | 607-645 | 543-601 | 16 158 570 | 16 157 249 | 16 433 998 |
+| 62 goldens | 47-48 | 48-49 | 63-68 | 1 329 096 | 1 329 395 | 1 311 129 |
+
+Atlases now ~1.1x zlib-ng (was ~1.4x) at 1.7 % smaller output; goldens still ~1.3x faster than zlib-ng.
+
+**Verification.** test-verified (unit): `dotnet test ArctisImaging.Tests -f net10.0` 459 passed. Bench: the repo build's sizes equal the scratch variant's exactly on both corpora; every output inflates back to its input through `ZLibStream`; 284 lengths inflate and checksum through `ZLibStream`; also under DOTNET_EnableAVX512F=0, DOTNET_EnableAVX2=0 (before the reorder) and DOTNET_EnableHWIntrinsic=0. ArctisImaging builds clean for net8.0 and net10.0 (Release). Not checked: ARM, Linux, in-engine suite, PDF output in a viewer, small-input timing.
+
+**Known gaps.** Goldens ~1-2 ms slower than before; their remaining chain walk is in zero runs (every zero position has the same 4-byte hash, so it does not shorten those chains); a zero-run shortcut in the walk is unmeasured, not done. Atlases still ~1.1x zlib-ng.
 
 Related: [[managed-inflate]], [[png-decode-fast-paths]], [[ktx2-container]]

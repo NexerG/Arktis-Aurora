@@ -155,6 +155,84 @@ namespace Arctis.Imaging.Tests
             Assert.Equal(new byte[] { 10, 200 }, image.Pixels);
         }
 
+        private static readonly PixelLayout[] Layouts = { PixelLayout.RGBA8, PixelLayout.BGRA8, PixelLayout.R8, PixelLayout.RG8 };
+
+        // Packs stored pixels into run-length packets that run on across rows.
+        private static byte[] RunLength(byte[] pixels, int bpp)
+        {
+            MemoryStream output = new MemoryStream();
+            int n = pixels.Length / bpp;
+            for (int i = 0; i < n;)
+            {
+                int run = 1;
+                while (i + run < n && run < 128 && pixels.AsSpan(i * bpp, bpp).SequenceEqual(pixels.AsSpan((i + run) * bpp, bpp))) run++;
+                if (run >= 2)
+                {
+                    output.WriteByte((byte)(0x80 | (run - 1)));
+                    output.Write(pixels, i * bpp, bpp);
+                    i += run;
+                    continue;
+                }
+                int start = i++;
+                while (i < n && i - start < 128 && (i + 1 >= n || !pixels.AsSpan(i * bpp, bpp).SequenceEqual(pixels.AsSpan((i + 1) * bpp, bpp)))) i++;
+                output.WriteByte((byte)(i - start - 1));
+                output.Write(pixels, start * bpp, (i - start) * bpp);
+            }
+            return output.ToArray();
+        }
+
+        // Raw and RLE left-to-right files, in every layout and both row orders, decode as the per-pixel path decodes the
+        // same pixels stored right to left; row 1 is one colour, so runs cross rows and pass 128 pixels.
+        [Theory]
+        [InlineData(2, 32, 8, false)]
+        [InlineData(2, 32, 8, true)]
+        [InlineData(2, 32, 0, false)]
+        [InlineData(2, 24, 0, false)]
+        [InlineData(2, 16, 0, false)]
+        [InlineData(2, 15, 0, false)]
+        [InlineData(3, 8, 0, false)]
+        [InlineData(3, 16, 8, false)]
+        [InlineData(3, 16, 8, true)]
+        [InlineData(1, 8, 0, false)]
+        [InlineData(1, 8, 8, false)]
+        [InlineData(1, 8, 8, true)]
+        public void DirectRowsMatchThePerPixelPath(int kind, int depth, int alphaBits, bool zeroAlpha)
+        {
+            int bpp = (depth + 7) / 8, entryBits = alphaBits > 0 ? 32 : 24, height = 3;
+            byte[]? map = null;
+            if (kind == 1)
+            {
+                map = new byte[10 * entryBits / 8];
+                new Random(depth + alphaBits).NextBytes(map);
+                if (zeroAlpha) for (int i = 3; i < map.Length; i += 4) map[i] = 0;
+            }
+            for (int width = 1; width <= 149; width += 4)
+            {
+                byte[] pixels = new byte[width * height * bpp];
+                Random random = new Random(width);
+                for (int i = 0; i < pixels.Length; i += bpp)
+                {
+                    if (i > 0 && (i / bpp / width == 1 || random.Next(2) == 0)) Array.Copy(pixels, i - bpp, pixels, i, bpp);
+                    else for (int b = 0; b < bpp; b++) pixels[i + b] = (byte)random.Next(256);
+                    if (kind == 1) pixels[i] %= 16;
+                    if (zeroAlpha && kind != 1) pixels[i + bpp - 1] = 0;
+                }
+                byte[] reversed = new byte[pixels.Length];
+                for (int y = 0; y < height; y++)
+                    for (int x = 0; x < width; x++) Array.Copy(pixels, (y * width + x) * bpp, reversed, (y * width + width - 1 - x) * bpp, bpp);
+                byte[] packed = RunLength(pixels, bpp), packedReversed = RunLength(reversed, bpp);
+                for (int top = 0; top < 2; top++)
+                    foreach (PixelLayout layout in Layouts)
+                    {
+                        int descriptor = alphaBits | top * 0x20;
+                        byte[] expected = Load(Tga(kind, width, height, depth, descriptor | 0x10, reversed, map, 3, entryBits), layout).Pixels;
+                        Assert.Equal(expected, Load(Tga(kind, width, height, depth, descriptor, pixels, map, 3, entryBits), layout).Pixels);
+                        Assert.Equal(expected, Load(Tga(kind | 8, width, height, depth, descriptor, packed, map, 3, entryBits), layout).Pixels);
+                        Assert.Equal(expected, Load(Tga(kind | 8, width, height, depth, descriptor | 0x10, packedReversed, map, 3, entryBits), layout).Pixels);
+                    }
+            }
+        }
+
         private static byte[] Fixture(string file) => File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", file));
 
         private static byte[] Encode(Image image, in TgaSettings settings)

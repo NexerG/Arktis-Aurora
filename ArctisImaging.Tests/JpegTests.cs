@@ -76,13 +76,24 @@ namespace Arctis.Imaging.Tests
         }
 
         // Cmyk is Pillow's Adobe CMYK; Ycck (Adobe transform 2) and CmykPlain (no Adobe marker) are hand-built flat 8x8 files.
+        // The 83x11 Wide files (Pillow CMYK, libjpeg-turbo YCCK) reach every SIMD tier and the scalar tail.
         [Theory]
         [InlineData("Cmyk")]
         [InlineData("Ycck")]
+        [InlineData("CmykWide")]
+        [InlineData("YcckWide")]
         public void FourComponentsMatchPillow(string name)
         {
             Image expected = Image.Load(Fixture(name + ".png"));
             AssertNear(expected, Image.Load(Fixture(name + ".jpg")), expected.Height);
+        }
+
+        // Pillow's Adobe RGB (transform 0), 83x11 like the four-component Wide files
+        [Fact]
+        public void RgbMatchesPillow()
+        {
+            Image expected = Image.Load(Fixture("RgbWide.png"));
+            AssertNear(expected, Image.Load(Fixture("RgbWide.jpg")), expected.Height);
         }
 
         // stored CMYK 40, 200, 90, 30 read as plain inks, where Pillow would invert them

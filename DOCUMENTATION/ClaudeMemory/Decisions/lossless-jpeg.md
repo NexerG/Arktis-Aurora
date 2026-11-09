@@ -1,7 +1,7 @@
-# Decision — Arctis.Imaging decodes lossless JPEG (SOF3) and JPEG-LS
+# Decision — Arctis.Imaging decodes lossless JPEG (SOF3) and JPEG-LS, and encodes lossless JPEG
 
-**Date:** 2026-11-07
-**Scope:** `Arctis.Imaging` — `JpegDecoder` (partial, `JpegLossless.cs`), `JpegLsDecoder`, `ImageCodec`, `ImageFormat`
+**Date:** 2026-11-07 (lossless JPEG encoder 2026-11-09)
+**Scope:** `Arctis.Imaging` — `JpegDecoder` (partial, `JpegLossless.cs`), `JpegLsDecoder`, `JpegEncoder` (partial, `JpegLosslessEncoder.cs`), `JpegLosslessSettings`, `ImageCodec`, `Image`, `ImageFormat`
 
 ## What changed
 - `ImageFormat.JpegLs` added. Lossless JPEG stays `ImageFormat.Jpeg`.
@@ -11,7 +11,7 @@
 - `JpegDecoder.TryReadHeader` recognises SOF55 (0xF7) and returns `ImageFormat.JpegLs`.
 - New internal static `JpegLsDecoder` with only `Decode(ReadOnlySpan<byte>, Span<byte> destination, int pitch, PixelLayout)`; its header comes from `JpegDecoder.TryReadHeader`.
 - `ImageCodec.Decode` has a case for `JpegLs`. Tests: `JpegLosslessTests`, `JpegLsTests`. Fixtures: `Ls*.jls`, `Lj*.jpg` in `ArctisImaging.Tests/Fixtures`, each with a reference .png.
-- Decoders only, no encoders. Lossless JPEG **unoptimised**: scalar, 1.1-2.2x libjpeg-turbo (measured 2026-11-07). JPEG-LS: scalar, optimised (A, B, E2 landed 2026-11-07, E3, E4 and E5 landed 2026-11-08), 8-bit RGB ~0.96x CharLS, i.e. faster than CharLS in every bench case except RGB NEAR=2 at ~1.03x (tables below).
+- Decoders for both; an encoder for lossless JPEG only (2026-11-09, see "Lossless JPEG encoder (2026-11-09)" below), JPEG-LS has no encoder. Lossless JPEG optimised 2026-11-08 (see "Lossless JPEG optimised (2026-11-08)" below): scalar entropy decode, SIMD output reduce, 0.61-0.68x libjpeg-turbo (was 1.1-2.2x on 2026-11-07). JPEG-LS: scalar, optimised (A, B, E2 landed 2026-11-07, E3, E4 and E5 landed 2026-11-08), 8-bit RGB ~0.96x CharLS, i.e. faster than CharLS in every bench case except RGB NEAR=2 at ~1.03x (tables below).
 
 ## Measured speed (2026-11-07)
 
@@ -238,7 +238,150 @@ It brings CharLS (JPEG-LS) and libjpeg-turbo 3.2 (lossless encode). The rejected
 - Not GUI-verified: paste or drop of a lossless JPEG or `.jls` into a Thorium note.
 - Not checked: lossless JPEG with restart markers (no encoder here writes them); JPEG-LS with LSE preset thresholds from a real file (only defaults exercised); 2-component JPEG-LS.
 - Unsupported: JPEG-LS restart intervals, point transform, mapping tables, HP colour transform; arithmetic, hierarchical and subsampled lossless JPEG. 12-bit baseline/progressive DCT JPEG is still unsupported.
-- No encoders.
-- JPEG-LS 8-bit RGB is ~0.96x CharLS after E5 (faster), NEAR=2 still ~1.03x. The direct write covers RGBA8 only: other layouts and grey -> R8 still go through the planes and Output (grey -> R8 not measured); 8-bit RGBA (ILV 1, 4 components) still has no table (line loop) and no bench case (the Golomb table landed for ILV 2, the precomputed-0xFF refill was tried and rejected, see E4); the table is not tried for 8-bit ILV 1 with 4 components (RGBA uses `Narrow`; no RGBA bench case); the `maxval > 255` bias-update selector is a proxy tuned on widened 8-bit photos, real 12-16-bit data not benchmarked; E4 numbers ran under background load, A/B ratios only; the first (cold) decode is slower than warm (lever (c) in the E2 pass). The lossless JPEG (SOF3) and simple raster decoders are untouched and still unoptimised.
+- No JPEG-LS encoder (lossless JPEG encoder: see the section below).
+- JPEG-LS 8-bit RGB is ~0.96x CharLS after E5 (faster), NEAR=2 still ~1.03x. The direct write covers RGBA8 only: other layouts and grey -> R8 still go through the planes and Output (grey -> R8 not measured); 8-bit RGBA (ILV 1, 4 components) still has no table (line loop) and no bench case (the Golomb table landed for ILV 2, the precomputed-0xFF refill was tried and rejected, see E4); the table is not tried for 8-bit ILV 1 with 4 components (RGBA uses `Narrow`; no RGBA bench case); the `maxval > 255` bias-update selector is a proxy tuned on widened 8-bit photos, real 12-16-bit data not benchmarked; E4 numbers ran under background load, A/B ratios only; the first (cold) decode is slower than warm (lever (c) in the E2 pass). The simple raster decoders are untouched and still unoptimised (lossless JPEG: see the next section).
 
-Related: [[jpeg-gif-decoders]], [[other-raster-formats]], [[ico-simple-rasters]]
+## Lossless JPEG optimised (2026-11-08)
+
+Scope: `Arctis.Imaging.JpegDecoder` (partial; `JpegDecoder.cs`, `JpegLossless.cs`), all private. Output is byte-identical to before.
+
+What changed:
+- New const `DcWholeAt` (after `QuantAt + 4 * 64`). `TablesLength` = `DcWholeAt + (4 << WholeBits)` (was `QuantAt + 4 * 64`), so the pooled tables array grows by 8192 ints (32 KB).
+- `BuildTable` also fills a whole-difference lookup for DC tables 0-3: 11 bits (`WholeBits`), entry = `value << 8 | (codeLength + bitCount)`. Category 16 is 32768 with no extra bits. 0 is a miss; symbols > 16 are not filled.
+- New `Difference(ref Bits, ref int tables, int t)` (AggressiveInlining): lookup first, else `Symbol` + `Receive` (still throws on category > 16).
+- New private `IPredictor` and structs `Predictor1`..`Predictor7` (T.81 table H.1), used as `where P : struct, IPredictor`.
+- New `DecodeScan<P>` dispatches to `DecodePlane<P>` (one component in the scan) or `DecodeInterleaved<P>`. Both are `[MethodImpl(AggressiveOptimization)]` under the Arctis.Imaging decode-loop exception to aurora-code rule 42a. First row, first column and inner pixels are separate loops: no per-sample branch on x/y/predictor/restart. Planes via `Unsafe` refs.
+- `DecodeLossless`: with `restartInterval == 0` it switches on the predictor once and calls `DecodeScan<PredictorN>`. With restarts the old per-pixel loop remains, now calling `Difference`.
+- New `Reduce(ReadOnlySpan<ushort>, Span<byte>, int pt, int max, int down)`: one row of `((v << pt) & max) >> down` narrowed to bytes; Vector512/256/128 tiers (portable `Narrow`) plus scalar tail; AggressiveOptimization.
+- `OutputLossless`: precision >= 8 uses `Reduce`; below 8 bits stays scalar (the `down >= 0` branch is hoisted). One component into `PixelLayout.R8` writes straight into the destination and skips `ConvertRow` + `PixelRows.FromRgba`; the `rows` and `rgba` buffers are not rented then.
+
+**The whole-difference lookup is the main lever.** With the old loop, RGB went 33 -> 24.5 ms for the set. Before, the entropy/predict loop was ~30 of RGB's ~33 ms (~4.8 ns per sample) and the output pass ~3 ms.
+
+**The lookup is always built in the shared tables layout (user choice, fork A option a).** Every JPEG decode clears 32 KB more, and baseline/progressive files build a DC lookup they never use (estimated a few us per file, not measured). Rejected: building it only for lossless frames. `BuildTable` cannot know the frame type reliably because DHT may come before SOF, so that needs a lazy build at scan start from maxcode/offset/values, which is more code.
+
+**The specialised loop (generic predictor struct, edge rows/columns split out) took 24.5 -> 20.7 ms on top of the table.** On its own, without the table, it was ~1-2%.
+
+**The fast path runs only without restart intervals (user choice, fork B option a).** Files with DRI != 0 keep the per-pixel loop, so their behaviour is exactly as before. No fixture or encoder here writes restarts. Rejected: also fast-pathing row-aligned restarts (`interval % width == 0`). Unverified belief: libjpeg-turbo handles only row-aligned restarts in lossless.
+
+**Output pass: SIMD reduce plus direct grey -> R8.** RGB ~21 -> 18 ms, grey 8-bit 8.3 -> 5.8 ms (prototype A/B). Grey -> R8 used to expand to RGBA and back.
+
+Deliberately not done: the DC lookup for baseline DCT decoding; pixel-interleaved sample storage or a 3-component unroll (like JPEG-LS option B); dropping the `samples` Clear in `ReadLosslessFrame`; the first (cold) decode cost; threads.
+
+Measured 2026-11-08, scratch console bench (not committed): Release, net10.0, Windows, Ryzen 9 9900X, 40 warm-up and 6 timed passes, median ms for the 2-image set (Brick + Brick2, 1024² each), 3 processes each side, before and after alternated. libjpeg-turbo 3.2 via imagecodecs from CPython, 3 processes (cross-runtime, indicative only). Ratio = after / libjpeg-turbo.
+
+| Case | Before (ms) | After (ms) | libjpeg-turbo (ms) | Ratio after |
+|---|---|---|---|---|
+| RGB predictor 1 | 32.8-34.4 | 17.7-17.8 | 26.7-26.9 | 0.66x |
+| RGB predictor 7 | 32.8-33.2 | 17.8-19.5 | 29.1-29.3 | 0.61-0.67x |
+| grey 8-bit | 13.0-14.7 | 5.5-5.9 | 8.8-8.9 | 0.62-0.67x |
+| grey 12-bit | 13.3-13.6 | 6.6-6.7 | 9.8 | 0.67-0.68x |
+
+First (cold) decode of the RGB predictor-1 set: 60-61 ms before, 48-52 ms after.
+
+Verification: `dotnet test ArctisImaging.Tests` 459/459; `ArctisImaging` builds clean on both targets, no warnings in touched files; scratch random cross-check (not committed) 435/435 byte-identical against libjpeg-turbo (`imagecodecs.ljpeg_decode`): 300 random lossless JPEGs (crops up to 400x160 of the fixture photos and Brick/Brick2, grey/RGB, 20% flattened, bit depths 2/3/5/7/8/9/10/12/14/16, predictors 1-7), grey decoded to both RGBA8 and R8; bench output SHA-256 unchanged in all runs. Not checked: `_Build/test.sh`, ARM64, net8.0 at runtime, restart-interval files, GUI paste of a lossless JPEG into Thorium, baseline/progressive JPEG decode-time cost of the larger table.
+
+Known gaps:
+- Restart-interval files take the old per-pixel loop, untested by fixtures.
+- Below-8-bit output stays scalar, not benchmarked.
+- Grey -> RGBA8 still goes through `ConvertRow`.
+- The extra 32 KB table clear plus DC lookup build for non-lossless JPEGs was not measured.
+- The cold first decode is still ~2.7x the warm time.
+
+## Lossless JPEG encoder (2026-11-09)
+
+Writes lossless JPEG (T.81 process 14, SOF3): 8-bit grey or RGB, predictors 1-7, byte-identical to libjpeg-turbo 3.2 (as written through imagecodecs 2026.10.10 `jpeg8_encode(lossless=True, predictor=N)`).
+
+What changed:
+- New file `JpegLosslessEncoder.cs`: a partial of `Arctis.Imaging.JpegEncoder` (internal static). Members: `EncodeLossless(ReadOnlySpan<byte> pixels, int width, int height, int pitch, PixelLayout layout, Stream output, in JpegLosslessSettings settings)`, private `Differences<P>` (generic over the predictor struct), private `LosslessHeaders`, private static `JfifMarker` / `AdobeMarker` byte spans.
+- `JpegEncoder` is now `partial` (nothing else changed in `JpegEncoder.cs`). The lossless partial reuses its `Optimal`, `Codes`, `Symbol`, `Length`, the `Writer` ref struct and the `TablesLength`/`CodeAt`/`SizeAt`/`SpecLength` constants.
+- `JpegDecoder` (`JpegLossless.cs`): `IPredictor` and `Predictor1`..`Predictor7` changed from private to internal so the encoder reuses them.
+- New `Arctis.Imaging.JpegLosslessSettings` readonly struct (Types.cs): ctor `(int predictor)`; `Predictor` (0 means 1, TurboJPEG's `TJPARAM_LOSSLESSPSV` default); internal `Check()` throws ArgumentException outside 1-7.
+- New `ImageCodec.EncodeLosslessJpeg(ReadOnlySpan<byte> pixels, int width, int height, int rowPitch, PixelLayout layout, Stream output, in JpegLosslessSettings settings = default)`: same size (1-65535), pitch and span checks as `EncodeJpeg`.
+- New `Image.SaveLosslessJpeg(Stream, in JpegLosslessSettings = default)` and `SaveLosslessJpeg(string, in JpegLosslessSettings = default)`.
+- New tests `JpegLosslessEncodeTests` (22). No new fixtures: it re-encodes the existing `LjGreyP1..P7.png`, `LjRgb.png`, `LjRgbP6.png` and compares with the `.jpg` beside them.
+
+**What libjpeg-turbo writes, reproduced exactly.**
+Grey = JFIF APP0 (same bytes as the baseline encoder), component id 1. RGB = Adobe APP14 (version 100, flags 0, transform 0), no JFIF, component ids 'R','G','B' (82,71,66). SOF3 precision 8, sampling 0x11, Tq 0; one DHT, class 0 id 0, shared by every component; SOS Ss = predictor, Se = 0, Ah/Al = 0; pad bits 1s; no restart markers. First sample predicted from 128 (1 << (P-1)), rest of the first row from the left, column 0 from above.
+
+**Always optimal Huffman tables, no settings flag.**
+libjpeg-turbo 3.2 in lossless mode always builds optimal tables; imagecodecs `optimize=False/True/None` all give the same bytes (checked). So the encoder runs the port of libjpeg's `jpeg_gen_optimal_table` (`Optimal`) on difference-category counts; there is no standard-table option.
+
+**API: separate `JpegLosslessSettings` + `EncodeLosslessJpeg` / `SaveLosslessJpeg` (user choice 2026-11-09, fork 1a).**
+Rejected: a `Lossless`/`Predictor` field on `JpegSettings`, which would mix in quality and subsampling that mean nothing for lossless.
+
+**No point transform (user choice, fork 2a).**
+Pt discards low bits, and imagecodecs cannot write it, so there would be no oracle. Rejected: offering it with round-trip tests only.
+
+**Layouts as the baseline encoder.**
+R8 and RG8 give grey, RGBA8 and BGRA8 give RGB; alpha is dropped. 4-component output is not written because the decoder reads 4 components as CMYK.
+
+**One pass computes differences into a pooled `short[]` (2 bytes per sample) and counts categories at the same time; the write pass walks it linearly.**
+The predictor is a generic struct parameter (aurora-code rule 34), reusing the decoder's predictor structs rather than copies. Scalar, no SIMD in this first version (superseded: see "Lossless JPEG encoder optimised (2026-11-09)").
+
+Speed (user choice fork 3b), pre-pass numbers (unoptimised first version; after the pass 0.17-0.23x, see the later section). Measured 2026-11-09, scratch console bench (not committed): Release, net10.0, Windows, Ryzen 9 9900X; input Brick.png + Brick2.png (1024² each) as RGBA8 (RGB output) and R8 (grey); 40 warm-up + 6 timed passes, median ms for the 2-image set, encoding into a reused MemoryStream; 3 processes. Reference: libjpeg-turbo 3.2 via imagecodecs `jpeg8_encode` from CPython 3.14 with RGB / L numpy arrays (cross-runtime, includes the Python call and output allocation: indicative only). Ratio = Arctis / libjpeg-turbo.
+
+| Case | Arctis (ms) | libjpeg-turbo (ms) | Ratio |
+|---|---|---|---|
+| RGB predictor 1 | 54.9-55.4 | 102.0-104.4 | 0.53-0.54x |
+| RGB predictor 6 | 55.7-56.6 | 104.8-113.4 | 0.49-0.54x |
+| Grey predictor 1 | 21.8-22.1 | 41.5-42.1 | 0.52-0.53x |
+| Grey predictor 6 | 22.5-24.6 | 40.9-41.8 | 0.54-0.60x |
+
+Faster than libjpeg-turbo in every case; these are the pre-pass numbers, the optimisation pass followed the same day.
+
+Test-verified: `ArctisImaging` builds clean on net8.0 and net10.0, no warnings in touched files. `dotnet test ArctisImaging.Tests` 541/541 (net10.0), including `JpegLosslessEncodeTests` 22/22: the 9 Lj fixtures byte-identical (grey also from RG8), default = predictor 1, BGRA = RGBA, pitched rows, decoder round trip of EncodeLarge.png (333x211) pixel-exact for predictors 1-7 in RGB and grey, predictor -1/8 throws, short span throws. Scratch random cross-check (not committed), 200/200 byte-identical against `imagecodecs.jpeg8_encode(lossless=True)`: random crops up to 400x160 of Brick, Brick2, EncodeLarge and LjRgb, 40% grey (fed as RG8 with random alpha), RGB fed as RGBA8 with random alpha, 20% half-flattened, 10% flat, predictors 1-7. Not checked: `_Build/test.sh`, net8.0 at runtime, ARM64, any GUI/app use (nothing in the engine calls it yet).
+
+Known gaps:
+- Point transform, restart intervals, >8-bit precision (no 16-bit PixelLayout), 4-component output, JPEG-LS encoding: not written.
+- Optimisation pass done the same day (next section); this section's "scalar" and speed numbers are pre-pass.
+- The fixture-generation script for Lj*.jpg is still not in the repo.
+
+## Lossless JPEG encoder optimised (2026-11-09)
+One pass, same day the encoder landed. Output unchanged (byte-identical to libjpeg-turbo 3.2). 0.49-0.60x -> 0.17-0.23x libjpeg-turbo's time. Scalar except the differences pass, which has Vector512/256/128 tiers.
+
+What changed:
+- `JpegEncoder.Differences<P>(pixels, width, height, pitch, step, short[] differences)`: signature changed, no channels and no freq parameters. Writes every byte's difference in the source's own layout (width*step per row, pitch dropped); alpha bytes are computed and never read. First row scalar, first pixel of each later row scalar.
+- New private `PredictRow<P>(ref byte row, ref byte up, ref short d, nuint step, nuint end)`: Vector512/256/128 tiers (bytes widened to shorts with `VectorN.Widen`, prediction in shorts, subtract, store) plus scalar tail.
+- `EncodeLossless`: difference buffer is `step * width * height` shorts (was count * width * height). Counting moved out of the differences pass into a value histogram, then folded into categories. The write and count loops step through the R/G/B (or grey) channel offsets.
+- New constants `CombinedAt = TablesLength`, `Widest = 510`: a region of 1,021 ints after the shared tables in the same pooled int[]. First the per-difference-value histogram, then overwritten with the combined code per difference `(huffmanCode << s | extraBits) << 5 | (huffmanLength + s)` at index d + 510, so the write loop is one lookup and one `Writer.Put` per sample.
+- `JpegDecoder.IPredictor` gained `Vector128<short>/Vector256<short>/Vector512<short> Predict(ra, rb, rc)` overloads; `Predictor1`..`Predictor7` implement them (same formulas in shorts). The decoder does not use them.
+- `JpegEncoder.Writer` unchanged (lever B reverted).
+
+Method: scratch console bench (not committed), Release, net10.0, Windows, Ryzen 9 9900X; Brick.png + Brick2.png (1024² each) as RGBA8 (RGB output) and R8 (grey), predictors 1 and 6; 40 warm-up + 6 timed passes, median ms for the 2-image set, encoding into a reused MemoryStream; 3 processes per row, ranges over processes. Each lever A/B-tested, kept only if it won. Profile before: about one third in the differences pass (RGB ~19 ms, ~3 ns/sample), two thirds in tables + write (RGB ~36 ms, ~5.8 ns/sample).
+
+| Step (ms) | RGB p1 | RGB p6 | Grey p1 | Grey p6 | Verdict |
+|---|---|---|---|---|---|
+| Before | 56.6-58.9 | 59.4-61.2 | 23.5-24.0 | 23.9-25.8 | — |
+| A: combined code per difference | 35.9-36.8 | 35.3-35.7 | 13.3-13.9 | 13.9-14.3 | kept |
+| B: word-at-a-time Writer.Put | 36.0-39.9 | 37.4-38.1 | 13.6-15.2 | 14.5-15.4 | rejected |
+| C: SIMD differences, source layout | 34.7-35.1 | 32.9-33.1 | 13.4-14.0 | 13.3-14.0 | kept |
+| C + 4 interleaved category histograms | 36.2-36.4 | 34.1-35.0 | 14.7-16.3 | 14.2-14.6 | rejected |
+| Value histogram (final) | 22.1-23.7 | 20.3-20.5 | 7.5-7.6 | 7.4-7.4 | kept |
+
+(A row is the back-to-back re-run used as the reference for B; the first A run was 36.1-37.6 / 35.6-38.0 / 13.5-14.0 / 14.0-14.7.)
+
+Why:
+- **A kept: one combined code per difference.** Replaced `Symbol` (freq null check, two `Put`s) with one table lookup and one `Put`. Biggest single win, ~37% off.
+- **B rejected, measured: word-at-a-time `Writer.Put`** (gather to 32 bits, SWAR test for 0xFF, write 4 bytes big-endian, else byte-by-byte stuffing; `Pad` drains). Slower on lossless (RGB p6 35.4 -> 37.7, grey p6 14.0 -> 15.0); on the baseline JPEG encoder within noise (q75 4:2:0 26.5-27.2 -> 25.4-27.5 ms, q95 4:4:4 56.0-58.4 -> 51.5-54.2 noisy). The shared Writer stays byte-at-a-time. User chose to try it on the shared Writer (fork 1a) because JpegEncodeTests guard the baseline.
+- **C kept: SIMD differences in the source layout (user fork 2a).** The encoder, unlike the decoder, has no sample-to-sample dependency: left, above and above-left are all in the source. Storing in source layout costs 4/3 the buffer for RGBA input and 2x for RG8 but needs no shuffle. Rejected: packing to 3 channels with a shuffle tier per width. The differences pass went ~19 ms -> 0.5 ms for the RGB set (grey ~0.1 ms). Total gain small because counting became the bottleneck: a replica of the category-count loop timed alone was ~16 ms RGB, ~7 ms grey (about half the encode).
+- **Interleaved category histograms rejected, measured** (4 int lanes rotated per sample, summed at the end): slower, see table.
+- **Value histogram kept (user approved as an off-plan lever, 2026-11-09):** count each difference value (1,021 int counters in the combined region, before it is filled), then fold into categories with `Length(d)`. Removes the per-sample category computation and spreads increments over many addresses. RGB ~35 -> ~22 ms, grey ~13.5 -> ~7.5 ms.
+- **Rejected up front (in the plan, not measured):** recomputing differences in the write pass instead of storing them; would double the differences work to save ~2 B/sample of traffic.
+
+Final vs libjpeg-turbo 3.2 (imagecodecs `jpeg8_encode(lossless=True)` from CPython 3.14, 3 processes; cross-runtime, includes the Python call and output allocation, indicative only):
+
+| Case | Before pass (ms) | After pass (ms) | libjpeg-turbo (ms) | Ratio after |
+|---|---|---|---|---|
+| RGB predictor 1 | 56.6-58.9 | 22.1-23.7 | 101.2-102.6 | 0.22-0.23x |
+| RGB predictor 6 | 59.4-61.2 | 20.3-20.5 | 102.2-108.7 | 0.19-0.20x |
+| Grey predictor 1 | 23.5-24.0 | 7.5-7.6 | 41.1-42.8 | 0.18x |
+| Grey predictor 6 | 23.9-25.8 | 7.4-7.4 | 40.9-43.3 | 0.17-0.18x |
+
+Verification: test-verified. `ArctisImaging` builds clean on net8.0 and net10.0, no warnings in touched files. `dotnet test ArctisImaging.Tests` 541/541 (net10.0), including JpegLosslessEncodeTests 22/22, JpegEncodeTests and JpegLosslessTests. Scratch random cross-check rerun after every lever, kept or rejected: 200/200 byte-identical against imagecodecs (random crops up to 400x160, grey fed as RG8 and RGB fed as RGBA8 with random alpha, flattened regions, predictors 1-7). Not checked: `_Build/test.sh`, net8.0 at runtime, ARM64 (Vector128 tier only there), machines without AVX-512 (Vector256 tier not separately timed), any app use (nothing calls it).
+
+Known gaps:
+- Remaining time is the scalar value-histogram loop and the byte-at-a-time write; not split further.
+- Per-tier (512/256/128) timings not measured separately; only the AVX-512 machine.
+- Point transform, restarts, >8-bit, 4-component output, JPEG-LS encoder still not written.
+
+Related: [[jpeg-gif-decoders]], [[jpeg-encoder]], [[other-raster-formats]], [[ico-simple-rasters]]
