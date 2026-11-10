@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<ContextMenu>
-	<ContextButton Text="New note" Action="Notes.New"/>
-	<ContextButton Text="New sheet" Action="Sheets.New"/>
-	<ContextButton Text="New LaTeX document" Action="Tex.New"/>
-	<ContextButton Text="New plan" Action="Planners.New"/>
-</ContextMenu>

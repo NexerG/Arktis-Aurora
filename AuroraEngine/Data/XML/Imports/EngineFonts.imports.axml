@@ -4,6 +4,7 @@
 
 	<Charset Name="Latin" Chars=" !&quot;#$%&amp;'()*+,-./0123456789:;&lt;=&gt;?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~ĄČĘĖĮŠŲŪŽąčęėįšųūž›€"/>
 	<Charset Name="Math" Chars=" !&quot;#$%&amp;'()*+,-./0123456789:;&lt;=&gt;?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩαβγδεζηθικλμνξοπρςστυφχψωϑϕϖϱϵ⎛⎜⎝⎞⎟⎠⎡⎢⎣⎤⎥⎦⎧⎨⎩⎪⎫⎬⎭⎮←↑→↓↔↕ℂℕℙℚℝℤℏℓ℘ℑℜℵ±×÷·¬−∓∗∘∙√∝∞∠∣∥∧∨∩∪∫∬∭∮∴∵∼≃≅≈≠≡≤≥≪≫≺≻⊂⊃⊆⊇⊕⊖⊗⊘⊙⊢⊤⊥⋅⋆⋮⋯⋱∀∂∃∄∅∇∈∉∋∏∐∑⋀⋁⋂⋃…′″↦⇐⇑⇒⇓⇔⟵⟶⟷⟸⟹⟺⟼⟨⟩⌈⌉⌊⌋‖⌠⌡⎷ˆ˜˙¨¯´ˇ˘⃗□"/>
+	<Charset Name="Latex" Chars=" !&quot;#$%&amp;&apos;()*+,-./0123456789:;&lt;=&gt;?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~&#160;¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿĀāĂăĄąĆćĈĉĊċČčĎďĐđĒēĔĕĖėĘęĚěĜĝĞğĠġĢģĤĥĦħĨĩĪīĬĭĮįİıĲĳĴĵĶķĸĹĺĻļĽľĿŀŁłŃńŅņŇňŉŊŋŌōŎŏŐőŒœŔŕŖŗŘřŚśŜŝŞşŠšŢţŤťŦŧŨũŪūŬŭŮůŰűŲųŴŵŶŷŸŹźŻżŽžſȷˆˇ˘˙˚˛˜˝–—‘’‚“”„†‡•…‰‹›€ﬀﬁﬂﬃﬄ"/>
 
 	<!-- language packs, joined by commas in an import's Charset -->
 	<Charset Name="LatinExtended" Chars="¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿĀāĂăĄąĆćĈĉĊċČčĎďĐđĒēĔĕĖėĘęĚěĜĝĞğĠġĢģĤĥĦħĨĩĪīĬĭĮįİıĲĳĴĵĶķĸĹĺĻļĽľĿŀŁłŃńŅņŇňŉŊŋŌōŎŏŐőŒœŔŕŖŗŘřŚśŜŝŞşŠšŢţŤťŦŧŨũŪūŬŭŮůŰűŲųŴŵŶŷŸŹźŻżŽžſ"/>
@@ -15,6 +16,12 @@
 	<FontImport Source="Electrolize-Regular.ttf" Charset="Latin" GlyphSize="64"/>
 	<FontImport Source="consola.ttf" Charset="Latin" GlyphSize="64"/>
 	<FontImport Source="cambria.ttc" Face="1" Italic="cambriai.ttf" Bold="cambriab.ttf" Charset="Math" GlyphSize="64"/>
+	<FontImport Source="lmroman10-regular.otf" Italic="lmroman10-italic.otf" Bold="lmroman10-bold.otf" BoldItalic="lmroman10-bolditalic.otf" Charset="Latex" GlyphSize="64"/>
+	<FontImport Source="lmmono10-regular.otf" Charset="Latex" GlyphSize="64"/>
+	<FontImport Source="lmmono12-regular.otf" Charset="Latex" GlyphSize="64"/>
+	<FontImport Source="texgyretermes-regular.otf" Italic="texgyretermes-italic.otf" Bold="texgyretermes-bold.otf" BoldItalic="texgyretermes-bolditalic.otf" Charset="Latex" GlyphSize="64"/>
+	<FontImport Source="Carlito-Regular.ttf" Italic="Carlito-Italic.ttf" Bold="Carlito-Bold.ttf" BoldItalic="Carlito-BoldItalic.ttf" Charset="Latex" GlyphSize="64"/>
+	<FontImport Source="latinmodern-math.otf" Italic="lmroman10-italic.otf" Bold="lmroman10-bold.otf" Charset="Math" GlyphSize="64"/>
 
 	<IconImport Source="Icons/default/svg" Name="default" IconSize="64"/>
 

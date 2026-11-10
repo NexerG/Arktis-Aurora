@@ -1,3 +1,2 @@
 @echo off
-set SOLUTION_DIR=%~dp0..
-powershell -ExecutionPolicy Bypass -Command "$root = (Resolve-Path '%SOLUTION_DIR%').Path.TrimEnd('\') + '\'; Get-ChildItem -Path $root -Recurse -Filter '*.cs' | Where-Object { $_.FullName -notmatch '\\.claude\\' } | Select-String '^namespace ' | ForEach-Object { $ns = $_.Line.Trim() -replace '^namespace ',''; $path = ($_.Path -replace [regex]::Escape($root),'') -replace '\\','/'; $ns + ' -> ' + $path } | Sort-Object -Unique | Out-File ($root + 'NAMESPACES.md') -Encoding UTF8"
+powershell -ExecutionPolicy Bypass -File "%~dp0GenerateNamespaces.ps1" "%~dp0.."

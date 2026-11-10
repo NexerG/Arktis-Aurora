@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- One empty pane, mirroring TabPane.ui.axml. -->
-<EditableTabs Name="Tabs" HeightStar="1"
-                  TabHeight="24" TabWidth="140" NewButton="true"
-                  TearOffDocument="tab-window" StickyDocument="sticky-window"/>

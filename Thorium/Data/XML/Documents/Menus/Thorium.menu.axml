@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<ContextMenu>
-	<ContextButton Text="New note" Action="Notes.New"/>
-	<ContextButton Text="Vaults" Action="Vaults.Open"/>
-	<ContextButton Text="Settings" Action="Settings.Open"/>
-	<ContextButton Text="Reset UI" Action="Session.Reset"/>
-	<ContextButton Text="Exit" Action="ExitApplication"/>
-</ContextMenu>

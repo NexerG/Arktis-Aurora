@@ -21,7 +21,7 @@ if [ "$(cd "$(dirname "$ours")" && pwd)/$(basename "$ours")" = "$(cd "$(dirname 
 	exit 253
 fi
 
-build=$(dotnet build "$root/AuroraEngine/ArctisAurora.sln" -v q -nologo 2>&1)
+build=$(dotnet build "$root/Thorium/Thorium.sln" -v q -nologo 2>&1)
 if [ $? -ne 0 ]; then
 	echo "$build" | grep -E ' error ' | sort -u | head -20
 	echo "BUILD FAILED"

@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<ContextMenu>
-	<ContextButton Text="Add ticket" Action="Planner.AddTicketHere"/>
-	<ContextButton Text="Edit category" Action="Planner.EditCategory"/>
-	<ContextButton Text="Add category" Action="Planner.AddCategory"/>
-	<ContextLine/>
-	<ContextButton Text="Delete category and tickets" Action="Planner.DeleteCategoryWithTickets"/>
-</ContextMenu>

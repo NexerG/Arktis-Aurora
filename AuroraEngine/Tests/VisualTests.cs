@@ -44,7 +44,7 @@ namespace ArctisAurora.Tests
             };
             view.AddChild(new TabItemControl { header = "One" });
             view.AddChild(new TabItemControl { header = "Two" });
-            t.Show(view);
+            t.Show(view).paletteName = "default";
             yield return 2;
 
             yield return t.Golden("Default", view);
@@ -68,7 +68,7 @@ namespace ArctisAurora.Tests
                 verticalAlignment = VerticalAlignment.Top
             };
             column.AddChild(expander);
-            t.Show(column);
+            t.Show(column).paletteName = "default";
             yield return 2;
             yield return t.Golden("Closed", column);
 

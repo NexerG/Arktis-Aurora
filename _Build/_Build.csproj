@@ -11,7 +11,6 @@
   <ItemGroup>
     <ProjectReference Include="..\AuroraEditor\AuroraEditor.csproj" />
     <ProjectReference Include="..\AuroraEngine\AuroraEngine.csproj" />
-    <ProjectReference Include="..\Thorium\Thorium.csproj" />
   </ItemGroup>
 
   <Target Name="PostBuild" AfterTargets="PostBuildEvent" Condition="'$(OS)' == 'Windows_NT'">

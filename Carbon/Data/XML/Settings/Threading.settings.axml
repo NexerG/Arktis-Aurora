@@ -4,6 +4,7 @@
               xsi:schemaLocation="http://arctisaurora/AuroraSettingsTypes ../Schemas/SettingsTypeSchema.xsd">
 
   <Threading>
+    <FrameCap MaxFps="120"/>
     <Idle Wait="true"/>
   </Threading>
 

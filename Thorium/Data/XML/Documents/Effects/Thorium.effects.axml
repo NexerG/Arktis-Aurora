@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8" ?>
-<Effects xmlns="http://arctisaurora/AuroraUITypes"
-		 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-		 xsi:schemaLocation="http://arctisaurora/AuroraUITypes ../../Schemas/UITypeSchema.xsd" >
-
-	<Effect Name="title-in" Duration="0.35" Stagger="0.03" Ease="CubicOut"
-			OffsetFrom="0,6" OffsetTo="0,0" AlphaFrom="0" AlphaTo="1"/>
-
-</Effects>

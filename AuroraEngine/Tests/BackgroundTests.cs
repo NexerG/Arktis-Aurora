@@ -64,6 +64,9 @@ namespace ArctisAurora.Tests
             t.Show(new StackPanelControl());
             yield return 2;
 
+            TraySetting tray = SettingsRegistry.Get<GraphicsSettings>().tray;
+            bool trayWas = tray.enabled;
+            tray.enabled = true;
             WindowSetting setting = SettingsRegistry.Get<GraphicsSettings>().window;
             WindowSetting.CloseAction was = setting.onClose;
             setting.onClose = WindowSetting.CloseAction.Ask;
@@ -89,6 +92,7 @@ namespace ArctisAurora.Tests
                 t.Check(!ConfirmWindow.isOpen, "Cancel closes the prompt");
 
                 setting.onClose = was;
+                tray.enabled = trayWas;
                 yield break;
             }
 
@@ -99,6 +103,7 @@ namespace ArctisAurora.Tests
             t.Check(setting.onClose == WindowSetting.CloseAction.Ask, "an unticked check leaves the setting asking");
 
             setting.onClose = was;
+            tray.enabled = trayWas;
             Background.Show();
             yield return 2;
         }

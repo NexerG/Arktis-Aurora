@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8" ?>
-<TestSuite xmlns="http://arctisaurora/AuroraTestTypes"
-		  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-		  xsi:schemaLocation="http://arctisaurora/AuroraTestTypes ../../Schemas/TestTypeSchema.xsd" >
-	<Test Action="Encryption.LockedTab" Timeout="30000"/>
-	<Test Action="Encryption.LockedSheets"/>
-	<Test Action="Encryption.SealedView"/>
-</TestSuite>

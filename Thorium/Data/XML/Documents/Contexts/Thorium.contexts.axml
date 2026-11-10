@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8" ?>
-<Contexts xmlns="http://arctisaurora/AuroraContextTypes"
-		  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-		  xsi:schemaLocation="http://arctisaurora/AuroraContextTypes ../../Schemas/ContextTypeSchema.xsd" >
-
-	<Context Name="ActiveTabViewer" Type="TabView" From="ActiveControl"/>
-
-</Contexts>

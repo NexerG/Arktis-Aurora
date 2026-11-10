@@ -210,7 +210,7 @@ namespace ArctisAurora.Tests
             t.Check(again == asset && !FontImportWindow.isOpen, "importing it again hands back the same asset at once");
 
             LabelControl label = new LabelControl { text = "Georgia Quick", fontName = asset, fontSize = 24 };
-            t.Show(label);
+            t.Show(label).paletteName = "default";
             yield return 2;
             yield return t.Golden("Label", label);
         }

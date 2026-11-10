@@ -226,10 +226,7 @@
           <xs:enumeration value="Fonts.MathFontBaked" />
           <xs:enumeration value="Fonts.CffCharstring" />
           <xs:enumeration value="Perf.ImageDecode.Atlases.Arctis" />
-          <xs:enumeration value="Perf.ImageDecode.Atlases.ImageSharp" />
           <xs:enumeration value="Perf.ImageDecode.Atlases.Adf" />
-          <xs:enumeration value="Perf.ImageDecode.Formats.Arctis" />
-          <xs:enumeration value="Perf.ImageDecode.Formats.ImageSharp" />
           <xs:enumeration value="Input.ClickFiresRelease" />
           <xs:enumeration value="Input.KeyWithModifierFiresKeybind" />
           <xs:enumeration value="Input.DragMovesSplitter" />
@@ -499,6 +496,7 @@
           <xs:enumeration value="Visual.TabStrip" />
           <xs:enumeration value="Visual.Expander" />
           <xs:enumeration value="Visual.ImageScaled" />
+          <xs:enumeration value="Visual.Ktx2StoredMips" />
         </xs:restriction>
       </xs:simpleType>
     </xs:union>

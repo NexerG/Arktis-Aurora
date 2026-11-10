@@ -1,4 +1,0 @@
-ERROR [Assets] failed to load the default sampler asset — fault handling NOT IMPLEMENTED  @SamplerAsset.cs:69
-ERROR [Layout] skipped layout left 'entity' (CaretControl) row 1003 desired stale  @LayoutEngine.cs:482
-ERROR [Layout] skipped layout left 'entity' (DocumentEditorControl) row 1 desired stale  @LayoutEngine.cs:482
-ERROR [Layout] skipped layout left 'entity' (WindowRoot) row 0 desired stale  @LayoutEngine.cs:482
