@@ -121,7 +121,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - No opening prose paragraph, no `Key changes:` header, no closing paragraph, no metrics or
   verification block.
 - Bullets say what changed, not why. Rejected alternatives and measurements go to
-  `DOCUMENTATION/ClaudeMemory/Decisions/*`, same as code comments (`aurora-code`).
+  `Internal/DOCUMENTATION/ClaudeMemory/Decisions/*`, same as code comments (`aurora-code`).
 - **Never** add a `Co-Authored-By` trailer.
 - **Commit as me, never as Claude.** Author and committer are
   `NexerG <68482683+NexerG@users.noreply.github.com>`, cloud sessions included - their container's git
@@ -131,6 +131,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
   when the session's own instructions say to commit and push.
 - **One commit unless I ask for more.** Everything in the tree lands as a single commit, however many
   concerns it spans. Split into slices only when I explicitly ask for multiple commits.
+- **One commit per repository a change touches.** Arktis, `Thorium/` and `Internal/` are separate
+  repositories; a change spanning them lands as one commit in each, with the same subject.
 - **Nothing is left behind.** Anything uncommitted in the tree goes into the next commit, including
   changes that predate the session or were made by someone else. Never commit a subset of paths and
   leave the rest dirty - if it is changed and uncommitted, it ships with the next commit.
@@ -192,16 +194,24 @@ The test: is a tracked file about to change? Then an edit tool is what changes i
 - Don't implement the fix until I say go - even when it looks trivial or sits in code you just wrote.
 
 This project is a C# game engine called Aurora using Silk.NET/Vulkan/GLFW.
-Before suggesting new code, locate it through the §2 chain (`where-things-live.md` → `INDEX.md` → grep `NAMESPACES.md`).
-Current focus is in "DOCUMENTATION/Work in Progress List.md".
+Before suggesting new code, locate it through the §2 chain (`where-things-live.md` → `INDEX.md` → grep `NAMESPACES.md` and `Thorium/NAMESPACES.md`).
+Current focus is in "Internal/DOCUMENTATION/Work in Progress List.md".
 Explain architectural decisions - why one way and not another - when asked for the reasoning; see §5 for when to volunteer it and the `aurora-code` skill's Comments rules for where it gets written down.
 When showing code in a reply, show only what changes and where it goes, not the whole file. A new class is written out in full, without usings unless they come from a new NuGet package.
 Data and config files are XML, because the XSD layer generates and validates their schemas; don't introduce JSON or another format.
-When creating new logic or systems update DOCUMENTATION/ClaudeMemory/* and DOCUMENTATION/Engine*
+When creating new logic or systems update Internal/DOCUMENTATION/ClaudeMemory/* and Internal/DOCUMENTATION/Engine*
+
+## Repositories
+The Arktis folder is three git repositories. The root is `NexerG/Arktis-Aurora` (public): the engine,
+`ArctisImaging`, `AuroraEditor`, `Carbon`, `_Build`, `CLAUDE.md` and `.claude`. `Thorium/` is
+`NexerG/Arktis-Thorium` and `Internal/` is `NexerG/Arktis-Internal` (both private); the root ignores
+them. Reach them with `git -C Thorium …` / `git -C Internal …`. `Internal/` holds `DOCUMENTATION/`,
+`Decisions.md`, `TODO.md` and `LINUX.md`.
 
 ## Solution Structure
 Abstract names below map to real top-level folders. Source of truth for code locations is
-`NAMESPACES.md` (repo root). Detailed name↔folder mapping: `DOCUMENTATION/ClaudeMemory/Context/project-map.md`.
+`NAMESPACES.md` (Arktis root) and `Thorium/NAMESPACES.md` (paths relative to `Thorium/`). Detailed
+name↔folder mapping: `Internal/DOCUMENTATION/ClaudeMemory/Context/project-map.md`.
 
 | Name | Real folder | Root namespace(s) | Purpose | Status |
 |------|-------------|-------------------|---------|--------|
@@ -209,28 +219,31 @@ Abstract names below map to real top-level folders. Source of truth for code loc
 | `Editor` | `AuroraEditor` | `AuroraEditor.*` | Visual editor; consumer of the Engine | Early stage |
 | `TextEditor` | `Thorium` | `Thorium`, `Thorium.Editor.*` | Obsidian/Notion-style note app; host that boots the Engine. Folder/namespaces renamed from `Periodic` (2026-08) | Active |
 | `Viewer` | `Carbon` | `Carbon`, `Carbon.Editor.*` | Profiler frame-capture viewer; host that boots the Engine. Reads `*.frames.axml` written by `FrameSpool` | Active |
-| — | `_Build` | `_Build` | Tooling; `GenerateNamespaces.cmd` regenerates `NAMESPACES.md` | — |
+| — | `_Build` | `_Build` | Tooling; `GenerateNamespaces.cmd` regenerates each repository's `NAMESPACES.md` | — |
+| — | `Internal` | — | Docs repository: Obsidian vault, ClaudeMemory, `Decisions.md`, `TODO.md`, `LINUX.md` | — |
 
 ## Memory
-Claude keeps repo-committed working memory under **`DOCUMENTATION/ClaudeMemory/`**. This is
-machine-readable (terse bullets/tables) and version-controlled — distinct from the
-human-readable Obsidian vault under `DOCUMENTATION/Engine` and `DOCUMENTATION/Extras` (do not
-apply the vault's single-line-prose / pseudocode style to ClaudeMemory files).
+Claude keeps repo-committed working memory under **`Internal/DOCUMENTATION/ClaudeMemory/`**, committed
+to `Arktis-Internal`. This is machine-readable (terse bullets/tables) and version-controlled — distinct
+from the human-readable Obsidian vault under `Internal/DOCUMENTATION/Engine` and
+`Internal/DOCUMENTATION/Extras` (do not apply the vault's single-line-prose / pseudocode style to
+ClaudeMemory files). Short `ClaudeMemory/…` and `Engine/…` paths in these instructions are relative to
+`Internal/DOCUMENTATION/`.
 
 Layout:
 - `ClaudeMemory/Context/` — solution layout, project↔folder↔namespace mapping, orientation.
 - `ClaudeMemory/Patterns/` — recurring "how to do X here" recipes.
-- `ClaudeMemory/Decisions/` — Claude-facing complements to the root `Decisions.md`.
+- `ClaudeMemory/Decisions/` — Claude-facing complements to `Internal/Decisions.md`.
 - `ClaudeMemory/Mistakes/` — past errors, so they are not repeated.
 
-**Referencing code via `NAMESPACES.md`:** `NAMESPACES.md` (repo root) is an auto-generated
-`namespace -> relative path` index (built by `_Build/GenerateNamespaces.cmd`; do not hand-edit
-— regenerate it). ClaudeMemory notes reference code by **namespace + class name** and resolve
+**Referencing code via `NAMESPACES.md`:** `NAMESPACES.md` (Arktis root) and `Thorium/NAMESPACES.md`
+are auto-generated `namespace -> relative path` indexes, one per repository (built by
+`_Build/GenerateNamespaces.cmd`; do not hand-edit — regenerate them). ClaudeMemory notes reference code by **namespace + class name** and resolve
 the path through `NAMESPACES.md` rather than hardcoding paths, which rot on refactor. See
 `ClaudeMemory/Patterns/finding-code.md`.
 
 **Workflow before suggesting code:** read `CLAUDE.md` → check `NAMESPACES.md` → check
-`DOCUMENTATION/ClaudeMemory/`. (Architectural changes: also read root `Decisions.md`.)
+`Internal/DOCUMENTATION/ClaudeMemory/`. (Architectural changes: also read `Internal/Decisions.md`.)
 
 ## Shared Conventions
 - **No raw resource management** — wrap Vulkan handles in disposable C# types

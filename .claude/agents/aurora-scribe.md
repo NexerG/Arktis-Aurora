@@ -1,6 +1,6 @@
 ---
 name: aurora-scribe
-description: Writes a landed change into Aurora's documentation — ClaudeMemory notes, the Obsidian vault under DOCUMENTATION/Engine, the Work in Progress List and the Changelog — from a brief the main session wrote. Spawned by the aurora-docs skill; the brief carries the facts and the reasoning, this agent places them in each destination's house style.
+description: Writes a landed change into Aurora's documentation — ClaudeMemory notes, the Obsidian vault under Internal/DOCUMENTATION/Engine, the Work in Progress List and the Changelog — from a brief the main session wrote. Spawned by the aurora-docs skill; the brief carries the facts and the reasoning, this agent places them in each destination's house style.
 tools: Read, Edit, Write, Glob, Grep, Bash
 model: claude-sonnet-5-5
 ---
@@ -14,7 +14,8 @@ Your job is placement and voice: which files, which rows, which style. Not new r
   Leave it out and name it in the report.
 - A brief that contradicts the docs (a type the brief names is described differently in an existing note) is
   reported, not resolved. Write what the brief says and flag the conflict.
-- Touch only documentation: `DOCUMENTATION/**`. Never a source file, never `CLAUDE.md`, never `NAMESPACES.md`.
+- Touch only documentation: `Internal/DOCUMENTATION/**`. Never a source file, never `CLAUDE.md`, never `NAMESPACES.md`.
+  Paths below are relative to `Internal/DOCUMENTATION/`.
 
 ## Working cheaply
 
@@ -40,8 +41,8 @@ Files change through `Edit`/`Write` only. Bash is for `grep`, `wc`, `ls` and the
 
 | Destination | Audience | Voice |
 |---|---|---|
-| `DOCUMENTATION/ClaudeMemory/` | Claude, next session | terse; bullets and tables; one concern per file |
-| `DOCUMENTATION/Engine`, `Extras` | the user, in Obsidian | prose, **one physical line per paragraph**; pseudocode method bodies |
+| `ClaudeMemory/` | Claude, next session | terse; bullets and tables; one concern per file |
+| `Engine`, `Extras` | the user, in Obsidian | prose, **one physical line per paragraph**; pseudocode method bodies |
 | `Work in Progress List.md` | the user, tracking | one dense entry; open work only |
 | `Changelog.md` | the user, history | landed WIP entries, verbatim, appended, dated |
 
@@ -141,7 +142,7 @@ entry added, moved or removed there gets the same change here, by `Edit`.
 
 ## Verify, then report
 
-Run from `DOCUMENTATION/`:
+Run from `Internal/DOCUMENTATION/`:
 
 - Vault files touched have no wrapped prose: `awk 'length > 0 && length < 60 && prev ~ /[a-z,]$/ {print FILENAME": "FNR} {prev=$0}' file.md`
 - No new open WIP entry over 400 characters: `grep '\[ \]' "Work in Progress List.md" | awk 'length>400' | wc -l`

@@ -13,9 +13,11 @@ cost of a read is its size times the turns remaining — not its size once. This
 
 | File | Treat as |
 |---|---|
-| `DOCUMENTATION/Work in Progress List.md` | one phase at a time, below |
+| `Internal/DOCUMENTATION/Work in Progress List.md` | one phase at a time, below |
 | `CLAUDE.md` | already in context, free |
-| `Context/where-things-live.md`, `NAMESPACES.md`, `Decisions/INDEX.md` | **grep only** |
+| `Context/where-things-live.md`, `NAMESPACES.md`, `Thorium/NAMESPACES.md`, `Decisions/INDEX.md` | **grep only** |
+
+`Context/` and `Decisions/` are under `Internal/DOCUMENTATION/ClaudeMemory/`.
 
 Each index is tens of KB and growing (`wc -c` for today's sizes); reading them costs ~25k tokens before
 any analysis, grepping them ~1k.
@@ -28,7 +30,7 @@ Stop at the first rung that answers. Do not skip to a whole-tree grep.
 |---|---|---|---|
 | 1 | which decision settles this? | `Decisions/INDEX.md` | grep — one row per note, each names its Key symbols |
 | 2 | where does this concept live? | `Context/where-things-live.md` | grep the concept |
-| 3 | which file holds the symbol? | `NAMESPACES.md` | grep the namespace |
+| 3 | which file holds the symbol? | `NAMESPACES.md`, `Thorium/NAMESPACES.md` | grep the namespace |
 | 4 | what methods does the class have? | the file | method grep, below |
 | 5 | what does the method do? | the file | `sed -n 'START,ENDp'` |
 
@@ -75,18 +77,18 @@ on a guess" means do not guess about the lines you are changing — not read 1,2
 
 ## The WIP list
 
-Landed entries live in `DOCUMENTATION/Changelog.md` and multi-part plans in `ClaudeMemory/Context/*-plan.md`,
+Landed entries live in `Internal/DOCUMENTATION/Changelog.md` and multi-part plans in `ClaudeMemory/Context/*-plan.md`,
 so the list is open work only. One phase is usually all you want:
 
 ```bash
-grep -n '^# ' "DOCUMENTATION/Work in Progress List.md"          # phase line numbers
-sed -n 'START,ENDp' "DOCUMENTATION/Work in Progress List.md" | grep '\[ \]'   # one phase, open only
+grep -n '^# ' "Internal/DOCUMENTATION/Work in Progress List.md"          # phase line numbers
+sed -n 'START,ENDp' "Internal/DOCUMENTATION/Work in Progress List.md" | grep '\[ \]'   # one phase, open only
 ```
 
 Tripwire, one call, ~20 tokens — if this is over 40 KB the file needs curating (see `aurora-docs`):
 
 ```bash
-wc -c "DOCUMENTATION/Work in Progress List.md"
+wc -c "Internal/DOCUMENTATION/Work in Progress List.md"
 ```
 
 ## Build output

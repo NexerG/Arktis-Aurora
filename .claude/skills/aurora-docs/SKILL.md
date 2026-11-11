@@ -1,6 +1,6 @@
 ---
 name: aurora-docs
-description: Write up a landed change into Aurora's documentation — ClaudeMemory notes, the Obsidian vault under DOCUMENTATION/Engine, and the Work in Progress List. Use after a system or decision lands, or whenever asked to update the docs, write this up, or record a decision. Three destinations with three different house styles that are easy to mix up.
+description: Write up a landed change into Aurora's documentation — ClaudeMemory notes, the Obsidian vault under Internal/DOCUMENTATION/Engine, and the Work in Progress List. Use after a system or decision lands, or whenever asked to update the docs, write this up, or record a decision. Three destinations with three different house styles that are easy to mix up.
 ---
 
 # Writing up a change
@@ -39,7 +39,7 @@ Not done, not verified, inconsistent.
 - Decisions/ note: new `<name>` | extend `<name>` | none
 - Context/where-things-live.md: concept row to add or correct | none
 - Context/ui-orientation.md: component entry | none
-- Vault: page(s) under DOCUMENTATION/Engine or Extras | none
+- Vault: page(s) under Internal/DOCUMENTATION/Engine or Extras | none
 - WIP list: entry to land (quote its headline) / open follow-ups to add | none
 - Plan file: Context/<name>-plan.md to create or append | none
 - Retractions: earlier claims now wrong, and where they were written | none
@@ -56,7 +56,7 @@ scribe per write-up.
 
 Its report is not evidence (CLAUDE.md §8).
 
-- `git diff --stat -- DOCUMENTATION`, then `git diff -- DOCUMENTATION` on the files that matter.
+- `git -C Internal diff --stat -- DOCUMENTATION`, then `git -C Internal diff -- DOCUMENTATION` on the files that matter.
 - Each `GAP` or `CONFLICT` line in the report: answer it with an `Edit` here, or tell the user.
 - Read the vault prose for voice; Sonnet's vault prose can need a sentence fixed.
 - The verification word in the WIP / Changelog entry matches the brief exactly.

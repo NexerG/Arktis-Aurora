@@ -9,8 +9,9 @@ description: Run Aurora's in-engine test suite and get pass/fail back with one c
 bash _Build/test.sh [Suite]
 ```
 
-- Builds Debug, runs Thorium with `--test` (or `--test=<Suite>`) and prints only `FAIL`/`NEW`/`APPROVED` lines,
-  `new error:` lines and the `N passed, M failed, K skipped, J new — <results.axml>` line.
+- Builds Debug, runs Thorium (Carbon when `Thorium/` is absent; `--app=Name` picks one) with `--test` (or
+  `--test=<Suite>`) and prints only `FAIL`/`NEW`/`APPROVED` lines, `new error:` lines and the
+  `N passed, M failed, K skipped, J new — <results.axml>` line.
 - Runs once, at the end — not per step, not at a midpoint (CLAUDE.md §4).
 - Feature work checks functionality and errors only. A bare run leaves the `Perf` suite out; perf runs only when
   measuring performance itself, through `aurora-perf` (`--test=Perf`, `_Build/PerfTests.cmd`).
@@ -18,7 +19,7 @@ bash _Build/test.sh [Suite]
 - That output is the whole answer. Open the log (`%TEMP%\aurora-test\run.txt`) only when the results line is missing
   — the run died, see `aurora-debug`.
 - **Boot** fails today on pre-existing errors. `new error:` is an `ERROR`/`FATAL` kind absent from
-  `_Build/test-baseline.txt`; a change broke Boot only if one appears. After fixing a baseline error, or when a new
+  the app's own `<App>/test-baseline.txt`; a change broke Boot only if one appears. After fixing a baseline error, or when a new
   one is intended, rerun with `--baseline`.
 - A pass earns **test-verified** on `aurora-verify`'s ladder; a passing golden **golden-verified**.
 

@@ -17,9 +17,9 @@ Each rung is cheaper than the one below. Do not skip to a full-tree grep because
 
 | # | Question | Where | How |
 |---|---|---|---|
-| 1 | which decision settles this? | `DOCUMENTATION/ClaudeMemory/Decisions/INDEX.md` | **grep it**, 70 one-row entries, each names its Key symbols |
-| 2 | where does this concept live? | `DOCUMENTATION/ClaudeMemory/Context/where-things-live.md` | **grep it** |
-| 3 | which file holds this symbol? | `NAMESPACES.md` (repo root) | **grep it**, namespace → path |
+| 1 | which decision settles this? | `Internal/DOCUMENTATION/ClaudeMemory/Decisions/INDEX.md` | **grep it**, 70 one-row entries, each names its Key symbols |
+| 2 | where does this concept live? | `Internal/DOCUMENTATION/ClaudeMemory/Context/where-things-live.md` | **grep it** |
+| 3 | which file holds this symbol? | `NAMESPACES.md` (Arktis root) and `Thorium/NAMESPACES.md` (paths relative to `Thorium/`) | **grep it**, namespace → path |
 | 4 | what methods does this class have? | the file | the method grep below |
 | 5 | what does this method do? | the file | `sed -n 'START,ENDp'` |
 

@@ -119,7 +119,9 @@ Traps:
 - **Idle behaviour cannot be tested.** Idle waiting is off under `--test`, so wake and idle bugs only show against a
   normally launched app.
 - **A test that hangs inside one tick hangs the process** — the timeout counts ticks, not wall time.
-- **A readback costs ticks against `Timeout`** — main runs unpaced while it waits: 4 ticks in Thorium, 121 in Carbon.
+- **A readback costs ticks against `Timeout`** — main runs unpaced while it waits: 4 ticks in Thorium.
+- **A host needs a `<FrameCap>`.** Uncapped, main outruns the renderer under `--test`: readbacks and `Stopwatch`
+  waits run out of ticks and time out. Thorium and Carbon set `MaxFps="120"`.
 - **A throwaway golden lives twice.** The build copies `Data` into `bin/…/Data`, and a rebuild does not delete the
   copy; remove a throwaway PNG (or suite) from both, or the next run still finds it.
 - **Only the primary window is read back.** A shot of a menu or torn-off tab window is not possible yet.

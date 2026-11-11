@@ -10,7 +10,7 @@ where the file around it doesn't; existing code changes only when the change rew
 
 The system facts these rules lean on stay in CLAUDE.md, which is always in context: Rendering (mapped
 buffers), Logging, Threading, XSD. The evidence and measurements behind the rules are in
-`DOCUMENTATION/ClaudeMemory/Decisions/aurora-code-rules.md`.
+`Internal/DOCUMENTATION/ClaudeMemory/Decisions/aurora-code-rules.md`.
 
 ## Scope of a change
 - Performance is the priority. When it pulls against brevity or readability, performance wins.
@@ -104,7 +104,7 @@ buffers), Logging, Threading, XSD. The evidence and measurements behind the rule
 55. No line limit in code.
 
 ## Comments
-56. No "why" in code. Tradeoffs, rejected alternatives, budgets, consequences and design reasoning go to `DOCUMENTATION/ClaudeMemory/*` and `DOCUMENTATION/Engine*` — never above a method.
+56. No "why" in code. Tradeoffs, rejected alternatives, budgets, consequences and design reasoning go to `Internal/DOCUMENTATION/ClaudeMemory/*` and `Internal/DOCUMENTATION/Engine*` — never above a method.
 57. Fields: one short label over a group of related fields, never one per field.
 58. Methods: one very short descriptor, or nothing.
 59. Inside a method, only hard loops and genuinely long methods get comments, labelling sections. A straightforward ~20-line method gets nothing.

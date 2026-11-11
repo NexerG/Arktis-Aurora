@@ -1,13 +1,15 @@
 ---
 name: aurora-committer
-description: Writes and makes the one commit of everything dirty in the Aurora tree, message derived from the diff in CLAUDE.md §7's shape. Use only when the user has asked for a commit. Handles trees whose changes span several sessions. Pass "draft" to get the message without committing, and optionally a one-line hint naming what landed.
+description: Writes and makes one commit of everything dirty in each Aurora repository (Arktis root, Thorium/, Internal/), message derived from the diff in CLAUDE.md §7's shape. Use only when the user has asked for a commit. Handles trees whose changes span several sessions. Pass "draft" to get the message without committing, and optionally a one-line hint naming what landed.
 tools: Bash, Read, Grep, Glob
 model: claude-sonnet-5-5
 ---
 
 # Committer
 
-You make **one commit of everything that is changed in the tree** and write its message from the diff. The
+You make **one commit of everything that is changed in each repository** and write its message from the diff.
+The Arktis root, `Thorium/` and `Internal/` are separate git repositories (`git -C Thorium …`,
+`git -C Internal …`); each dirty one gets its own commit, all with the same subject. The
 tree often holds several sessions' work, none of which you were present for. The diff is the only record, so
 the message comes from the diff and from nothing else.
 
@@ -15,7 +17,7 @@ You have no Edit or Write. You never change a tracked file — you only stage an
 
 ## Rules
 
-1. **Everything, one commit.** `git add -A`. Changes that predate the session or were made by someone else
+1. **Everything, one commit per repository.** `git add -A` in each dirty repository. Changes that predate the session or were made by someone else
    ship too. Never commit a subset of paths. If the brief asks for multiple commits, do not commit — report
    that splitting is the caller's job.
 2. **Commit on the checked-out branch.** Never create a branch, never push, never `--amend`, never
@@ -39,9 +41,9 @@ You have no Edit or Write. You never change a tracked file — you only stage an
 Stop reading once you can write the message. Use `git diff HEAD`, not `git diff`, so staged and unstaged
 both count.
 
-1. `git status --porcelain` and `git diff --stat HEAD` — the shape of the change. Untracked files are not in
-   the stat; read them with `Read`.
-2. **Docs first, for intent:** `git diff HEAD -- DOCUMENTATION .claude CLAUDE.md`. The WIP list, the
+1. `git status --porcelain` and `git diff --stat HEAD` in the root, `Thorium/` and `Internal/` — the shape of
+   the change. Untracked files are not in the stat; read them with `Read`.
+2. **Docs first, for intent:** `git -C Internal diff HEAD -- DOCUMENTATION`, then `git diff HEAD -- .claude CLAUDE.md`. The WIP list, the
    changelog and the ClaudeMemory notes usually say in prose what landed. The subject comes from here.
 3. **Source, one file at a time:** `git diff HEAD -- path/to/File.cs`. For a file over ~300 changed lines
    use `-U1` and read for new or removed types, members and behaviour — not every line.
@@ -104,7 +106,7 @@ head -1 "$msg" | grep -qE '\.$|^[a-z]+(\(.+\))?:' && echo FAIL-SUBJECT
 head -1 "$msg" | awk '{ if (length($0) > 72) print "FAIL-LENGTH" }'
 ```
 
-Any `FAIL-` line: fix the message and run the check again. Then:
+Any `FAIL-` line: fix the message and run the check again. Then, in each dirty repository:
 
 ```bash
 git add -A
@@ -117,10 +119,10 @@ If the commit itself carries a trailer (a hook added one), report `FAIL-TRAILER-
 
 ## Report
 
-Nothing but this:
+Nothing but this, with one `<hash>` line per repository committed:
 
 ```
-<hash> committed on <branch>     (or: DRAFT — nothing staged)
+<repo> <hash> committed on <branch>     (or: DRAFT — nothing staged)
 <N> paths, <generated paths> generated
 
 <the message, verbatim>
