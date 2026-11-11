@@ -29,10 +29,11 @@ Stop at the first rung that answers. Do not skip to a whole-tree grep.
 | # | Question | Where | How |
 |---|---|---|---|
 | 1 | which decision settles this? | `Decisions/INDEX.md` | grep — one row per note, each names its Key symbols |
-| 2 | where does this concept live? | `Context/where-things-live.md` | grep the concept |
-| 3 | which file holds the symbol? | `NAMESPACES.md`, `Thorium/NAMESPACES.md` | grep the namespace |
-| 4 | what methods does the class have? | the file | method grep, below |
-| 5 | what does the method do? | the file | `sed -n 'START,ENDp'` |
+| 2 | how does this system work? | its vault page, `Internal/DOCUMENTATION/Engine/` | `grep -n '^#'`, then `sed` the section |
+| 3 | where does this concept live? | `Context/where-things-live.md` | grep the concept |
+| 4 | which file holds the symbol? | `NAMESPACES.md`, `Thorium/NAMESPACES.md` | grep the namespace |
+| 5 | what methods does the class have? | the file | method grep, below |
+| 6 | what does the method do? | the file | `sed -n 'START,ENDp'` |
 
 A row in `INDEX.md` that does not match the task means that note does not need opening. That is what the
 "Settles" column is for.

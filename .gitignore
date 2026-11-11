@@ -4,6 +4,7 @@
 !/.gitattributes
 !/LICENSE.md
 !/CLAUDE.md
+!/ProjectFileStructure.md
 !/.claude/
 !/AuroraEngine/
 !/ArctisImaging/

@@ -18,6 +18,7 @@ namespace _Build
                 LogSpool.Flush();
                 return built ? 0 : 1;
             }
+            if (args.Length >= 2 && args[0] == "codedocs") return CodeDocs.Run(args);
             return 0;
         }
     }

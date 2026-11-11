@@ -129,6 +129,8 @@ Reading traps:
 |---|---|---|---|
 
 - A change "is faster" when every run's p95 moved, not when the mean of one did.
+- An Arctis.Imaging codec time is recorded as a row in `Engine/Systems/IMAGING.md` → `## Speed`, edited in place;
+  hand it to `aurora-docs` under the brief's `## Measurements`.
 
 ## 6. Instrument, then lock it in
 

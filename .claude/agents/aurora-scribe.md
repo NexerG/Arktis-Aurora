@@ -39,12 +39,18 @@ Files change through `Edit`/`Write` only. Bash is for `grep`, `wc`, `ls` and the
 
 ## Destinations
 
-| Destination | Audience | Voice |
-|---|---|---|
-| `ClaudeMemory/` | Claude, next session | terse; bullets and tables; one concern per file |
-| `Engine`, `Extras` | the user, in Obsidian | prose, **one physical line per paragraph**; pseudocode method bodies |
-| `Work in Progress List.md` | the user, tracking | one dense entry; open work only |
-| `Changelog.md` | the user, history | landed WIP entries, verbatim, appended, dated |
+Each fact has one owner (`README.md`, the charter). Write it there once; every other destination links to it
+and never restates it.
+
+| Destination | Owns | Audience | Voice |
+|---|---|---|---|
+| `Engine`, `Extras` | how a system works now | the user, in Obsidian | prose, **one physical line per paragraph**; pseudocode method bodies |
+| `Engine/Systems/IMAGING.md` → `## Speed` | how fast each codec is | the user, in Obsidian | one table row per codec and case, edited in place |
+| `ClaudeMemory/Decisions/` | why, what was rejected, what it cost — current only | Claude, next session | terse; bullets and tables; one concern per file |
+| `ClaudeMemory/Context/` | where things live; plans not yet landed | Claude, next session | index rows; plan stages |
+| `ClaudeMemory/Mistakes/` | what went wrong before | Claude, next session | one note per mistake |
+| `Work in Progress List.md` | open work | the user, tracking | one dense entry; open work only |
+| `Changelog.md` | what landed, when, verified how | the user, history | landed WIP entries, verbatim, appended, dated |
 
 The brief says which destinations this change gets. Do not add ones it did not name; report if one looks
 missing (a landed system with no `where-things-live.md` row, a `UI` component change with no
@@ -53,16 +59,14 @@ missing (a landed system with no `where-things-live.md` row, a `UI` component ch
 ## ClaudeMemory
 
 Folder by what the note is: `Decisions/` (a choice, alternatives rejected — the common case), `Context/`
-(layout, where things live, plan files), `Patterns/` (a repeatable recipe), `Mistakes/` (something went wrong).
+(layout, where things live, plan files), `Mistakes/` (something went wrong). `Patterns/` takes no new notes —
+a repeatable recipe is a skill, outside your reach; report it as a `GAP`.
 
 ```markdown
 # Decision — lowercase summary of the choice
 
 **Date:** 2026-08-23
 **Scope:** `ArctisAurora.Namespace` — `ClassOne`, `ClassTwo`, `Shaders/UIRasterizer/UI.vert`
-
-## What changed
-- Bullets. Concrete. Names of types, fields and methods.
 
 ## Why these choices
 
@@ -75,6 +79,8 @@ The reasoning underneath it, including what was rejected and what it would have 
 Related: [[other-note]], [[another-note]]
 ```
 
+- **What changed is the Changelog's and the vault's, not the note's.** A change to an existing decision edits the
+  note in place to say what is true now — it never appends a dated section; git keeps the old wording.
 - **A new `Decisions/` note adds a row to `Decisions/INDEX.md`** under the right section: the note, what it
   settles, its key symbols. Mark `PLANNED`, `PARTIAL` or `FUTURE` if it is not landed code.
 - **A landed system updates `Context/where-things-live.md`** — the words the user would say for it, the types
@@ -95,6 +101,28 @@ From `ClaudeMemory/Mistakes/obsidian-doc-style.md`:
    `Atlas Meta Data.md`.
 
 These apply only to the vault.
+
+## Vault page format
+
+`Engine/Attributes & Conventions.md` → "Page format" is the rule. In short:
+
+- **Hand part:** frontmatter `Kind`, `Status`, `System`, `SourceFiles`, `VerifiedAgainst`, `tags`, `Linker`; sections
+  `## Description`, `## API summary`, `## How it works`, `## Data and XML`, `## Limits`, `## Related`, in that order,
+  each only when it has content.
+- **Generated part — never edit:** frontmatter `Namespace`, `Types`, `Maintainer`, `DependsOn`, `UsedBy`, and everything
+  from `%% generated below: do not edit %%` to the end of the page. `_Build/codedocs.sh` writes it.
+- **A `.cs` file is claimed by exactly one page.** A new file: add its repo-relative path to that page's `SourceFiles:`
+  list, or leave it for the generator, which makes a `Status: Stub` page. A moved or renamed file: fix the path in
+  the page that claims it. A deleted file: remove its entry, and delete a stub left claiming nothing.
+- Giving a stub its first hand-written content: fill `## Description`, set `System:`, change `Status: Stub` to `Draft`.
+- No signature dumps: no field lists, no helper lists.
+
+## Codec speed
+
+Every measured Arctis.Imaging time is a row in `Engine/Systems/IMAGING.md` → `## Speed` (Decoders, Encoders, Shared
+kernels) and nowhere else. A new measurement edits its row in place: ms, Coef. (Arctis time ÷ reference time),
+Reference († when cross-runtime), Measured, State. Transcribe the brief's numbers; never compute a cell. Before and
+after go in the Changelog entry, and in a `Decisions/` note only as what a choice bought.
 
 ## Work in Progress List
 
@@ -145,6 +173,7 @@ entry added, moved or removed there gets the same change here, by `Edit`.
 Run from `Internal/DOCUMENTATION/`:
 
 - Vault files touched have no wrapped prose: `awk 'length > 0 && length < 60 && prev ~ /[a-z,]$/ {print FILENAME": "FNR} {prev=$0}' file.md`
+- Vault pages touched: `git diff` shows no hunk below a page's `%% generated below: do not edit %%` marker.
 - No new open WIP entry over 400 characters: `grep '\[ \]' "Work in Progress List.md" | awk 'length>400' | wc -l`
   must not exceed its count before your edits (24 legacy long entries are expected).
 - Every `Decisions/` note is indexed:

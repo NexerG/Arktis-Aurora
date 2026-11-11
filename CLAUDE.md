@@ -28,7 +28,10 @@ Every change to the repo runs four steps, in order:
 
 **Analyze against a budget.** Start at `ClaudeMemory/Context/where-things-live.md` and
 `ClaudeMemory/Decisions/INDEX.md` - concept, then the types that own it, then the note that settles it.
-Then `grep -n` the symbol and read the window around the hit. A change confined to one file and a
+Then `grep -n` the symbol and read the window around the hit. Changing a type's shape or a member other
+files call? First read the `## Dependencies` section of the vault page that claims the file
+(`grep -rl "Name.cs" Internal/DOCUMENTATION/Engine`) - its Used by table is the list of dependents.
+A change confined to one file and a
 handful of lines is analyzed once the index, the grep and that window agree. Changing control flow or
 a type's shape, or working somewhere the indexes don't name, widens the read to the regions the change
 touches or calls into - not to the whole file. Map the file first (`grep -n` its `#region`s and member
@@ -199,14 +202,16 @@ Current focus is in "Internal/DOCUMENTATION/Work in Progress List.md".
 Explain architectural decisions - why one way and not another - when asked for the reasoning; see §5 for when to volunteer it and the `aurora-code` skill's Comments rules for where it gets written down.
 When showing code in a reply, show only what changes and where it goes, not the whole file. A new class is written out in full, without usings unless they come from a new NuGet package.
 Data and config files are XML, because the XSD layer generates and validates their schemas; don't introduce JSON or another format.
-When creating new logic or systems update Internal/DOCUMENTATION/ClaudeMemory/* and Internal/DOCUMENTATION/Engine*
+When new logic or a system lands, write it up through the `aurora-docs` skill; `Internal/DOCUMENTATION/README.md` says which file owns each fact.
+A vault page's generated part - its `Namespace`, `Types`, `Maintainer`, `DependsOn` and `UsedBy` keys and everything under `%% generated below: do not edit %%` - is written by `_Build/codedocs.sh`; never edit it by hand.
+Who maintains which code is `Internal/DOCUMENTATION/Engine/Maintainers.axml`.
 
 ## Repositories
 The Arktis folder is three git repositories. The root is `NexerG/Arktis-Aurora` (public): the engine,
 `ArctisImaging`, `AuroraEditor`, `Carbon`, `_Build`, `CLAUDE.md` and `.claude`. `Thorium/` is
 `NexerG/Arktis-Thorium` and `Internal/` is `NexerG/Arktis-Internal` (both private); the root ignores
 them. Reach them with `git -C Thorium …` / `git -C Internal …`. `Internal/` holds `DOCUMENTATION/`,
-`Decisions.md`, `TODO.md` and `LINUX.md`.
+`TODO.md` and `LINUX.md`.
 
 ## Solution Structure
 Abstract names below map to real top-level folders. Source of truth for code locations is
@@ -220,7 +225,11 @@ name↔folder mapping: `Internal/DOCUMENTATION/ClaudeMemory/Context/project-map.
 | `TextEditor` | `Thorium` | `Thorium`, `Thorium.Editor.*` | Obsidian/Notion-style note app; host that boots the Engine. Folder/namespaces renamed from `Periodic` (2026-08) | Active |
 | `Viewer` | `Carbon` | `Carbon`, `Carbon.Editor.*` | Profiler frame-capture viewer; host that boots the Engine. Reads `*.frames.axml` written by `FrameSpool` | Active |
 | — | `_Build` | `_Build` | Tooling; `GenerateNamespaces.cmd` regenerates each repository's `NAMESPACES.md` | — |
-| — | `Internal` | — | Docs repository: Obsidian vault, ClaudeMemory, `Decisions.md`, `TODO.md`, `LINUX.md` | — |
+| — | `Internal` | — | Docs repository: Obsidian vault, ClaudeMemory, `TODO.md`, `LINUX.md` | — |
+
+This file holds the engine only. What Claude needs to know about a host project lives in that project's own
+`README.md` (`Thorium/README.md`, `AuroraEditor/README.md`, `ArctisImaging/README.md`); read it before working there.
+A project built on the engine follows `ProjectFileStructure.md`.
 
 ## Memory
 Claude keeps repo-committed working memory under **`Internal/DOCUMENTATION/ClaudeMemory/`**, committed
@@ -230,20 +239,15 @@ from the human-readable Obsidian vault under `Internal/DOCUMENTATION/Engine` and
 ClaudeMemory files). Short `ClaudeMemory/…` and `Engine/…` paths in these instructions are relative to
 `Internal/DOCUMENTATION/`.
 
-Layout:
-- `ClaudeMemory/Context/` — solution layout, project↔folder↔namespace mapping, orientation.
-- `ClaudeMemory/Patterns/` — recurring "how to do X here" recipes.
-- `ClaudeMemory/Decisions/` — Claude-facing complements to `Internal/Decisions.md`.
-- `ClaudeMemory/Mistakes/` — past errors, so they are not repeated.
+Which store owns which kind of fact — vault, `Decisions/`, Changelog, WIP list, plans, indexes, skills,
+project READMEs, auto-memory — is the charter, `Internal/DOCUMENTATION/README.md`. A fact is written in its
+owner once; everything else links to it.
 
 **Referencing code via `NAMESPACES.md`:** `NAMESPACES.md` (Arktis root) and `Thorium/NAMESPACES.md`
 are auto-generated `namespace -> relative path` indexes, one per repository (built by
 `_Build/GenerateNamespaces.cmd`; do not hand-edit — regenerate them). ClaudeMemory notes reference code by **namespace + class name** and resolve
 the path through `NAMESPACES.md` rather than hardcoding paths, which rot on refactor. See
 `ClaudeMemory/Patterns/finding-code.md`.
-
-**Workflow before suggesting code:** read `CLAUDE.md` → check `NAMESPACES.md` → check
-`Internal/DOCUMENTATION/ClaudeMemory/`. (Architectural changes: also read `Internal/Decisions.md`.)
 
 ## Shared Conventions
 - **No raw resource management** — wrap Vulkan handles in disposable C# types
@@ -475,37 +479,3 @@ The full Vulkan pipeline is working and rendering UI:
 - Don't assume a specific ECS storage model
 - Don't replace XSD with another serialization approach unprompted
 - Don't introduce new NuGet dependencies without flagging it first
-
-### Editor
-Depends on: **Engine project**
-
-#### Purpose
-Visual editor for MyEngine. Built on top of the Engine — uses the same ECS, rendering, and asset systems.
-
-#### Status
-Early stage. Core editor shell is being set up.
-
-#### Architecture Notes
-- Editor is a consumer of the Engine, not a fork of it
-- UI is rendered through Engine's Vulkan pipeline
-- [Add: docking, panels, tool windows — describe once they exist]
-
-#### What Claude Should Know
-- Editor-specific code lives here; Engine internals are described in the Engine section above
-- Don't duplicate engine logic in the editor — extend via engine APIs
-
-### TextEditor — Context File
-Obsidian/Notion-style note-taking and document app.
-
-#### Status
-Working note app: vaults, a rich-text document editor with undo, notes on disk as XML, Markdown or plain text.
-
-**Still in development, with no users.** Nothing has shipped, so a change to Thorium's formats or baked assets
-needs no upgrade or migration code: re-import or re-bake in the dev build instead (e.g. bump
-`AssetImporter.importerVersion`).
-
-#### Goals
-- Rich text editing
-
-#### Architecture Notes
-- Renders through the Engine's Vulkan UI stack (`ArctisAurora.Core.UI`); no UI of its own
