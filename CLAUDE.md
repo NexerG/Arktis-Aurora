@@ -222,7 +222,7 @@ name↔folder mapping: `Internal/DOCUMENTATION/ClaudeMemory/Context/project-map.
 |------|-------------|-------------------|---------|--------|
 | `Engine` | `AuroraEngine` | `ArctisAurora.*` (`Core`, `EngineWork`) | Core game engine — lives in `AuroraEngine/` under `Core/`; no separate Engine project. Folder renamed from `ParticleSimulator` (2026-07); assembly/root namespace still `ArctisAurora`. | Active |
 | `Editor` | `AuroraEditor` | `AuroraEditor.*` | Visual editor; consumer of the Engine | Early stage |
-| `TextEditor` | `Thorium` | `Thorium`, `Thorium.Editor.*` | Obsidian/Notion-style note app; host that boots the Engine. Folder/namespaces renamed from `Periodic` (2026-08) | Active |
+| `TextEditor` | `Thorium` | `Thorium`, `Thorium.Editor.*` | Productivity suite — notes, documents, spreadsheets and LaTeX in one place, all cross-referenceable; host that boots the Engine. Folder/namespaces renamed from `Periodic` (2026-08) | Active |
 | `Viewer` | `Carbon` | `Carbon`, `Carbon.Editor.*` | Profiler frame-capture viewer; host that boots the Engine. Reads `*.frames.axml` written by `FrameSpool` | Active |
 | — | `_Build` | `_Build` | Tooling; `GenerateNamespaces.cmd` regenerates each repository's `NAMESPACES.md` | — |
 | — | `Internal` | — | Docs repository: Obsidian vault, ClaudeMemory, `TODO.md`, `LINUX.md` | — |
