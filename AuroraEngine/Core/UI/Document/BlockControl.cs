@@ -326,6 +326,18 @@ namespace ArctisAurora.Core.UI.Document
         // a code block that wraps its lines; .axml only, so Markdown code never wraps
         public bool codeWrap { get => note.codeWrap; set => note.codeWrap = value; }
 
+        // set by a Paged document: code wraps at the text column whatever codeWrap says
+        internal bool pagedWrap
+        {
+            get => field;
+            set
+            {
+                if (field == value) return;
+                field = value;
+                SetFlag(ArrangeFlags.MeasureDirty, true);
+            }
+        }
+
         // list item state
         public ListKind listKind { get => note.listKind; set => note.listKind = value; }
         public int listLevel { get => note.listLevel; set => note.listLevel = value; }
@@ -481,7 +493,7 @@ namespace ArctisAurora.Core.UI.Document
 
         protected override float LeaderOffset => note.leftIndent * textZoom;
 
-        protected override bool Wraps => stylingType != TextStyleType.Code || codeWrap;
+        protected override bool Wraps => stylingType != TextStyleType.Code || codeWrap || pagedWrap;
 
         // A code block's ground behind each line, and a rule's line in place of text.
         internal override void Emit(float z)

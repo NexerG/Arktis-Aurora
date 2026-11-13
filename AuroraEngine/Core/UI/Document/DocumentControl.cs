@@ -998,12 +998,14 @@ namespace ArctisAurora.Core.UI.Document
                 int count = 0;
                 inserts = false;
                 contentWidth = paper.X;
+                bool paged = page.mode == PageMode.Paged;
                 foreach (Entity child in children)
                 {
                     Control item;
                     if (child is BlockControl block)
                     {
                         block.SetZoom(zoom);
+                        block.pagedWrap = paged;
                         item = block;
                     }
                     else if (TableIn(child) is TableControl table)
@@ -1016,7 +1018,7 @@ namespace ArctisAurora.Core.UI.Document
                     if (item.hidden) continue;
 
                     item.Measure(new Vector2(textWidth, float.MaxValue));
-                    if (item is BlockControl { stylingType: TextStyleType.Code, codeWrap: false } code)
+                    if (item is BlockControl { stylingType: TextStyleType.Code, codeWrap: false, pagedWrap: false } code)
                         contentWidth = MathF.Max(contentWidth, CodeWidth(code, textWidth) + Mm(page.marginLeft + page.marginRight));
                     if (IsInsert(child))
                     {
@@ -1085,7 +1087,7 @@ namespace ArctisAurora.Core.UI.Document
             {
                 if ((child is not BlockControl && child is not SealedControl && TableIn(child) == null) || IsInsert(child) || ((Control)child).hidden || index >= blockTops.Count) continue;
 
-                float width = child is BlockControl { stylingType: TextStyleType.Code, codeWrap: false } code ? CodeWidth(code, textWidth)
+                float width = child is BlockControl { stylingType: TextStyleType.Code, codeWrap: false, pagedWrap: false } code ? CodeWidth(code, textWidth)
                     : child is SealedControl locked ? MathF.Min(textWidth, locked.DesiredSize.X) : textWidth;
                 ((Control)child).Arrange(new LayoutRect(textX, top + blockTops[index], width, blockHeights[index]));
                 index++;

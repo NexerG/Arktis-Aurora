@@ -44,6 +44,15 @@ namespace ArctisAurora.Core.Filing
 
         public static string ProgId(string app, FileType type) => app + "." + type.suffix.TrimStart('.');
 
+        // Whether the system already opens this type with the running app.
+        public static bool IsDefault(FileType type)
+        {
+            string app = Assembly.GetEntryAssembly()?.GetName().Name ?? "Aurora";
+            if (OperatingSystem.IsWindows()) return IsDefaultWindows(app, type);
+            if (OperatingSystem.IsLinux()) return Query("xdg-mime", "query", "default", type.mime) == app.ToLowerInvariant() + ".desktop";
+            return false;
+        }
+
         #region ---- windows ----
         private const int SHCNE_ASSOCCHANGED = 0x08000000;
         private const uint SHCNF_IDLIST = 0;
@@ -103,6 +112,19 @@ namespace ArctisAurora.Core.Filing
             return false;
         }
 
+        [SupportedOSPlatform("windows")]
+        private static bool IsDefaultWindows(string app, FileType type)
+        {
+            string fileExts = $@"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\{type.suffix}\";
+            using RegistryKey? latest = WinRegistry.CurrentUser.OpenSubKey(fileExts + "UserChoiceLatest");
+            using RegistryKey? choice = WinRegistry.CurrentUser.OpenSubKey(fileExts + "UserChoice");
+            using RegistryKey? classes = WinRegistry.ClassesRoot.OpenSubKey(type.suffix);
+            return EffectiveProgId(latest?.GetValue("ProgId") as string, choice?.GetValue("ProgId") as string, classes?.GetValue("") as string) == ProgId(app, type);
+        }
+
+        // The ProgID Windows opens a type with: the latest user choice, then the older one, then the class default.
+        public static string? EffectiveProgId(string? latest, string? choice, string? classes) => latest ?? choice ?? classes;
+
         [DllImport("shell32.dll")]
         private static extern void SHChangeNotify(int eventId, uint flags, IntPtr item1, IntPtr item2);
         #endregion
@@ -155,6 +177,23 @@ namespace ArctisAurora.Core.Filing
             catch (Win32Exception)
             {
                 Log.Warn($"{tool} is not installed; skipped");
+            }
+        }
+
+        // Runs a tool and returns its trimmed output, or null when it is not installed.
+        private static string? Query(string tool, params string[] arguments)
+        {
+            try
+            {
+                using Process? process = Process.Start(new ProcessStartInfo(tool, arguments) { UseShellExecute = false, RedirectStandardOutput = true });
+                if (process == null) return null;
+                string output = process.StandardOutput.ReadToEnd().Trim();
+                process.WaitForExit();
+                return output;
+            }
+            catch (Win32Exception)
+            {
+                return null;
             }
         }
         #endregion

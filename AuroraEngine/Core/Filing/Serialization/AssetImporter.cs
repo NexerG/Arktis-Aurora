@@ -81,7 +81,7 @@ namespace ArctisAurora.Core.Filing.Serialization
         private static ImportSet ParseImportSet(string path)
         {
             ImportSet set = new ImportSet();
-            XElement root = XElement.Load(path);
+            XElement root = DataFiles.LoadXml(path);
             XNamespace ns = root.GetDefaultNamespace();
 
             foreach (XElement element in root.Elements(ns + "Charset"))

@@ -5,4 +5,5 @@
 	<Test Action="FileTypes.ClaimOne"/>
 	<Test Action="FileTypes.ClaimAll"/>
 	<Test Action="FileTypes.LinuxFiles"/>
+	<Test Action="FileTypes.IsDefault"/>
 </TestSuite>

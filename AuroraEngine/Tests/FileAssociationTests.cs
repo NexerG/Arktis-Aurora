@@ -54,6 +54,16 @@ namespace ArctisAurora.Tests
             yield break;
         }
 
+        [A_XSDActionDependency("FileTypes.IsDefault", "Test")]
+        private static IEnumerator<int> IsDefault(TestContext t)
+        {
+            t.Check(FileAssociations.EffectiveProgId("Thorium.md", "Other.md", "Other.md") == "Thorium.md", "the latest user choice wins");
+            t.Check(FileAssociations.EffectiveProgId(null, "Other.md", "Thorium.md") == "Other.md", "an older user choice beats the class default");
+            t.Check(FileAssociations.EffectiveProgId(null, null, "Thorium.md") == "Thorium.md", "with no user choice the class default decides");
+            t.Check(FileAssociations.EffectiveProgId(null, null, null) == null, "an unassociated type has no ProgID");
+            yield break;
+        }
+
         private static string? Value(List<RegistryEntry> entries, string key, string name) =>
             entries.LastOrDefault(e => e.key == key && e.name == name) is { key: not null } entry ? entry.value : null;
     }

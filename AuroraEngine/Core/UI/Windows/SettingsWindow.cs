@@ -185,10 +185,32 @@ namespace ArctisAurora.Core.UI.Windows
 
         private static void FillFileTypes()
         {
+            bool allDefault = true;
             foreach (FileType type in FileAssociations.Registered)
-                _rows.AddChild(Row($"{type.description} ({type.suffix})", Button("Make default", () => FileAssociations.Claim(type), 150)));
+            {
+                bool isDefault = FileAssociations.IsDefault(type);
+                allDefault &= isDefault;
+                _rows.AddChild(Row($"{type.description} ({type.suffix})", DefaultEditor("Make default", () => FileAssociations.Claim(type), isDefault)));
+            }
 
-            _rows.AddChild(Row("All types", Button("Make default for all", FileAssociations.ClaimAll, 150)));
+            _rows.AddChild(Row("All types", DefaultEditor("Make default for all", FileAssociations.ClaimAll, allDefault)));
+        }
+
+        // A claim button, greyed with a "Default" label beside it once the claim already holds.
+        private static Control DefaultEditor(string caption, Action claim, bool isDefault)
+        {
+            StackPanelControl editor = new StackPanelControl
+            {
+                orientation = StackPanelControl.Orientation.Horizontal,
+                alpha = 0f,
+                Spacing = 10
+            };
+
+            ButtonControl button = Button(caption, () => { claim(); ShowCategory(fileTypesCategory); }, 150);
+            button.enabled = !isDefault;
+            editor.AddChild(button);
+            if (isDefault) editor.AddChild(new LabelControl { text = "Default", fontSize = 14, role = PaletteRole.MutedInk });
+            return editor;
         }
 
         private static Control Row(string caption, Control editor)
